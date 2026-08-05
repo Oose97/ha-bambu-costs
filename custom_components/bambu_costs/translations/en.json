@@ -1,0 +1,195 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Bambu Print Costs",
+        "description": "Pick the printer sensors this integration should read. Only the first two are required.",
+        "data": {
+          "name": "Name",
+          "print_weight": "Print weight sensor",
+          "print_status": "Print status sensor",
+          "task_name": "Job name sensor",
+          "layers": "Layer count sensor",
+          "print_length": "Filament length sensor",
+          "nozzle_size": "Nozzle size sensor",
+          "nozzle_type": "Nozzle type sensor",
+          "cover_image": "Job cover image"
+        },
+        "data_description": {
+          "print_weight": "The sensor whose attributes hold the per-slot filament weight for the current job.",
+          "cover_image": "Optional. Captured and stored with each logged job."
+        }
+      },
+      "costs": {
+        "title": "Filament slots and rates",
+        "description": "Add one slot per filament source, using the exact attribute name from the print weight sensor — for example 'AMS 1 Tray 1'. Optionally add a label and a tray sensor after pipes: 'AMS 1 Tray 1|A1|sensor.printer_ams_tray_1'. The tray sensor supplies the colour and material for the job log, and its tag_uid prices the slot from the tag library. Leave empty if you do not use an AMS.",
+        "data": {
+          "slots": "Filament slots",
+          "energy_sensors": "Energy sensors",
+          "electricity_price": "Electricity price",
+          "default_filament_price": "Default filament price"
+        },
+        "data_description": {
+          "energy_sensors": "Summed to work out the energy a print used. Usually the printer and AMS socket meters.",
+          "default_filament_price": "Used for a slot with no price set, and for filament from an unconfigured source."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Printer sensors",
+        "description": "Change which sensors this integration reads.",
+        "data": {
+          "print_weight": "Print weight sensor",
+          "print_status": "Print status sensor",
+          "task_name": "Job name sensor",
+          "layers": "Layer count sensor",
+          "print_length": "Filament length sensor",
+          "nozzle_size": "Nozzle size sensor",
+          "nozzle_type": "Nozzle type sensor",
+          "cover_image": "Job cover image"
+        }
+      },
+      "costs": {
+        "title": "Filament slots and rates",
+        "description": "Adding or removing a slot creates or removes its price entity.",
+        "data": {
+          "slots": "Filament slots",
+          "energy_sensors": "Energy sensors",
+          "electricity_price": "Electricity price",
+          "default_filament_price": "Default filament price"
+        }
+      }
+    }
+  },
+  "services": {
+    "write_tags": {
+      "name": "Write tag library",
+      "description": "Replace the whole filament tag library. The previous file is kept as tags.csv.bak.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed when more than one Bambu Print Costs entry is set up."
+        },
+        "tags": {
+          "name": "Tags",
+          "description": "List of tag objects: filament, color_code, color_name, serial, cost_per_kg, disabled."
+        }
+      }
+    },
+    "set_tag_price": {
+      "name": "Set tag price",
+      "description": "Update the price of every tag carrying a serial number.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        },
+        "serial": {
+          "name": "Serial",
+          "description": "RFID serial to match."
+        },
+        "price": {
+          "name": "Price",
+          "description": "New price per kilogram."
+        }
+      }
+    },
+    "log_job": {
+      "name": "Log job",
+      "description": "Append the finished job to the log. Anything not supplied is read from the configured sensors.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        },
+        "job": {
+          "name": "Job name",
+          "description": "Defaults to the job name sensor."
+        },
+        "print_time_min": {
+          "name": "Print time",
+          "description": "Duration in minutes."
+        },
+        "print_time": {
+          "name": "Print time text",
+          "description": "Formatted duration, e.g. 3h 24min."
+        },
+        "layers": {
+          "name": "Layers",
+          "description": "Layer count."
+        },
+        "length_m": {
+          "name": "Length",
+          "description": "Filament length in metres."
+        },
+        "nozzle_size": {
+          "name": "Nozzle size",
+          "description": "Nozzle diameter."
+        },
+        "nozzle_type": {
+          "name": "Nozzle type",
+          "description": "Nozzle material."
+        },
+        "filament_cost": {
+          "name": "Filament cost",
+          "description": "Overrides the calculated cost."
+        },
+        "power_cost": {
+          "name": "Power cost",
+          "description": "Overrides the calculated cost."
+        },
+        "energy_kwh": {
+          "name": "Energy",
+          "description": "Overrides the measured energy."
+        },
+        "capture_cover": {
+          "name": "Capture cover",
+          "description": "Store the job's cover image."
+        },
+        "update_totals": {
+          "name": "Update totals",
+          "description": "Advance the lifetime total numbers."
+        }
+      }
+    },
+    "refresh": {
+      "name": "Refresh",
+      "description": "Re-read the CSV files from disk.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        }
+      }
+    },
+    "import_legacy": {
+      "name": "Import legacy CSV",
+      "description": "Bring tags and job history in from the pre-integration CSV files. Paths must be inside the Home Assistant configuration directory.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        },
+        "tags_path": {
+          "name": "Tags CSV",
+          "description": "Path to the old filament tag CSV, e.g. /config/www/bambu_tags.csv."
+        },
+        "jobs_path": {
+          "name": "Jobs CSV",
+          "description": "Path to the old job log CSV, e.g. /config/www/bambu_jobs_log.csv."
+        },
+        "covers_path": {
+          "name": "Covers folder",
+          "description": "Folder holding the job cover images referenced by the job log."
+        },
+        "replace": {
+          "name": "Replace",
+          "description": "Wipe existing data first. Off by default, which merges and skips duplicates."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
+          # This is a custom repository, not one submitted to the HACS default
+          # store, so it is deliberately not registered in home-assistant/brands.
+          ignore: brands
+
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
