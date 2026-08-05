@@ -56,7 +56,11 @@ Settings → Dashboards → Resources, and are removed when the last config entr
 deleted. In YAML-mode Lovelace the files are still served — the URLs are logged at
 startup for you to add by hand.
 
-- `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library
+- `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library. Each row's
+  **SET** button opens a picker listing every filament price entity — the default first,
+  then one per configured slot — so a tag's price can be pushed into whichever slot has
+  that spool loaded. The list is resolved from the entity registry, so it follows the
+  slot configuration on its own.
 - `custom:bambu-costs-jobs-table` — sortable, paginated print history
 - `custom:bambu-costs-calculator` — manual quote: filament, runtime, margin, VAT
 
@@ -116,6 +120,12 @@ AMS HT 1|HT|sensor.printer_ams_ht_tray_1
   job log, and its `tag_uid` prices the slot straight from your tag library.
 
 Leave the list empty if you do not use an AMS; everything is then priced at the default.
+
+## Currency
+
+Set during setup, prefilled with `EUR`, and changeable in the options. It is display-only —
+any text works — and flows through the number entities' units, both cost sensors, and the
+cards, which pick it up from the integration rather than needing their own setting.
 
 ## Electricity price
 

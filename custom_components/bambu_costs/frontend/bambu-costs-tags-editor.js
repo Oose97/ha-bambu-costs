@@ -5,7 +5,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       title: "Filament tags",
       save_service: "bambu_costs.write_tags",
       default_price_entity: "number.bambu_costs_default_filament_price",
-      unit: "€/kg",
+      unit: null,      // null → take the currency from the integration
     }, cfg);
     this._rows = [];
     this._baseSig = null;
@@ -21,6 +21,11 @@ class BambuCostsTagsEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    if (!this._cfg.unit) {
+      const st = hass.states[this._cfg.entity];
+      const cur = st && st.attributes && st.attributes.currency;
+      this._cfg.unit = cur ? `${cur}/kg` : "EUR/kg";
+    }
     if (!this._built) { this._load(); this._render(); return; }
     if (this._dirty || this._busy) return;
     if (JSON.stringify(this._sensorData()) === this._baseSig) return;
@@ -228,6 +233,24 @@ class BambuCostsTagsEditor extends HTMLElement {
             color:var(--secondary-text-color); font-size:9px; font-weight:600;
             letter-spacing:.3px; padding:4px 5px; cursor:pointer; }
           .setdef:hover { border-color:var(--primary-color); color:var(--primary-color); }
+          .bte-modal { position:fixed; inset:0; z-index:99999; background:rgba(0,0,0,.6);
+            display:flex; align-items:center; justify-content:center; padding:20px; }
+          .bte-sheet { width:min(94vw,380px); max-height:80vh; display:flex; flex-direction:column;
+            background:var(--card-background-color); color:var(--primary-text-color);
+            border:1px solid var(--divider-color); border-radius:14px; overflow:hidden;
+            box-shadow:0 12px 48px rgba(0,0,0,.5); }
+          .bte-sheet-head { padding:14px 16px 10px; border-bottom:1px solid var(--divider-color); }
+          .bte-sheet-title { font-size:15px; font-weight:600; }
+          .bte-sheet-sub { font-size:12px; color:var(--secondary-text-color); margin-top:2px; }
+          .bte-sheet-body { overflow-y:auto; padding:6px 0; }
+          .bte-target { display:flex; align-items:center; gap:10px; padding:8px 16px; }
+          .bte-target + .bte-target { border-top:1px solid var(--divider-color); }
+          .bte-target-label { flex:1; min-width:0; display:flex; flex-direction:column; }
+          .bte-target-name { font-size:13px; overflow:hidden; text-overflow:ellipsis;
+            white-space:nowrap; }
+          .bte-target-cur { font-size:11px; color:var(--secondary-text-color); }
+          .bte-sheet-foot { padding:10px 16px; border-top:1px solid var(--divider-color);
+            display:flex; justify-content:flex-end; }
           .del { background:none; border:none; color:var(--secondary-text-color);
             cursor:pointer; font-size:14px; padding:2px 4px; border-radius:6px; }
           .del:hover { color:var(--error-color,#f44336); }
@@ -378,7 +401,7 @@ class BambuCostsTagsEditor extends HTMLElement {
               <input class="cell p" type="number" step="0.01" min="0" data-k="${r._k}"
                      data-f="cost_per_kg" value="${(Number(r.cost_per_kg) || 0).toFixed(2)}">
               <button class="setdef" data-k="${r._k}"
-                      title="Use this price as the default / backup filament cost">SET</button>
+                      title="Push this price into one of the filament price entities">SET</button>
             </span></td>
         <td class="togcell"><button class="tog${r.disabled ? " isoff" : ""}" data-k="${r._k}"
               title="${r.disabled ? "Disabled — click to enable" : "Enabled — click to disable"}"
@@ -403,7 +426,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     });
 
     tbody.querySelectorAll("button.setdef").forEach(b => {
-      b.addEventListener("click", e => this._setDefaultPrice(e.currentTarget.dataset.k));
+      b.addEventListener("click", e => this._openPricePicker(e.currentTarget.dataset.k));
     });
 
     tbody.querySelectorAll("button.tog").forEach(b => {
@@ -481,18 +504,81 @@ class BambuCostsTagsEditor extends HTMLElement {
     this._paint();
   }
 
-  async _setDefaultPrice(k) {
+  // Every number this price can be pushed into. The integration resolves these
+  // from the entity registry, so slots appear and disappear with the config
+  // rather than the card having to rebuild entity IDs from labels.
+  _priceTargets() {
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    const fromSensor = (st && st.attributes && st.attributes.price_targets) || [];
+    if (fromSensor.length) return fromSensor;
+    // Older integration, or the sensor is unavailable: at least offer the default.
+    return [{ entity_id: this._cfg.default_price_entity, label: "Default price (backup)" }];
+  }
+
+  _openPricePicker(k) {
     const row = this._row(k);
     if (!row) return;
     const val = Number(row.cost_per_kg) || 0;
-    const ent = this._cfg.default_price_entity;
+    const targets = this._priceTargets();
+    const what = `${this._esc(row.filament || "this filament")}`
+      + (row.color_name ? ` · ${this._esc(row.color_name)}` : "");
+
+    const ov = document.createElement("div");
+    ov.className = "bte-modal";
+    ov.innerHTML = `
+      <div class="bte-sheet" role="dialog" aria-modal="true">
+        <div class="bte-sheet-head">
+          <div class="bte-sheet-title">Set price ${val.toFixed(2)} ${this._esc(this._cfg.unit)}</div>
+          <div class="bte-sheet-sub">${what}</div>
+        </div>
+        <div class="bte-sheet-body">
+          ${targets.map(t => `
+            <div class="bte-target">
+              <span class="bte-target-label">
+                <span class="bte-target-name">${this._esc(t.label)}</span>
+                <span class="bte-target-cur" data-cur="${this._esc(t.entity_id)}"></span>
+              </span>
+              <button class="setdef pick" data-ent="${this._esc(t.entity_id)}">SET</button>
+            </div>`).join("")}
+        </div>
+        <div class="bte-sheet-foot">
+          <button class="tbtn close">Cancel</button>
+        </div>
+      </div>`;
+
+    // show what each target currently holds, so a wrong click is obvious
+    ov.querySelectorAll("[data-cur]").forEach(el => {
+      const s = this._hass && this._hass.states[el.dataset.cur];
+      const cur = s ? Number(s.state) : NaN;
+      el.textContent = isNaN(cur) ? "" : `now ${cur.toFixed(2)}`;
+    });
+
+    const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
+    const esc = e => { if (e.key === "Escape") close(); };
+    ov.addEventListener("click", e => { if (e.target === ov) close(); });
+    ov.querySelector("button.close").addEventListener("click", close);
+    ov.querySelectorAll("button.pick").forEach(b => {
+      b.addEventListener("click", async e => {
+        const ent = e.currentTarget.dataset.ent;
+        close();
+        await this._applyPrice(ent, val, row);
+      });
+    });
+
+    document.addEventListener("keydown", esc);
+    this.appendChild(ov);
+  }
+
+  async _applyPrice(entity_id, val, row) {
     try {
-      await this._hass.callService(ent.split(".")[0], "set_value",
-        { entity_id: ent, value: val });
-      this._msg(`Default filament cost set to ${val.toFixed(2)} ${this._cfg.unit}`
+      await this._hass.callService(entity_id.split(".")[0], "set_value",
+        { entity_id, value: val });
+      const st = this._hass.states[entity_id];
+      const name = (st && st.attributes && st.attributes.friendly_name) || entity_id;
+      this._msg(`${name} set to ${val.toFixed(2)} ${this._cfg.unit}`
         + (row.filament ? ` (${row.filament}${row.color_name ? " · " + row.color_name : ""}).` : "."));
     } catch (err) {
-      this._msg("Could not set default price: " + err, "err");
+      this._msg("Could not set price: " + err, "err");
     }
   }
 

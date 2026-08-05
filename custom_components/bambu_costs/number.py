@@ -46,7 +46,7 @@ async def async_setup_entry(
             coordinator,
             slot.price_key,
             f"{slot.label} filament price",
-            "EUR/kg",
+            "{currency}/kg",
             0,
             1000,
             0.01,
@@ -80,7 +80,7 @@ class BambuCostsNumber(CoordinatorEntity[BambuCostsCoordinator], RestoreNumber):
         self._key = key
         self._attr_name = name
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
-        self._attr_native_unit_of_measurement = unit
+        self._attr_native_unit_of_measurement = unit.format(currency=coordinator.currency)
         self._attr_native_min_value = minimum
         self._attr_native_max_value = maximum
         self._attr_native_step = step

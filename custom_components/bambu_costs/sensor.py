@@ -8,12 +8,18 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_PRINT_WEIGHT, DOMAIN, URL_COVERS
+from .const import (
+    CONF_DEFAULT_FILAMENT_PRICE,
+    CONF_PRINT_WEIGHT,
+    DOMAIN,
+    URL_COVERS,
+)
 from .coordinator import BambuCostsCoordinator
 
 
@@ -64,12 +70,12 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
     attribute, unrounded, so consumers round once at their own display point.
     """
 
-    _attr_native_unit_of_measurement = "EUR"
     _attr_icon = "mdi:table-split-cell"
     _attr_suggested_display_precision = 4
 
     def __init__(self, coordinator: BambuCostsCoordinator) -> None:
         super().__init__(coordinator, "filament_breakdown", "Filament breakdown")
+        self._attr_native_unit_of_measurement = coordinator.currency
         self._data: dict[str, Any] = coordinator.breakdown()
 
     @property
@@ -130,12 +136,12 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
 class SessionFilamentCostSensor(BambuCostsSensor):
     """Display-rounded twin of the breakdown cost."""
 
-    _attr_native_unit_of_measurement = "EUR"
     _attr_icon = "mdi:cash"
     _attr_suggested_display_precision = 2
 
     def __init__(self, coordinator: BambuCostsCoordinator) -> None:
         super().__init__(coordinator, "session_filament_cost", "Session filament cost")
+        self._attr_native_unit_of_measurement = coordinator.currency
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -171,7 +177,30 @@ class TagLibrarySensor(BambuCostsSensor):
         return {
             "data": tags,
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
+            "currency": self.coordinator.currency,
+            "price_targets": self._price_targets(),
         }
+
+    def _price_targets(self) -> list[dict[str, str]]:
+        """Every number a filament price can be pushed into, default first.
+
+        Resolved from the registry rather than guessed, so the card does not
+        have to reconstruct entity IDs from labels.
+        """
+        registry = er.async_get(self.hass)
+        entry_id = self.coordinator.entry.entry_id
+
+        wanted: list[tuple[str, str]] = [
+            (CONF_DEFAULT_FILAMENT_PRICE, "Default price (backup)")
+        ]
+        wanted += [(slot.price_key, slot.label) for slot in self.coordinator.slots]
+
+        targets: list[dict[str, str]] = []
+        for key, label in wanted:
+            entity_id = registry.async_get_entity_id("number", DOMAIN, f"{entry_id}_{key}")
+            if entity_id:
+                targets.append({"entity_id": entity_id, "label": label})
+        return targets
 
 
 class JobLogSensor(BambuCostsSensor):

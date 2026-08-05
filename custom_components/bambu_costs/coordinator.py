@@ -21,6 +21,7 @@ from .const import (
     DOMAIN,
     CONF_COVER_IMAGE,
     CONF_DEFAULT_FILAMENT_PRICE,
+    CONF_CURRENCY,
     CONF_ELECTRICITY_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_ENERGY_SENSORS,
@@ -33,6 +34,7 @@ from .const import (
     CONF_SLOTS,
     CONF_TASK_NAME,
     DATA_DIR,
+    DEFAULT_CURRENCY,
     DEFAULT_ELECTRICITY_PRICE,
     DEFAULT_FILAMENT_PRICE,
     EXTERNAL_TOLERANCE_G,
@@ -126,6 +128,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def options(self) -> dict[str, Any]:
         """Options win over the original setup data."""
         return {**self.entry.data, **self.entry.options}
+
+    @property
+    def currency(self) -> str:
+        """Whatever the user calls their money. Only ever displayed."""
+        return str(self.options.get(CONF_CURRENCY) or DEFAULT_CURRENCY).strip() or DEFAULT_CURRENCY
 
     def entity_of(self, key: str) -> str | None:
         value = self.options.get(key)

@@ -37,10 +37,12 @@ CONF_ENERGY_SENSORS: Final = "energy_sensors"
 CONF_ELECTRICITY_PRICE: Final = "electricity_price"
 CONF_ELECTRICITY_PRICE_ENTITY: Final = "electricity_price_entity"
 CONF_DEFAULT_FILAMENT_PRICE: Final = "default_filament_price"
+CONF_CURRENCY: Final = "currency"
 
 DEFAULT_NAME: Final = "Bambu Costs"
 DEFAULT_ELECTRICITY_PRICE: Final = 0.25
 DEFAULT_FILAMENT_PRICE: Final = 20.0
+DEFAULT_CURRENCY: Final = "EUR"
 
 # Slot definitions are entered as "Attribute", "Attribute|Label" or
 # "Attribute|Label|tray_entity_id".
@@ -71,13 +73,13 @@ ATTR_PRICE: Final = "price"
 # ── number entities that always exist (per-slot prices are added on top) ──────
 # key, translation/name, unit, min, max, step, default
 NUMBER_DEFS: Final = (
-    ("default_filament_price", "Default filament price", "EUR/kg", 0, 1000, 0.01, None),
-    ("electricity_price", "Electricity price", "EUR/kWh", 0, 10, 0.0001, None),
-    ("last_print_cost", "Last print cost", "EUR", 0, 100000, 0.01, 0.0),
-    ("last_print_filament_cost", "Last print filament cost", "EUR", 0, 100000, 0.01, 0.0),
-    ("last_print_power_cost", "Last print power cost", "EUR", 0, 100000, 0.01, 0.0),
+    ("default_filament_price", "Default filament price", "{currency}/kg", 0, 1000, 0.01, None),
+    ("electricity_price", "Electricity price", "{currency}/kWh", 0, 10, 0.0001, None),
+    ("last_print_cost", "Last print cost", "{currency}", 0, 100000, 0.01, 0.0),
+    ("last_print_filament_cost", "Last print filament cost", "{currency}", 0, 100000, 0.01, 0.0),
+    ("last_print_power_cost", "Last print power cost", "{currency}", 0, 100000, 0.01, 0.0),
     ("total_filament_used", "Total filament used", "g", 0, 100000000, 0.01, 0.0),
-    ("total_cost", "Total cost", "EUR", 0, 10000000, 0.01, 0.0),
+    ("total_cost", "Total cost", "{currency}", 0, 10000000, 0.01, 0.0),
     ("energy_at_print_start", "Energy at print start", "kWh", 0, 10000000, 0.0001, 0.0),
     ("filter_change_due", "Filter change due at", "h", 0, 1000000, 1, 250.0),
 )

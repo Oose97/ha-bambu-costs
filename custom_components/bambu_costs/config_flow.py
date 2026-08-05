@@ -30,6 +30,7 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_COVER_IMAGE,
+    CONF_CURRENCY,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_ELECTRICITY_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
@@ -42,6 +43,7 @@ from .const import (
     CONF_PRINT_WEIGHT,
     CONF_SLOTS,
     CONF_TASK_NAME,
+    DEFAULT_CURRENCY,
     DEFAULT_ELECTRICITY_PRICE,
     DEFAULT_FILAMENT_PRICE,
     DEFAULT_NAME,
@@ -73,6 +75,7 @@ ALL_KEYS = (
     CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_ELECTRICITY_PRICE,
     CONF_DEFAULT_FILAMENT_PRICE,
+    CONF_CURRENCY,
 )
 
 
@@ -135,6 +138,9 @@ def _costs_schema(defaults: dict[str, Any]) -> vol.Schema:
                 CONF_DEFAULT_FILAMENT_PRICE,
                 description=dflt(CONF_DEFAULT_FILAMENT_PRICE, DEFAULT_FILAMENT_PRICE),
             ): _price(1000),
+            vol.Required(
+                CONF_CURRENCY, description=dflt(CONF_CURRENCY, DEFAULT_CURRENCY)
+            ): str,
         }
     )
 
