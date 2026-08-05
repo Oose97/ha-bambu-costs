@@ -33,6 +33,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
     FINISHED_STATES,
+    RESUME_STATES,
     RUNNING_STATES,
     SERVICE_IMPORT_LEGACY,
     SERVICE_LOG_JOB,
@@ -173,21 +174,32 @@ def _async_track_print_status(
         if not (started or finished):
             return
 
+        # Coming back to running from a pause, or from a failure the printer
+        # recovered out of — an AMS jam, say — is the same job continuing. Only
+        # a start from idle/slicing/prepare is new work, and only that may
+        # discard the remembered per-slot split. An unknown previous state
+        # (first event after a restart) is treated as a resume: preserving a
+        # snapshot that turns out to be stale is recoverable, discarding one
+        # that was needed is not.
+        resumed = started and (before is None or before in RESUME_STATES)
+
         if started:
-            # A new job invalidates the remembered per-slot split — it must
-            # never be carried over onto different filament. Deliberately not
-            # done on finish: the job is logged on that transition, and the
-            # snapshot is what keeps the split intact if the attributes have
-            # already gone.
-            coordinator.forget_last_breakdown()
+            idle_cost = coordinator.mark_print_start()
+            if not resumed:
+                coordinator.forget_last_breakdown()
+            _LOGGER.info(
+                "Print %s; idle since the last one cost %.4f %s",
+                "resumed" if resumed else "started",
+                idle_cost,
+                coordinator.currency,
+            )
+        else:
+            spent = coordinator.mark_print_end()
+            _LOGGER.info("Print ended; electricity cost %.4f %s", spent, coordinator.currency)
 
         updated = coordinator.sync_slot_prices()
         if updated:
-            _LOGGER.info(
-                "Print %s; synced slot prices from tags: %s",
-                "started" if started else "finished",
-                updated,
-            )
+            _LOGGER.info("Slot prices synced from tags: %s", updated)
 
     entry.async_on_unload(
         async_track_state_change_event(hass, [status_entity], _status_changed)

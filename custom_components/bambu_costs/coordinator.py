@@ -13,6 +13,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import slugify
@@ -29,6 +30,7 @@ from .const import (
     CONF_LENGTH,
     CONF_NOZZLE_SIZE,
     CONF_NOZZLE_TYPE,
+    CONF_POWER_SENSORS,
     CONF_PRINT_STATUS,
     CONF_PRINT_WEIGHT,
     CONF_SLOTS,
@@ -112,6 +114,13 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Last breakdown that was computed from real per-slot data. Persisted by
         # the breakdown sensor, so a restart mid-print does not lose the split.
         self.last_good: dict[str, Any] | None = None
+
+        # Running cost total, restored by its sensor. _rate is the rate in
+        # force since _rate_since, held so an interval can be charged at the
+        # rate that actually applied to it.
+        self.cost_total: float = 0.0
+        self._rate: float = 0.0
+        self._rate_since: datetime | None = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -276,6 +285,65 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
         return self.value(CONF_ELECTRICITY_PRICE), "number"
 
+    # ── running cost, integrated over time ───────────────────────────────────
+    def cost_rate(self) -> float:
+        """What the machine is costing right now, per hour.
+
+        Power drawn now times the price now. Integrating this is what makes a
+        variable tariff come out right — multiplying total kWh by the price at
+        the end of a job charges the whole print at whatever the rate happened
+        to be when it finished.
+        """
+        watts = 0.0
+        for entity_id in self.options.get(CONF_POWER_SENSORS) or []:
+            state = self.hass.states.get(entity_id)
+            if state and state.state.lower() not in _BAD_STATES:
+                watts += as_float(state.state)
+
+        price, _source = self.electricity_price()
+        return watts / 1000.0 * price
+
+    @callback
+    def accrue_cost(self, now: datetime | None = None) -> None:
+        """Add what has been spent since the last tick to the running total.
+
+        Left Riemann sum: the interval just elapsed is charged at the rate that
+        was in force for it, then the rate is re-read. Because the amount comes
+        from elapsed time rather than tick count, an irregular or missed tick
+        costs freshness, never accuracy.
+        """
+        now = now or dt_util.utcnow()
+
+        if self._rate_since is not None:
+            hours = (now - self._rate_since).total_seconds() / 3600.0
+            if hours > 0:
+                self.cost_total += self._rate * hours
+
+        self._rate = self.cost_rate()
+        self._rate_since = now
+
+    def spend_since(self, key: str) -> float:
+        """Cost accumulated since a stored marker, never negative."""
+        return max(0.0, self.cost_total - self.value(key))
+
+    @callback
+    def mark_print_start(self, now: datetime | None = None) -> float:
+        """Close off the idle period and open the print one. Returns idle cost."""
+        self.accrue_cost(now)
+        idle = self.spend_since("cost_at_print_end")
+        self.set_value("last_idle_cost", idle)
+        self.set_value("cost_at_print_start", self.cost_total)
+        return idle
+
+    @callback
+    def mark_print_end(self, now: datetime | None = None) -> float:
+        """Close off the print period. Returns what its electricity cost."""
+        self.accrue_cost(now)
+        spent = self.spend_since("cost_at_print_start")
+        self.set_value("last_print_power_cost", spent)
+        self.set_value("cost_at_print_end", self.cost_total)
+        return spent
+
     def energy_now(self) -> float:
         """Summed kWh across every configured energy sensor."""
         total = 0.0
@@ -434,9 +502,15 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         power_cost = overrides.get("power_cost")
         if power_cost is None:
-            price, price_source = self.electricity_price()
-            _LOGGER.debug("Costing %s kWh at %s EUR/kWh (%s)", energy_kwh, price, price_source)
-            power_cost = energy_kwh * price
+            if self.options.get(CONF_POWER_SENSORS):
+                # Integrated over the print, so a tariff that moved during it
+                # is charged as it actually moved.
+                power_cost = self.spend_since("cost_at_print_start")
+            else:
+                # No power sensors configured: fall back to the flat estimate.
+                price, source = self.electricity_price()
+                _LOGGER.debug("Costing %s kWh at %s/kWh (%s)", energy_kwh, price, source)
+                power_cost = energy_kwh * price
 
         minutes = as_float(overrides.get("print_time_min"))
         job_name = overrides.get("job") or self._state(CONF_TASK_NAME) or "unknown"

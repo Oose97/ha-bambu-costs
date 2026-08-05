@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import RestoreSensor, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_DEFAULT_FILAMENT_PRICE,
+    CONF_ELECTRICITY_PRICE_ENTITY,
+    CONF_POWER_SENSORS,
+    COST_TICK_SECONDS,
     CONF_PRINT_WEIGHT,
     DOMAIN,
     URL_COVERS,
@@ -43,6 +50,8 @@ async def async_setup_entry(
         [
             FilamentBreakdownSensor(coordinator),
             SessionFilamentCostSensor(coordinator),
+            CostRateSensor(coordinator),
+            CostTotalSensor(coordinator),
             TagLibrarySensor(coordinator),
             JobLogSensor(coordinator),
         ]
@@ -156,6 +165,84 @@ class SessionFilamentCostSensor(BambuCostsSensor):
     @property
     def native_value(self) -> float:
         return round(self.coordinator.breakdown()["cost"], 2)
+
+
+class CostRateSensor(BambuCostsSensor):
+    """What the machine is costing per hour, right now."""
+
+    _attr_icon = "mdi:speedometer"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 4
+
+    def __init__(self, coordinator: BambuCostsCoordinator) -> None:
+        super().__init__(coordinator, "cost_rate", "Cost rate")
+        self._attr_native_unit_of_measurement = f"{coordinator.currency}/h"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        watched = list(self.coordinator.options.get(CONF_POWER_SENSORS) or [])
+        price_entity = self.coordinator.entity_of(CONF_ELECTRICITY_PRICE_ENTITY)
+        if price_entity:
+            watched.append(price_entity)
+        if watched:
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, watched, self._changed)
+            )
+
+    @callback
+    def _changed(self, _event: Any) -> None:
+        # Charge the interval just ended at the rate that applied to it before
+        # picking up the new one.
+        self.coordinator.accrue_cost()
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator.cost_rate(), 6)
+
+
+class CostTotalSensor(BambuCostsSensor, RestoreSensor):
+    """Everything the machine has cost to run, printing or idle.
+
+    Restored across restarts, and settable in one direction only — it is the
+    integral of the rate, so it never goes down.
+    """
+
+    _attr_icon = "mdi:cash-clock"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 4
+
+    def __init__(self, coordinator: BambuCostsCoordinator) -> None:
+        super().__init__(coordinator, "cost_total", "Cost total")
+        self._attr_native_unit_of_measurement = coordinator.currency
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        restored = await self.async_get_last_sensor_data()
+        if restored is not None and restored.native_value is not None:
+            try:
+                self.coordinator.cost_total = float(restored.native_value)
+            except (TypeError, ValueError):
+                pass
+
+        # Seed the rate so the first tick charges from now, not from epoch.
+        self.coordinator.accrue_cost()
+
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass, self._tick, timedelta(seconds=COST_TICK_SECONDS)
+            )
+        )
+
+    @callback
+    def _tick(self, _now: Any) -> None:
+        self.coordinator.accrue_cost()
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator.cost_total, 6)
 
 
 class TagLibrarySensor(BambuCostsSensor):

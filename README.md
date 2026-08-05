@@ -20,6 +20,8 @@ slots are free-form, so any AMS layout — or none — works.
 | `sensor.<name>_filament_breakdown` | Cost of the job on the printer now. The `slots` attribute has the unrounded per-slot rows. |
 | `sensor.<name>_session_filament_cost` | The same figure rounded for display. |
 | `sensor.<name>_tag_library` | Your filament tag library. State is the row count; `data` holds the rows. |
+| `sensor.<name>_cost_rate` | What the machine is costing per hour right now — power × price. |
+| `sensor.<name>_cost_total` | Everything it has cost to run, printing or idle. Restored across restarts. |
 | `sensor.<name>_job_log` | Logged jobs. State is the row count; `data` holds the rows. |
 
 ### Numbers
@@ -33,7 +35,8 @@ from an automation with `number.set_value`. Values survive restarts.
 - `number.<name>_last_print_cost`, `_last_print_filament_cost`, `_last_print_power_cost`
 - `number.<name>_total_filament_used`, `_total_cost` — lifetime running totals
 - `number.<name>_energy_at_print_start` — snapshot taken when a print begins
-- `number.<name>_filter_change_due`
+- `number.<name>_cost_at_print_start`, `_cost_at_print_end` — markers in the running total
+- `number.<name>_last_idle_cost` — electricity burnt between the last two prints
 
 ### Buttons
 
@@ -146,11 +149,25 @@ Negative prices are passed through rather than filtered, since spot tariffs can 
 negative. The sensor's value is taken as-is, so it must already be per kWh in your
 currency — point it at a template sensor if yours reports ct/kWh or EUR/MWh.
 
-> **Caveat with spot pricing:** the price is read once, when the job is logged, and applied
-> to the whole print. For a long print on a tariff that moves hourly that is an
-> approximation — the true cost is the price integrated over the print. If you need it
-> exact, pass `power_cost` explicitly to `bambu_costs.log_job` from something that tracks
-> cost over time, such as a `utility_meter` with tariffs.
+### Cost is integrated, not estimated
+
+Set **Power sensors** and the integration keeps a live cost rate — summed watts × the
+current price — and integrates it over time into `cost_total`. Because the rate is re-read
+whenever the power or the price moves, and each interval is charged at the rate that
+actually applied to it, a tariff that changes mid-print is charged as it changed. That
+removes the approximation of multiplying total kWh by the price at the end.
+
+Two consequences fall out of the accumulator running continuously:
+
+- **A print's electricity** is the total's delta between start and finish, so it is exact
+  even on a spot tariff. `log_job` uses it whenever power sensors are configured, falling
+  back to kWh × price when they are not.
+- **Standby is counted.** The gap between one print ending and the next starting is
+  measured too, and lands in `last_idle_cost`. On a printer drawing ~14 W at rest that is
+  easily larger than the prints themselves.
+
+Accrual is computed from elapsed time rather than tick count, so a missed or irregular
+tick costs freshness, never accuracy.
 
 ## How a slot gets its price
 

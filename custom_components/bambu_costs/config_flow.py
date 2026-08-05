@@ -39,6 +39,7 @@ from .const import (
     CONF_LENGTH,
     CONF_NOZZLE_SIZE,
     CONF_NOZZLE_TYPE,
+    CONF_POWER_SENSORS,
     CONF_PRINT_STATUS,
     CONF_PRINT_WEIGHT,
     CONF_SLOTS,
@@ -56,6 +57,9 @@ _IMAGE = EntitySelector(EntitySelectorConfig(domain=["image", "camera"]))
 _ENERGY = EntitySelector(
     EntitySelectorConfig(domain="sensor", device_class="energy", multiple=True)
 )
+_POWER = EntitySelector(
+    EntitySelectorConfig(domain="sensor", device_class="power", multiple=True)
+)
 _SLOTS = TextSelector(TextSelectorConfig(multiple=True))
 
 # Every key the flow can set. Options are written in full on each save so that
@@ -72,6 +76,7 @@ ALL_KEYS = (
     CONF_COVER_IMAGE,
     CONF_SLOTS,
     CONF_ENERGY_SENSORS,
+    CONF_POWER_SENSORS,
     CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_ELECTRICITY_PRICE,
     CONF_DEFAULT_FILAMENT_PRICE,
@@ -126,6 +131,9 @@ def _costs_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Optional(
                 CONF_ENERGY_SENSORS, description=dflt(CONF_ENERGY_SENSORS, [])
             ): _ENERGY,
+            vol.Optional(
+                CONF_POWER_SENSORS, description=dflt(CONF_POWER_SENSORS, [])
+            ): _POWER,
             vol.Optional(
                 CONF_ELECTRICITY_PRICE_ENTITY,
                 description=dflt(CONF_ELECTRICITY_PRICE_ENTITY, None),

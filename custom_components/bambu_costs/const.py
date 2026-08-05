@@ -34,6 +34,7 @@ CONF_NOZZLE_SIZE: Final = "nozzle_size"
 CONF_NOZZLE_TYPE: Final = "nozzle_type"
 CONF_SLOTS: Final = "slots"
 CONF_ENERGY_SENSORS: Final = "energy_sensors"
+CONF_POWER_SENSORS: Final = "power_sensors"
 CONF_ELECTRICITY_PRICE: Final = "electricity_price"
 CONF_ELECTRICITY_PRICE_ENTITY: Final = "electricity_price_entity"
 CONF_DEFAULT_FILAMENT_PRICE: Final = "default_filament_price"
@@ -69,6 +70,15 @@ RUNNING_STATES: Final = frozenset({"running", "printing"})
 # after a job matches what was actually loaded for it.
 FINISHED_STATES: Final = frozenset({"finish", "finished", "failed"})
 
+# Coming into `running` FROM one of these is a job resuming — a pause, or a
+# recovery from a mid-print error such as an AMS jam — not a new job. Only a
+# genuinely new job may discard the remembered per-slot split.
+RESUME_STATES: Final = frozenset({"pause", "paused", "failed"})
+
+# How often the cost accumulator ticks when nothing else moves. Accrual is
+# computed from elapsed time, so this only controls freshness, not accuracy.
+COST_TICK_SECONDS: Final = 60
+
 ATTR_ENTRY_ID: Final = "entry_id"
 ATTR_TAGS: Final = "tags"
 ATTR_SERIAL: Final = "serial"
@@ -85,7 +95,9 @@ NUMBER_DEFS: Final = (
     ("total_filament_used", "Total filament used", "g", 0, 100000000, 0.01, 0.0),
     ("total_cost", "Total cost", "{currency}", 0, 10000000, 0.01, 0.0),
     ("energy_at_print_start", "Energy at print start", "kWh", 0, 10000000, 0.0001, 0.0),
-    ("filter_change_due", "Filter change due at", "h", 0, 1000000, 1, 250.0),
+    ("cost_at_print_start", "Cost total at print start", "{currency}", 0, 10000000, 0.0001, 0.0),
+    ("cost_at_print_end", "Cost total at print end", "{currency}", 0, 10000000, 0.0001, 0.0),
+    ("last_idle_cost", "Last idle cost", "{currency}", 0, 100000, 0.0001, 0.0),
 )
 
 SLOT_PRICE_PREFIX: Final = "filament_price_"
