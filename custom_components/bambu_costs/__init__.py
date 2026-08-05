@@ -9,9 +9,17 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.core import (
+    Event,
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+    callback,
+)
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.event import EventStateChangedData, async_track_state_change_event
 from homeassistant.loader import async_get_integration
 
 from .const import (
@@ -19,12 +27,15 @@ from .const import (
     ATTR_PRICE,
     ATTR_SERIAL,
     ATTR_TAGS,
+    CONF_PRINT_STATUS,
     DOMAIN,
     PLATFORMS,
+    RUNNING_STATES,
     SERVICE_IMPORT_LEGACY,
     SERVICE_LOG_JOB,
     SERVICE_REFRESH,
     SERVICE_SET_TAG_PRICE,
+    SERVICE_SYNC_SLOT_PRICES,
     SERVICE_WRITE_TAGS,
     URL_CARDS,
     URL_COVERS,
@@ -138,8 +149,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _async_register_services(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _async_track_print_start(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
+
+
+@callback
+def _async_track_print_start(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: BambuCostsCoordinator
+) -> None:
+    """Sync slot prices from the tag library whenever a print starts."""
+    status_entity = coordinator.entity_of(CONF_PRINT_STATUS)
+    if not status_entity:
+        return
+
+    @callback
+    def _status_changed(event: Event[EventStateChangedData]) -> None:
+        new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
+        if new_state is None or new_state.state.lower() not in RUNNING_STATES:
+            return
+        # Only on the transition in, not on every update while running.
+        if old_state is not None and old_state.state.lower() in RUNNING_STATES:
+            return
+
+        updated = coordinator.sync_slot_prices()
+        if updated:
+            _LOGGER.info("Print started; synced slot prices from tags: %s", updated)
+
+    entry.async_on_unload(
+        async_track_state_change_event(hass, [status_entity], _status_changed)
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -301,7 +341,18 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=_LOG_JOB_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
+    async def _sync_slot_prices(call: ServiceCall) -> ServiceResponse:
+        coordinator = _resolve(hass, call)
+        return {"updated": coordinator.sync_slot_prices()}
+
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _refresh, schema=_REFRESH_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SYNC_SLOT_PRICES,
+        _sync_slot_prices,
+        schema=_REFRESH_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
     hass.services.async_register(
         DOMAIN,
         SERVICE_IMPORT_LEGACY,

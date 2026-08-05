@@ -196,6 +196,16 @@
           "description": "Wipe existing data first. Off by default, which merges and skips duplicates."
         }
       }
+    },
+    "sync_slot_prices": {
+      "name": "Sync slot prices",
+      "description": "Copy the loaded spool's tag price into each slot's price number. Runs automatically when a print starts.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        }
+      }
     }
   }
 }

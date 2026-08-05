@@ -57,6 +57,11 @@ SERVICE_SET_TAG_PRICE: Final = "set_tag_price"
 SERVICE_LOG_JOB: Final = "log_job"
 SERVICE_REFRESH: Final = "refresh"
 SERVICE_IMPORT_LEGACY: Final = "import_legacy"
+SERVICE_SYNC_SLOT_PRICES: Final = "sync_slot_prices"
+
+# Print-status values treated as "a job just started". Slot prices are synced
+# from the tag library on the transition into one of these.
+RUNNING_STATES: Final = frozenset({"running", "printing"})
 
 ATTR_ENTRY_ID: Final = "entry_id"
 ATTR_TAGS: Final = "tags"

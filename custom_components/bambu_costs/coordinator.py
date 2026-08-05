@@ -180,6 +180,25 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return self.value(CONF_DEFAULT_FILAMENT_PRICE), "default"
 
+    def sync_slot_prices(self) -> dict[str, float]:
+        """Copy the loaded spool's tag price into each slot's price number.
+
+        The breakdown already resolves the tag price on the fly, so this is not
+        needed for costing to be right — it keeps the visible price entities in
+        step with what is actually loaded. A slot whose tray reports no tag, or
+        a tag the library does not know, is left alone rather than reset.
+        """
+        updated: dict[str, float] = {}
+        for slot in self.slots:
+            tag = self.tag_for_serial(self.tray_info(slot).get("tag_uid"))
+            if not tag or not tag.get("cost_per_kg"):
+                continue
+            price = float(tag["cost_per_kg"])
+            if self.value(slot.price_key) != price:
+                self.set_value(slot.price_key, price)
+                updated[slot.label] = price
+        return updated
+
     def tray_info(self, slot: SlotDef) -> dict[str, Any]:
         """Colour, material and RFID serial for a slot, if a tray is mapped."""
         if not slot.entity:

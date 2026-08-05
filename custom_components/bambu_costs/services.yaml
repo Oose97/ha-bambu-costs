@@ -144,3 +144,10 @@ import_legacy:
       default: false
       selector:
         boolean:
+
+sync_slot_prices:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:

@@ -43,6 +43,7 @@ from an automation with `number.set_value`. Values survive restarts.
 | `bambu_costs.write_tags` | Replaces the tag library. Previous file kept as `tags.csv.bak`. |
 | `bambu_costs.set_tag_price` | Updates the price on every tag with a given RFID serial. |
 | `bambu_costs.refresh` | Re-reads the CSVs from disk. |
+| `bambu_costs.sync_slot_prices` | Copies the loaded spool's tag price into each slot's price number. |
 | `bambu_costs.import_legacy` | Pulls tags, job history and cover images in from the pre-integration CSVs. |
 
 Pass `entry_id` only if you have set up more than one printer.
@@ -141,6 +142,13 @@ In order of precedence:
 3. The **default filament price**.
 
 Each row in the breakdown carries `price_source` so you can see which applied.
+
+Costing never depends on the slot price entities being current — the tag price is resolved
+live. For visibility they are also written when a print starts: on the transition of the
+print status sensor into `running`, every slot whose tray reports a tag the library knows
+has its price number updated. A slot with no tray, no tag, or an unknown serial is left
+alone, so a hand-set price is never clobbered. `bambu_costs.sync_slot_prices` does the
+same on demand.
 
 Filament the printer counted that no configured slot claimed — an external spool, or a
 slot whose attribute name drifted — becomes an `External` row priced at the default,
