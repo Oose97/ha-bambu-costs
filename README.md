@@ -1,5 +1,7 @@
 # Bambu Print Costs
 
+<img src="brand/icon.svg" width="96" alt="">
+
 A Home Assistant integration that works out what a 3D print actually cost — filament per
 AMS slot, electricity, and a per-job history — and ships the Lovelace cards to manage it.
 
