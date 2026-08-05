@@ -363,3 +363,11 @@ at once while you migrate:
 - No dashboard is created for you; the cards are yours to place.
 - Tag scanning (appending a newly-seen spool to the library) is not wired to an event yet.
 - Idle/standby cost tracking between prints.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+The bundled brand sources keep their own terms: the euro glyph is public domain
+(Openclipart), and the Bambu Lab mark is Bambu Lab's trademark, used to identify the
+hardware this integration is for.
