@@ -155,12 +155,22 @@ In order of precedence:
 
 Each row in the breakdown carries `price_source` so you can see which applied.
 
-Costing never depends on the slot price entities being current — the tag price is resolved
-live. For visibility they are also written when a print starts: on the transition of the
-print status sensor into `running`, every slot whose tray reports a tag the library knows
-has its price number updated. A slot with no tray, no tag, or an unknown serial is left
-alone, so a hand-set price is never clobbered. `bambu_costs.sync_slot_prices` does the
-same on demand.
+### When a slot's price entity updates
+
+The price numbers track what is loaded rather than being settings you maintain. They are
+rewritten **the moment a tray changes** — the tray sensors are watched, so loading a spool
+prices the slot from its tag immediately, and unloading one drops it to **0**. They are
+also refreshed when a print starts, and on demand via `bambu_costs.sync_slot_prices`.
+
+A slot holding a spool the library does not know also goes to 0. Zero means "no price of
+its own", so costing falls back to the default rather than charging nothing.
+
+Two cases are deliberately skipped instead of zeroed, because neither means empty: a slot
+with no tray sensor configured, and a tray whose own state is `unavailable` — usually the
+printer being switched off, which must not look like every spool was unloaded.
+
+None of this affects what a print costs. The tag price is resolved live at calculation
+time, so the figures are right even if these entities are stale.
 
 Filament the printer counted that no configured slot claimed — an external spool, or a
 slot whose attribute name drifted — becomes an `External` row priced at the default,

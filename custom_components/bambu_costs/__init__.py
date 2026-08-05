@@ -143,6 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_track_print_start(hass, entry, coordinator)
+    _async_track_trays(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
 
@@ -177,6 +178,32 @@ def _async_track_print_start(
     entry.async_on_unload(
         async_track_state_change_event(hass, [status_entity], _status_changed)
     )
+
+
+@callback
+def _async_track_trays(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: BambuCostsCoordinator
+) -> None:
+    """Follow the trays, so a slot's price reflects what is loaded right now.
+
+    Loading a spool sets the slot's price from its tag; unloading one drops it
+    to 0. Watching the tray entities is what makes that immediate instead of
+    waiting for the next print to start.
+    """
+    trays = [slot.entity for slot in coordinator.slots if slot.entity]
+    if not trays:
+        return
+
+    @callback
+    def _tray_changed(event: Event[EventStateChangedData]) -> None:
+        # State-change events also fire on attribute changes, which is exactly
+        # what a tag being read or cleared looks like. sync_slot_prices only
+        # writes where the value actually moved, so this stays quiet.
+        updated = coordinator.sync_slot_prices()
+        if updated:
+            _LOGGER.debug("Tray change; slot prices updated: %s", updated)
+
+    entry.async_on_unload(async_track_state_change_event(hass, trays, _tray_changed))
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -191,19 +191,30 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self.value(CONF_DEFAULT_FILAMENT_PRICE), "default"
 
     def sync_slot_prices(self) -> dict[str, float]:
-        """Copy the loaded spool's tag price into each slot's price number.
+        """Mirror what is actually loaded into each slot's price number.
 
-        The breakdown already resolves the tag price on the fly, so this is not
-        needed for costing to be right — it keeps the visible price entities in
-        step with what is actually loaded. A slot whose tray reports no tag, or
-        a tag the library does not know, is left alone rather than reset.
+        The number tracks the slot rather than being a setting: a slot holding
+        a spool the tag library knows carries that price, and a slot that is
+        empty — or holds a spool the library does not know — is set to 0. Zero
+        is read by :meth:`slot_price` as "no price of its own", so costing falls
+        back to the default.
+
+        Two cases are deliberately skipped rather than zeroed, because neither
+        means "empty": a slot with no tray sensor configured, and a tray whose
+        own state is unavailable — typically the printer being switched off,
+        which must not look like every spool was unloaded.
         """
         updated: dict[str, float] = {}
         for slot in self.slots:
-            tag = self.tag_for_serial(self.tray_info(slot).get("tag_uid"))
-            if not tag or not tag.get("cost_per_kg"):
+            if not slot.entity:
                 continue
-            price = float(tag["cost_per_kg"])
+
+            tray = self.tray_info(slot)
+            if not tray.get("available"):
+                continue
+
+            tag = self.tag_for_serial(tray.get("tag_uid"))
+            price = float(tag["cost_per_kg"]) if tag and tag.get("cost_per_kg") else 0.0
             if self.value(slot.price_key) != price:
                 self.set_value(slot.price_key, price)
                 updated[slot.label] = price
@@ -215,9 +226,10 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return {}
         state = self.hass.states.get(slot.entity)
         if state is None:
-            return {}
+            return {"available": False}
         attrs = state.attributes
         return {
+            "available": state.state.lower() not in _BAD_STATES,
             "color": normalise_colour(attrs.get("color")) if attrs.get("color") else None,
             "material": attrs.get("type")
             or (state.state if state.state.lower() not in _BAD_STATES else None),
