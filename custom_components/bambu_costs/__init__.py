@@ -184,15 +184,16 @@ def _async_track_print_status(
         resumed = started and (before is None or before in RESUME_STATES)
 
         if started:
-            idle_cost = coordinator.mark_print_start()
-            if not resumed:
+            idle_cost = coordinator.mark_print_start(new_job=not resumed)
+            if resumed:
+                _LOGGER.info("Print resumed; meters left as they were")
+            else:
                 coordinator.forget_last_breakdown()
-            _LOGGER.info(
-                "Print %s; idle since the last one cost %.4f %s",
-                "resumed" if resumed else "started",
-                idle_cost,
-                coordinator.currency,
-            )
+                _LOGGER.info(
+                    "Print started; idle since the last one cost %.4f %s",
+                    idle_cost,
+                    coordinator.currency,
+                )
         else:
             spent = coordinator.mark_print_end()
             _LOGGER.info("Print ended; electricity cost %.4f %s", spent, coordinator.currency)

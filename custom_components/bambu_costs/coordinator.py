@@ -327,12 +327,26 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return max(0.0, self.cost_total - self.value(key))
 
     @callback
-    def mark_print_start(self, now: datetime | None = None) -> float:
-        """Close off the idle period and open the print one. Returns idle cost."""
+    def mark_print_start(self, now: datetime | None = None, new_job: bool = True) -> float:
+        """Close off the idle period and open the print one. Returns idle cost.
+
+        A resume is not a new job: re-marking on the way back from a pause, or
+        from a failure the printer recovered out of, would restart both meters
+        part-way through and undercount everything already spent. So the
+        markers are only moved for genuinely new work — a resume just brings
+        the running total up to date.
+        """
         self.accrue_cost(now)
+        if not new_job:
+            return 0.0
+
         idle = self.spend_since("cost_at_print_end")
         self.set_value("last_idle_cost", idle)
         self.set_value("cost_at_print_start", self.cost_total)
+        # Snapshot the energy meters here rather than from an automation: the
+        # print-start transition is already being watched, and the sensors are
+        # already configured.
+        self.set_value("energy_at_print_start", self.energy_now())
         return idle
 
     @callback

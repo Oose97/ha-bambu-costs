@@ -255,23 +255,13 @@ actions:
       print_time_min: "{{ states('sensor.printer_print_time') | float(0) }}"
 ```
 
-Take the energy snapshot when a print starts, so the job's electricity is measured
-against it:
+No automation is needed to snapshot the meters. The integration is already watching the
+print-status transition, so it records both the energy total and the running cost total
+when a print starts, and measures the job against them.
 
-```yaml
-triggers:
-  - trigger: state
-    entity_id: sensor.printer_print_status
-    to: running
-actions:
-  - action: number.set_value
-    target:
-      entity_id: number.bambu_costs_energy_at_print_start
-    data:
-      value: >-
-        {{ (states('sensor.printer_socket_energy') | float(0))
-         + (states('sensor.ams_socket_energy')     | float(0)) }}
-```
+A resume is not a new job: coming back from a pause, or from a failure the printer
+recovered out of, leaves both markers where they were. Re-marking would restart the meters
+part-way through and undercount everything already spent.
 
 ## Card examples
 
