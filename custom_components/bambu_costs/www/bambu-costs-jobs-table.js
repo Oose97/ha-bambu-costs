@@ -184,7 +184,7 @@ class BambuCostsJobsTable extends HTMLElement {
             <input class="f" type="text" placeholder="Filter jobs…">
           </div>
           <div class="bcjt-scroll">
-            <table class="bjt">
+            <table class="bcjt">
               <thead><tr>${BCJT_COLS.map(c => {
                 const sk = c.sortKey || c.k;
                 const on = c.sortable === false ? "" : "s";
