@@ -282,9 +282,11 @@ class BambuCostsJobsTable extends HTMLElement {
   }
 }
 
-customElements.define("bambu-costs-jobs-table", BambuCostsJobsTable);
+// Defensive: a card loaded twice (stale resource plus new one) would
+// otherwise throw on the second define and register nothing at all.
+if (!customElements.get("bambu-costs-jobs-table")) customElements.define("bambu-costs-jobs-table", BambuCostsJobsTable);
 window.customCards = window.customCards || [];
-window.customCards.push({
+if (!window.customCards.some(c => c.type === "bambu-costs-jobs-table")) window.customCards.push({
   type: "bambu-costs-jobs-table",
   name: "Bambu Costs: Jobs Table",
   description: "Sortable, paginated print job history",

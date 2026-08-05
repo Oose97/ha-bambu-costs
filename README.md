@@ -50,9 +50,11 @@ Pass `entry_id` only if you have set up more than one printer.
 
 ### Cards
 
-Registered automatically — no Lovelace resource to add, and no `?v=` to bump. The
-integration's version is appended to every URL, so upgrading busts the browser cache
-on its own.
+Registered automatically as Lovelace module resources, with the integration's version
+appended so an upgrade busts the browser cache on its own. They show up under
+Settings → Dashboards → Resources, and are removed when the last config entry is
+deleted. In YAML-mode Lovelace the files are still served — the URLs are logged at
+startup for you to add by hand.
 
 - `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library
 - `custom:bambu-costs-jobs-table` — sortable, paginated print history

@@ -20,7 +20,9 @@ from homeassistant.core import (
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import EventStateChangedData, async_track_state_change_event
-from homeassistant.loader import async_get_integration
+
+from .cards import async_register as async_register_cards
+from .cards import async_unregister as async_unregister_cards
 
 from .const import (
     ATTR_ENTRY_ID,
@@ -37,20 +39,11 @@ from .const import (
     SERVICE_SET_TAG_PRICE,
     SERVICE_SYNC_SLOT_PRICES,
     SERVICE_WRITE_TAGS,
-    URL_CARDS,
-    URL_COVERS,
 )
 from .coordinator import BambuCostsCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-CARD_FILES = (
-    "bambu-costs-tags-editor.js",
-    "bambu-costs-jobs-table.js",
-    "bambu-costs-calculator.js",
-)
-
-_FRONTEND_DONE = f"{DOMAIN}_frontend_registered"
 _SERVICES_DONE = f"{DOMAIN}_services_registered"
 
 _TAG_SCHEMA = vol.Schema(
@@ -145,7 +138,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
-    await _async_register_frontend(hass)
+    await async_register_cards(hass)
     _async_register_services(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -198,38 +191,10 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-# ── frontend ─────────────────────────────────────────────────────────────────
-async def _async_register_frontend(hass: HomeAssistant) -> None:
-    """Serve and register the bundled cards.
-
-    The version from the manifest is appended to every URL, so upgrading the
-    integration busts the browser and service-worker caches on its own — no
-    hand-bumped ``?v=N`` on a Lovelace resource.
-    """
-    if hass.data.get(_FRONTEND_DONE):
-        return
-    hass.data[_FRONTEND_DONE] = True
-
-    from homeassistant.components.frontend import add_extra_js_url
-    from homeassistant.components.http import StaticPathConfig
-
-    integration = await async_get_integration(hass, DOMAIN)
-    version = str(integration.version or "0")
-    cards_dir = os.path.join(os.path.dirname(__file__), "www")
-    covers_root = hass.config.path("bambu_costs")
-
-    await hass.async_add_executor_job(lambda: os.makedirs(covers_root, exist_ok=True))
-    await hass.http.async_register_static_paths(
-        [
-            StaticPathConfig(URL_CARDS, cards_dir, False),
-            StaticPathConfig(URL_COVERS, covers_root, False),
-        ]
-    )
-
-    for filename in CARD_FILES:
-        add_extra_js_url(hass, f"{URL_CARDS}/{filename}?v={version}")
-
-    _LOGGER.debug("Registered %s cards at %s (v%s)", len(CARD_FILES), URL_CARDS, version)
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clean the Lovelace resources up when the last entry is deleted."""
+    if not hass.data.get(DOMAIN):
+        await async_unregister_cards(hass)
 
 
 # ── services ─────────────────────────────────────────────────────────────────

@@ -684,9 +684,11 @@ class BambuCostsTagsEditor extends HTMLElement {
   }
 }
 
-customElements.define("bambu-costs-tags-editor", BambuCostsTagsEditor);
+// Defensive: a card loaded twice (stale resource plus new one) would
+// otherwise throw on the second define and register nothing at all.
+if (!customElements.get("bambu-costs-tags-editor")) customElements.define("bambu-costs-tags-editor", BambuCostsTagsEditor);
 window.customCards = window.customCards || [];
-window.customCards.push({
+if (!window.customCards.some(c => c.type === "bambu-costs-tags-editor")) window.customCards.push({
   type: "bambu-costs-tags-editor",
   name: "Bambu Costs: Tags Editor",
   description: "Editable, reorderable filament tag library",

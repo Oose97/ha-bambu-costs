@@ -1,14 +1,22 @@
 {
   "domain": "bambu_costs",
   "name": "Bambu Print Costs",
-  "codeowners": ["@Oose97"],
+  "codeowners": [
+    "@Oose97"
+  ],
   "config_flow": true,
-  "dependencies": ["http", "frontend"],
-  "after_dependencies": ["bambu_lab"],
+  "dependencies": [
+    "http",
+    "frontend",
+    "lovelace"
+  ],
+  "after_dependencies": [
+    "bambu_lab"
+  ],
   "documentation": "https://github.com/Oose97/ha-bambu-costs",
   "integration_type": "service",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Oose97/ha-bambu-costs/issues",
   "requirements": [],
-  "version": "0.1.4"
+  "version": "0.2.0"
 }

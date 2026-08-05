@@ -535,9 +535,11 @@ class BambuCostsCalculator extends HTMLElement {
   }
 }
 
-customElements.define("bambu-costs-calculator", BambuCostsCalculator);
+// Defensive: a card loaded twice (stale resource plus new one) would
+// otherwise throw on the second define and register nothing at all.
+if (!customElements.get("bambu-costs-calculator")) customElements.define("bambu-costs-calculator", BambuCostsCalculator);
 window.customCards = window.customCards || [];
-window.customCards.push({
+if (!window.customCards.some(c => c.type === "bambu-costs-calculator")) window.customCards.push({
   type: "bambu-costs-calculator",
   name: "Bambu Costs: Cost Calculator",
   description: "Manual print-cost estimate from the filament tag list, runtime, margin and VAT",
