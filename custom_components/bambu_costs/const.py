@@ -11,7 +11,7 @@ from typing import Final
 
 DOMAIN: Final = "bambu_costs"
 
-PLATFORMS: Final = ["number", "sensor"]
+PLATFORMS: Final = ["button", "number", "sensor"]
 
 # URLs the integration serves.
 URL_CARDS: Final = "/bambu-costs-cards"

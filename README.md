@@ -35,6 +35,14 @@ from an automation with `number.set_value`. Values survive restarts.
 - `number.<name>_energy_at_print_start` — snapshot taken when a print begins
 - `number.<name>_filter_change_due`
 
+### Buttons
+
+- `button.<name>_charge_filament_to_totals` — adds the current job's filament cost and
+  weight to the lifetime totals. For a print that failed part-way. Deliberately manual:
+  the printer reports the job's *planned* weight, so charging a failure automatically
+  would bill a first-layer failure in full. The last press is recorded in the button's
+  attributes so a mis-press is visible.
+
 ### Services
 
 | Service | Does |
