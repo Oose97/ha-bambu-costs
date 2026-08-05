@@ -118,12 +118,20 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        self._recompute()
+        # Not _recompute(): that notifies the coordinator, and being called
+        # from a coordinator notification would loop.
+        self._data = self.coordinator.breakdown()
+        self.async_write_ha_state()
 
     @callback
     def _recompute(self) -> None:
         self._data = self.coordinator.breakdown()
         self.async_write_ha_state()
+        # Everything else derived from the breakdown has to hear about this.
+        # The coordinator only notifies on its own refresh and on a value
+        # change, so a restored snapshot or a print-weight update would
+        # otherwise leave the session cost showing whatever it had at startup.
+        self.coordinator.async_update_listeners()
 
     @property
     def native_value(self) -> float:
