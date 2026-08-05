@@ -61,6 +61,12 @@ from an automation with `number.set_value`. Values survive restarts.
 
 Pass `entry_id` only if you have set up more than one printer.
 
+### Icon
+
+Shipped with the integration in `custom_components/bambu_costs/brand/`, so it shows in
+Settings → Devices & Services with no brands-repository submission. Requires Home
+Assistant 2026.3 or newer; on older versions the default placeholder is used instead.
+
 ### Cards
 
 Registered automatically as Lovelace module resources, with the integration's version
