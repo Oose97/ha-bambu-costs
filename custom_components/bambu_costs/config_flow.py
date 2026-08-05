@@ -19,6 +19,8 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
+    DeviceSelector,
+    DeviceSelectorConfig,
     EntitySelector,
     EntitySelectorConfig,
     NumberSelector,
@@ -28,6 +30,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
 )
 
+from .discovery import discover
 from .const import (
     CONF_COVER_IMAGE,
     CONF_CURRENCY,
@@ -61,6 +64,10 @@ _POWER = EntitySelector(
     EntitySelectorConfig(domain="sensor", device_class="power", multiple=True)
 )
 _SLOTS = TextSelector(TextSelectorConfig(multiple=True))
+# Any integration that models a printer as a device works; bambu_lab is only a
+# hint, so a fork or a differently-named integration is still selectable.
+_DEVICE = DeviceSelector(DeviceSelectorConfig())
+CONF_DEVICE = "device"
 
 # Every key the flow can set. Options are written in full on each save so that
 # clearing an optional entity actually clears it, instead of the original setup
@@ -160,17 +167,48 @@ class BambuCostsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
+        self._found: dict[str, Any] | None = None
 
     async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Optionally pick the printer device and fill the rest in from it."""
+        if user_input is not None:
+            device_id = user_input.get(CONF_DEVICE)
+            if device_id:
+                result = discover(self.hass, device_id)
+                self._found = result
+                self._data.update(result["config"])
+            return await self.async_step_sensors()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema({vol.Optional(CONF_DEVICE): _DEVICE}),
+        )
+
+    async def async_step_sensors(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_costs()
 
+        defaults = {"name": DEFAULT_NAME, **self._data}
         return self.async_show_form(
-            step_id="user", data_schema=_printer_schema({"name": DEFAULT_NAME})
+            step_id="sensors",
+            data_schema=_printer_schema(defaults),
+            description_placeholders={"found": self._summary()},
         )
+
+    def _summary(self) -> str:
+        if not self._found:
+            return "No device chosen — fill these in yourself."
+        n = len(self._found["config"])
+        left = self._found.get("unpaired_trays") or []
+        text = f"Found {n} of these from the device. Check them before continuing."
+        if left:
+            text += " Trays that could not be matched to a slot: " + ", ".join(left)
+        return text
 
     async def async_step_costs(
         self, user_input: dict[str, Any] | None = None
@@ -193,6 +231,7 @@ class BambuCostsOptionsFlow(OptionsFlow):
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
+        self._found: dict[str, Any] | None = None
 
     @property
     def _current(self) -> dict[str, Any]:
@@ -201,16 +240,34 @@ class BambuCostsOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Re-run discovery against a device, or go straight to the sensors."""
+        if user_input is not None:
+            device_id = user_input.get(CONF_DEVICE)
+            if device_id:
+                self._found = discover(self.hass, device_id)
+                self._data.update(self._found["config"])
+            return await self.async_step_sensors()
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({vol.Optional(CONF_DEVICE): _DEVICE}),
+        )
+
+    async def async_step_sensors(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_costs()
 
-        full = _printer_schema(self._current).schema
+        # Anything discovery filled in wins over the stored value; the rest
+        # keeps what is already configured.
+        full = _printer_schema({**self._current, **self._data}).schema
         # The entry title is changed by renaming the entry, not from this form.
         schema = vol.Schema(
             {k: v for k, v in full.items() if getattr(k, "schema", k) != "name"}
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="sensors", data_schema=schema)
 
     async def async_step_costs(
         self, user_input: dict[str, Any] | None = None
@@ -221,4 +278,6 @@ class BambuCostsOptionsFlow(OptionsFlow):
                 title="", data={key: self._data.get(key) for key in ALL_KEYS}
             )
 
-        return self.async_show_form(step_id="costs", data_schema=_costs_schema(self._current))
+        return self.async_show_form(
+            step_id="costs", data_schema=_costs_schema({**self._current, **self._data})
+        )

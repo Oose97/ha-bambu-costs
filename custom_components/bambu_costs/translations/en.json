@@ -2,8 +2,15 @@
   "config": {
     "step": {
       "user": {
-        "title": "Bambu Print Costs",
-        "description": "Pick the printer sensors this integration should read. Only the first two are required.",
+        "title": "Choose the printer",
+        "description": "Pick the printer device and the sensors below are filled in for you, along with any AMS slots the printer is currently reporting. Leave it empty to configure everything by hand. Nothing is committed here — the next screen shows what was found so you can correct it.",
+        "data": {
+          "device": "Printer device"
+        }
+      },
+      "sensors": {
+        "title": "Printer sensors",
+        "description": "{found}",
         "data": {
           "name": "Name",
           "print_weight": "Print weight sensor",
@@ -45,7 +52,13 @@
   "options": {
     "step": {
       "init": {
-        "title": "Printer sensors",
+        "title": "Re-scan from the device",
+        "description": "Pick the printer device to fill the sensors and slots in again, or leave it empty to keep what is configured and just edit it.",
+        "data": {
+          "device": "Printer device"
+        }
+      },
+      "sensors": {
         "description": "Change which sensors this integration reads.",
         "data": {
           "print_weight": "Print weight sensor",
@@ -56,7 +69,8 @@
           "nozzle_size": "Nozzle size sensor",
           "nozzle_type": "Nozzle type sensor",
           "cover_image": "Job cover image"
-        }
+        },
+        "title": "Printer sensors"
       },
       "costs": {
         "title": "Filament slots and rates",

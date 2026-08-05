@@ -119,10 +119,24 @@ Then *Settings → Devices & Services → Add Integration → Bambu Print Costs*
 
 ## Setup
 
-**Step 1 — sensors.** Only the print weight and print status sensors are required. The
-rest (job name, layers, length, nozzle size and type, cover image) enrich the job log.
+**Step 1 — pick the printer device.** Everything else is filled in from it: the sensors,
+and any AMS slots the printer is currently reporting, each paired with its tray. Leave it
+empty to configure by hand.
 
-**Step 2 — slots and rates.** Add one entry per filament source, using the attribute name
+Entities are matched on their `translation_key`, not on entity-id suffixes, so a renamed
+entity is still found — `subtask_name` is displayed as "Task name", which is where
+`sensor.…_task_name` comes from, and matching on the key survives that. Slot attribute
+names are read off the print weight sensor rather than invented, and a tray is attached
+only when the pairing is unambiguous; anything doubtful is listed for you instead.
+
+The catch: the printer only reports per-slot attributes for slots the *current* job uses,
+so a discovery run while idle finds no slots and one mid-print finds only the slots in
+use. The rest are listed as unpaired trays for you to add. Re-running discovery from the
+options later picks up the rest.
+
+**Step 2 — sensors.** Whatever was found, shown so you can correct it before continuing.
+
+**Step 3 — slots and rates.** Add one entry per filament source, using the attribute name
 exactly as the print weight sensor reports it:
 
 ```
