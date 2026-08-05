@@ -35,6 +35,7 @@ CONF_NOZZLE_TYPE: Final = "nozzle_type"
 CONF_SLOTS: Final = "slots"
 CONF_ENERGY_SENSORS: Final = "energy_sensors"
 CONF_ELECTRICITY_PRICE: Final = "electricity_price"
+CONF_ELECTRICITY_PRICE_ENTITY: Final = "electricity_price_entity"
 CONF_DEFAULT_FILAMENT_PRICE: Final = "default_filament_price"
 
 DEFAULT_NAME: Final = "Bambu Costs"

@@ -29,7 +29,7 @@ from an automation with `number.set_value`. Values survive restarts.
 
 - `number.<name>_default_filament_price` — fallback price per kg
 - `number.<name>_<slot>_filament_price` — one per configured slot
-- `number.<name>_electricity_price` — per kWh
+- `number.<name>_electricity_price` — per kWh, the fallback when no price sensor is set
 - `number.<name>_last_print_cost`, `_last_print_filament_cost`, `_last_print_power_cost`
 - `number.<name>_total_filament_used`, `_total_cost` — lifetime running totals
 - `number.<name>_energy_at_print_start` — snapshot taken when a print begins
@@ -113,6 +113,23 @@ AMS HT 1|HT|sensor.printer_ams_ht_tray_1
   job log, and its `tag_uid` prices the slot straight from your tag library.
 
 Leave the list empty if you do not use an AMS; everything is then priced at the default.
+
+## Electricity price
+
+Set **Electricity price sensor** to a sensor reporting the price per kWh and a variable
+tariff is followed automatically — `sensor.electricity_price` at `0.22986 EUR/kWh` is the
+shape this expects. The fixed **Electricity price** number stays as the fallback, used
+whenever no sensor is configured or the sensor reads `unknown`/`unavailable`/non-numeric.
+
+Negative prices are passed through rather than filtered, since spot tariffs can go
+negative. The sensor's value is taken as-is, so it must already be per kWh in your
+currency — point it at a template sensor if yours reports ct/kWh or EUR/MWh.
+
+> **Caveat with spot pricing:** the price is read once, when the job is logged, and applied
+> to the whole print. For a long print on a tariff that moves hourly that is an
+> approximation — the true cost is the price integrated over the print. If you need it
+> exact, pass `power_cost` explicitly to `bambu_costs.log_job` from something that tracks
+> cost over time, such as a `utility_meter` with tariffs.
 
 ## How a slot gets its price
 

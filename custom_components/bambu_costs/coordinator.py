@@ -22,6 +22,7 @@ from .const import (
     CONF_COVER_IMAGE,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_ELECTRICITY_PRICE,
+    CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_ENERGY_SENSORS,
     CONF_LAYERS,
     CONF_LENGTH,
@@ -211,6 +212,29 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         state = self.hass.states.get(entity_id)
         return dict(state.attributes) if state else {}
 
+    def electricity_price(self) -> tuple[float, str]:
+        """Price per kWh, and where it came from.
+
+        A configured price sensor wins, so a variable tariff is followed
+        instead of a figure that has to be kept up to date by hand. The number
+        entity is the fallback for when no sensor is set or it is unavailable.
+        """
+        entity_id = self.entity_of(CONF_ELECTRICITY_PRICE_ENTITY)
+        if entity_id:
+            state = self.hass.states.get(entity_id)
+            if state is not None and state.state.lower() not in _BAD_STATES:
+                try:
+                    # Spot tariffs can go negative, so no sign filtering here.
+                    return float(str(state.state).strip().replace(",", ".")), "entity"
+                except ValueError:
+                    _LOGGER.warning(
+                        "Electricity price sensor %s reports %r, which is not a "
+                        "number — falling back to the price number entity",
+                        entity_id,
+                        state.state,
+                    )
+        return self.value(CONF_ELECTRICITY_PRICE), "number"
+
     def energy_now(self) -> float:
         """Summed kWh across every configured energy sensor."""
         total = 0.0
@@ -309,7 +333,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         power_cost = overrides.get("power_cost")
         if power_cost is None:
-            power_cost = energy_kwh * self.value(CONF_ELECTRICITY_PRICE)
+            price, price_source = self.electricity_price()
+            _LOGGER.debug("Costing %s kWh at %s EUR/kWh (%s)", energy_kwh, price, price_source)
+            power_cost = energy_kwh * price
 
         minutes = as_float(overrides.get("print_time_min"))
         job_name = overrides.get("job") or self._state(CONF_TASK_NAME) or "unknown"

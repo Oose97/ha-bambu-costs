@@ -32,6 +32,7 @@ from .const import (
     CONF_COVER_IMAGE,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_ELECTRICITY_PRICE,
+    CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_ENERGY_SENSORS,
     CONF_LAYERS,
     CONF_LENGTH,
@@ -69,6 +70,7 @@ ALL_KEYS = (
     CONF_COVER_IMAGE,
     CONF_SLOTS,
     CONF_ENERGY_SENSORS,
+    CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_ELECTRICITY_PRICE,
     CONF_DEFAULT_FILAMENT_PRICE,
 )
@@ -121,6 +123,10 @@ def _costs_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Optional(
                 CONF_ENERGY_SENSORS, description=dflt(CONF_ENERGY_SENSORS, [])
             ): _ENERGY,
+            vol.Optional(
+                CONF_ELECTRICITY_PRICE_ENTITY,
+                description=dflt(CONF_ELECTRICITY_PRICE_ENTITY, None),
+            ): _SENSOR_OPT,
             vol.Required(
                 CONF_ELECTRICITY_PRICE,
                 description=dflt(CONF_ELECTRICITY_PRICE, DEFAULT_ELECTRICITY_PRICE),
