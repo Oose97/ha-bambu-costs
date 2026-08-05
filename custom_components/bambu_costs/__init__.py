@@ -173,6 +173,10 @@ def _async_track_print_start(
         if old_state is not None and old_state.state.lower() in RUNNING_STATES:
             return
 
+        # A new job invalidates the remembered per-slot split — it must never
+        # be carried over onto different filament.
+        coordinator.forget_last_breakdown()
+
         updated = coordinator.sync_slot_prices()
         if updated:
             _LOGGER.info("Print started; synced slot prices from tags: %s", updated)

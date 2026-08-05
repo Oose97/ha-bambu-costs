@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -9,10 +10,21 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_PRINT_WEIGHT, DOMAIN, URL_COVERS
 from .coordinator import BambuCostsCoordinator
+
+
+@dataclass
+class BreakdownSnapshot(ExtraStoredData):
+    """The last per-slot split, stored so it survives a restart."""
+
+    snapshot: dict[str, Any] | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"snapshot": self.snapshot}
 
 
 async def async_setup_entry(
@@ -45,7 +57,7 @@ class BambuCostsSensor(CoordinatorEntity[BambuCostsCoordinator], SensorEntity):
         self._attr_device_info = coordinator.device_info
 
 
-class FilamentBreakdownSensor(BambuCostsSensor):
+class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
     """Per-slot filament usage and cost for the job on the printer right now.
 
     State is the total filament cost. The per-slot rows live in the ``slots``
@@ -60,8 +72,21 @@ class FilamentBreakdownSensor(BambuCostsSensor):
         super().__init__(coordinator, "filament_breakdown", "Filament breakdown")
         self._data: dict[str, Any] = coordinator.breakdown()
 
+    @property
+    def extra_restore_state_data(self) -> BreakdownSnapshot:
+        """Persist the last real per-slot split across restarts."""
+        return BreakdownSnapshot(self.coordinator.last_good)
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+
+        # Seed the snapshot before anything recomputes, so a restart taken
+        # mid-print does not briefly publish a repriced External row.
+        stored = await self.async_get_last_extra_data()
+        if stored is not None:
+            snapshot = stored.as_dict().get("snapshot")
+            if isinstance(snapshot, dict) and snapshot.get("slots"):
+                self.coordinator.last_good = snapshot
 
         # The breakdown is derived from another entity's attributes, so it has
         # to follow that entity as well as the coordinator's price changes.
@@ -96,6 +121,9 @@ class FilamentBreakdownSensor(BambuCostsSensor):
             "weight": self._data["weight"],
             "weight_total": self._data["weight_total"],
             "source": self._data["source"],
+            # True when the printer stopped reporting per-slot weights and the
+            # remembered split is standing in for them.
+            "restored": self._data.get("restored", False),
         }
 
 

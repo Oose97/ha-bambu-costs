@@ -154,6 +154,24 @@ Filament the printer counted that no configured slot claimed — an external spo
 slot whose attribute name drifted — becomes an `External` row priced at the default,
 rather than being dropped. Mixed AMS + external jobs therefore total correctly.
 
+## Surviving a restart mid-print
+
+A print weight sensor typically keeps its total across a Home Assistant restart but
+loses the per-slot attributes until the next print begins. Left alone, the whole job
+would fall through to the External branch and be repriced at the default — a
+plausible-looking but wrong number, quietly written into the job log.
+
+So the last breakdown computed from real per-slot data is persisted with the sensor. If
+the attributes disappear while the job name and total weight still match that snapshot,
+the remembered split is used and the breakdown carries `restored: true`.
+
+It is deliberately conservative. A different job name or a changed total rejects the
+snapshot, live attributes always win over it, an External-only result is never
+remembered as good, and the snapshot is dropped the moment a new print starts so it can
+never be applied to different filament. Prices are kept as they were rather than
+re-resolved — the tray sensors lose their `tag_uid` in the same restart, so recomputing
+would reintroduce the fallback this exists to avoid.
+
 ## Logging a finished job
 
 ```yaml

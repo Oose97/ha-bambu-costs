@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import slugify
@@ -107,6 +107,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.store = BambuCostsStore(hass.config.path(DATA_DIR, entry.entry_id))
         self.slots = parse_slots(self.options.get(CONF_SLOTS))
         self.values: dict[str, float] = {}
+        # Last breakdown that was computed from real per-slot data. Persisted by
+        # the breakdown sensor, so a restart mid-print does not lose the split.
+        self.last_good: dict[str, Any] | None = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -263,6 +266,53 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 total += as_float(state.state)
         return total
 
+    # ── surviving a restart ──────────────────────────────────────────────────
+    def _remember_breakdown(self, result: dict[str, Any]) -> None:
+        """Keep the last breakdown that came from real per-slot data."""
+        self.last_good = {
+            "job": self._state(CONF_TASK_NAME) or "",
+            "slots": [dict(row) for row in result["slots"]],
+            "cost": result["cost"],
+            "weight": result["weight"],
+            "weight_total": result["weight_total"],
+            "source": result["source"],
+        }
+
+    def _restored_breakdown(self, total_weight: float) -> dict[str, Any] | None:
+        """Reuse the remembered split when the printer has stopped reporting it.
+
+        After a Home Assistant restart the print weight sensor keeps its total
+        but loses the per-slot attributes until the next print begins. Without
+        this the whole job would fall through to the External branch and be
+        repriced at the default — a plausible-looking but wrong number.
+
+        Only reused when it is provably the same job: same name, same total.
+        """
+        snapshot = self.last_good
+        if not snapshot:
+            return None
+        if snapshot.get("job", "") != (self._state(CONF_TASK_NAME) or ""):
+            return None
+        if abs(as_float(snapshot.get("weight_total")) - total_weight) > EXTERNAL_TOLERANCE_G:
+            return None
+
+        return {
+            "slots": [dict(row) for row in snapshot["slots"]],
+            "cost": snapshot["cost"],
+            "weight": snapshot["weight"],
+            "weight_total": snapshot["weight_total"],
+            "source": snapshot["source"],
+            # Prices are kept as they were rather than re-resolved: the tray
+            # sensors lose their tag_uid in the same restart, so recomputing
+            # would reintroduce the very fallback this exists to avoid.
+            "restored": True,
+        }
+
+    @callback
+    def forget_last_breakdown(self) -> None:
+        """Drop the snapshot so a new job never inherits the previous split."""
+        self.last_good = None
+
     # ── filament breakdown ───────────────────────────────────────────────────
     def breakdown(self) -> dict[str, Any]:
         """Per-slot filament usage and cost for the current job.
@@ -295,6 +345,14 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "cost": weight / 1000.0 * price,
                 }
             )
+
+        # No slot reported, but the printer still claims filament was used —
+        # either a genuine external spool, or the per-slot attributes went away
+        # under us. If we hold a snapshot of this same job, trust that instead.
+        if not rows and total_weight > EXTERNAL_TOLERANCE_G:
+            restored = self._restored_breakdown(total_weight)
+            if restored is not None:
+                return restored
 
         slot_weight = sum(row["weight"] for row in rows)
         default_price = self.value(CONF_DEFAULT_FILAMENT_PRICE)
@@ -329,13 +387,18 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             source = "slots"
 
-        return {
+        result = {
             "slots": rows,
             "cost": sum(row["cost"] for row in rows),
             "weight": sum(row["weight"] for row in rows),
             "weight_total": total_weight,
             "source": source,
+            "restored": False,
         }
+
+        if any(row["id"] != "external" for row in rows):
+            self._remember_breakdown(result)
+        return result
 
     # ── job logging ──────────────────────────────────────────────────────────
     def build_job_row(self, overrides: dict[str, Any]) -> dict[str, Any]:
