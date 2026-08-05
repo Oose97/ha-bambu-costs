@@ -32,6 +32,7 @@ from .const import (
     CONF_PRINT_STATUS,
     DOMAIN,
     PLATFORMS,
+    FINISHED_STATES,
     RUNNING_STATES,
     SERVICE_IMPORT_LEGACY,
     SERVICE_LOG_JOB,
@@ -142,17 +143,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _async_register_services(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    _async_track_print_start(hass, entry, coordinator)
+    _async_track_print_status(hass, entry, coordinator)
     _async_track_trays(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
 
 
 @callback
-def _async_track_print_start(
+def _async_track_print_status(
     hass: HomeAssistant, entry: ConfigEntry, coordinator: BambuCostsCoordinator
 ) -> None:
-    """Sync slot prices from the tag library whenever a print starts."""
+    """Re-mirror slot prices when a print starts and when it ends."""
     status_entity = coordinator.entity_of(CONF_PRINT_STATUS)
     if not status_entity:
         return
@@ -161,19 +162,32 @@ def _async_track_print_start(
     def _status_changed(event: Event[EventStateChangedData]) -> None:
         new_state = event.data.get("new_state")
         old_state = event.data.get("old_state")
-        if new_state is None or new_state.state.lower() not in RUNNING_STATES:
-            return
-        # Only on the transition in, not on every update while running.
-        if old_state is not None and old_state.state.lower() in RUNNING_STATES:
+        if new_state is None:
             return
 
-        # A new job invalidates the remembered per-slot split — it must never
-        # be carried over onto different filament.
-        coordinator.forget_last_breakdown()
+        now = new_state.state.lower()
+        before = old_state.state.lower() if old_state is not None else None
+
+        started = now in RUNNING_STATES and before not in RUNNING_STATES
+        finished = now in FINISHED_STATES and before not in FINISHED_STATES
+        if not (started or finished):
+            return
+
+        if started:
+            # A new job invalidates the remembered per-slot split — it must
+            # never be carried over onto different filament. Deliberately not
+            # done on finish: the job is logged on that transition, and the
+            # snapshot is what keeps the split intact if the attributes have
+            # already gone.
+            coordinator.forget_last_breakdown()
 
         updated = coordinator.sync_slot_prices()
         if updated:
-            _LOGGER.info("Print started; synced slot prices from tags: %s", updated)
+            _LOGGER.info(
+                "Print %s; synced slot prices from tags: %s",
+                "started" if started else "finished",
+                updated,
+            )
 
     entry.async_on_unload(
         async_track_state_change_event(hass, [status_entity], _status_changed)

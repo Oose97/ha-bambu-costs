@@ -65,6 +65,10 @@ SERVICE_SYNC_SLOT_PRICES: Final = "sync_slot_prices"
 # from the tag library on the transition into one of these.
 RUNNING_STATES: Final = frozenset({"running", "printing"})
 
+# Terminal states. Prices are re-mirrored here too, so what the dashboard shows
+# after a job matches what was actually loaded for it.
+FINISHED_STATES: Final = frozenset({"finish", "finished", "failed"})
+
 ATTR_ENTRY_ID: Final = "entry_id"
 ATTR_TAGS: Final = "tags"
 ATTR_SERIAL: Final = "serial"

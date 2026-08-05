@@ -160,7 +160,8 @@ Each row in the breakdown carries `price_source` so you can see which applied.
 The price numbers track what is loaded rather than being settings you maintain. They are
 rewritten **the moment a tray changes** — the tray sensors are watched, so loading a spool
 prices the slot from its tag immediately, and unloading one drops it to **0**. They are
-also refreshed when a print starts, and on demand via `bambu_costs.sync_slot_prices`.
+also refreshed when a print **starts** and when it **finishes**, and on demand via
+`bambu_costs.sync_slot_prices`.
 
 A slot holding a spool the library does not know also goes to 0. Zero means "no price of
 its own", so costing falls back to the default rather than charging nothing.
