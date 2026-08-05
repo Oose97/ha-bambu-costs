@@ -107,6 +107,11 @@ HACS installs the latest release. `zip_release` is deliberately left off — tur
 without a published zip is what makes downloads hang — so HACS takes the files from the
 release tag.
 
+**Manually**: copy `custom_components/bambu_costs` into your `config/custom_components/`
+and restart.
+
+Then *Settings → Devices & Services → Add Integration → Bambu Print Costs*.
+
 ## Releasing
 
 `main` is protected: changes land through a pull request that passes Validate.
@@ -119,11 +124,6 @@ documentation-only changes do not churn out releases.
 
 The manifest is the single source of truth — it is what Home Assistant and HACS actually
 read, and the tag follows it rather than the other way round.
-
-**Manually**: copy `custom_components/bambu_costs` into your `config/custom_components/`
-and restart.
-
-Then *Settings → Devices & Services → Add Integration → Bambu Print Costs*.
 
 ## Setup
 
