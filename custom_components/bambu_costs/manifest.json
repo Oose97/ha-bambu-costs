@@ -1,6 +1,9 @@
 {
   "domain": "bambu_costs",
   "name": "Bambu Print Costs",
+  "after_dependencies": [
+    "bambu_lab"
+  ],
   "codeowners": [
     "@Oose97"
   ],
@@ -9,9 +12,6 @@
     "http",
     "frontend",
     "lovelace"
-  ],
-  "after_dependencies": [
-    "bambu_lab"
   ],
   "documentation": "https://github.com/Oose97/ha-bambu-costs",
   "integration_type": "service",
