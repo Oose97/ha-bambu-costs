@@ -61,7 +61,7 @@ on its own.
 
 ## Requirements
 
-Home Assistant 2024.7 or newer, and a source of printer sensors — in practice the
+Home Assistant 2024.12 or newer, and a source of printer sensors — in practice the
 [ha-bambulab](https://github.com/greghesp/ha-bambulab) integration, which is what this was
 built against and what the setup screen expects to find.
 

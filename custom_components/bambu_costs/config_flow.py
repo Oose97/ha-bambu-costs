@@ -74,9 +74,20 @@ ALL_KEYS = (
 )
 
 
-def _price(step: float, maximum: float) -> NumberSelector:
+def _price(maximum: float) -> NumberSelector:
+    """A free-precision price box.
+
+    HA rejects any numeric ``step`` below 0.001, so a rate like 0.0008 EUR
+    cannot be expressed that way. ``"any"`` drops the constraint entirely and
+    lets the field carry as many decimals as the price needs.
+    """
     return NumberSelector(
-        NumberSelectorConfig(min=0, max=maximum, step=step, mode=NumberSelectorMode.BOX)
+        NumberSelectorConfig(
+            min=0,
+            max=maximum,
+            step="any",  # type: ignore[typeddict-item]
+            mode=NumberSelectorMode.BOX,
+        )
     )
 
 
@@ -113,11 +124,11 @@ def _costs_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_ELECTRICITY_PRICE,
                 description=dflt(CONF_ELECTRICITY_PRICE, DEFAULT_ELECTRICITY_PRICE),
-            ): _price(0.0001, 10),
+            ): _price(10),
             vol.Required(
                 CONF_DEFAULT_FILAMENT_PRICE,
                 description=dflt(CONF_DEFAULT_FILAMENT_PRICE, DEFAULT_FILAMENT_PRICE),
-            ): _price(0.01, 1000),
+            ): _price(1000),
         }
     )
 

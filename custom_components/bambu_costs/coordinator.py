@@ -99,6 +99,8 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER,
             name=f"{entry.title} data",
             update_interval=RELOAD_INTERVAL,
+            # Passing the entry explicitly; inferring it is deprecated.
+            config_entry=entry,
         )
         self.entry = entry
         self.store = BambuCostsStore(hass.config.path(DATA_DIR, entry.entry_id))

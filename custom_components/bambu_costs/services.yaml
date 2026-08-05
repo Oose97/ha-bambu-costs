@@ -82,7 +82,7 @@ log_job:
         number:
           min: 0
           max: 100000
-          step: 0.0001
+          step: any
           mode: box
     power_cost:
       required: false
@@ -90,7 +90,7 @@ log_job:
         number:
           min: 0
           max: 100000
-          step: 0.0001
+          step: any
           mode: box
     energy_kwh:
       required: false
@@ -98,7 +98,7 @@ log_job:
         number:
           min: 0
           max: 100000
-          step: 0.0001
+          step: any
           mode: box
     capture_cover:
       required: false
