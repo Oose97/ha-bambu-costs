@@ -155,9 +155,13 @@ def import_files(
             merged = incoming
         else:
             merged = store.read_tags()
-            known = {t["serial"].strip().lower() for t in merged if t["serial"]}
+            # Both of a spool's tags count as known, so a legacy row carrying
+            # the far side of an already-paired spool does not duplicate it.
+            known: set[str] = set()
+            for tag in merged:
+                known |= BambuCostsStore._serials(tag)
             merged = merged + [
-                t for t in incoming if t["serial"].strip().lower() not in known
+                t for t in incoming if not (BambuCostsStore._serials(t) & known)
             ]
         store.write_tags(merged)
         result["tags"] = len(incoming)

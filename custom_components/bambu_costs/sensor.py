@@ -280,7 +280,15 @@ class SpendTotalSensor(BambuCostsSensor):
         self._attr_native_unit_of_measurement = coordinator.currency
 
     @property
-    def native_value(self) -> float:
+    def native_value(self) -> float | None:
+        # The value lives in the total_cost number and only exists once that
+        # entity has restored. Platforms set up concurrently, so this sensor
+        # can render first — and publishing 0 then would read as a meter reset
+        # to long-term statistics, silently adding the whole balance to
+        # whatever utility_meter is watching. Unknown is skipped by statistics;
+        # 0 is believed.
+        if "total_cost" not in self.coordinator.values:
+            return None
         return round(self.coordinator.value("total_cost"), 4)
 
     @property

@@ -787,14 +787,19 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return await self.hass.async_add_executor_job(_load)
 
     async def async_write_tags(self, tags: list[dict[str, Any]]) -> int:
-        written = await self.hass.async_add_executor_job(self.store.write_tags, tags)
+        # Same lock as scanned adds: a card save landing while an AMS scan is
+        # mid-write is a read-modify-write race on one file, and whichever
+        # side loses is silently gone.
+        async with self._tag_write_lock:
+            written = await self.hass.async_add_executor_job(self.store.write_tags, tags)
         await self.async_request_refresh()
         return written
 
     async def async_set_tag_price(self, serial: str, price: float) -> int:
-        changed = await self.hass.async_add_executor_job(
-            self.store.set_tag_price, serial, price
-        )
+        async with self._tag_write_lock:
+            changed = await self.hass.async_add_executor_job(
+                self.store.set_tag_price, serial, price
+            )
         if changed:
             await self.async_request_refresh()
         return changed
