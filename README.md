@@ -213,10 +213,14 @@ Two consequences fall out of the accumulator running continuously:
   back to kWh × price when they are not.
 - **Standby is counted.** The gap between one print ending and the next starting is
   measured too, and lands in `last_idle_cost`. On a printer drawing ~14 W at rest that is
-  easily larger than the prints themselves. It is also **added to `total_cost`** —
-  `log_job` only ever banks what a print itself cost, so standby would otherwise be
-  measured and then thrown away. A print resuming after a pause or an AMS jam banks
-  nothing, so a recovered job cannot be charged twice.
+  easily larger than the prints themselves.
+- **Every stretch is banked into `total_cost` exactly once.** `cost_at_print_end` doubles
+  as a banked-through mark: idle windows are added when the next print starts (or on a
+  reconnect resync), and a print's own stint is added when it ends — **aborted or not**,
+  so a stopped print's electricity is not lost just because nothing logged it. `log_job`
+  therefore adds only the filament to the total; with no power sensors configured there
+  is no live banking, and the row's estimated power cost rides along instead. A resume
+  banks nothing, so a recovered job cannot be charged twice.
 
 ### Losing sight of the printer
 
