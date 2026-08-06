@@ -31,6 +31,9 @@ CARD_FILES = (
 
 _PATHS_DONE = f"{DOMAIN}_static_paths"
 RETRY_SECONDS = 5
+# Lovelace resources load within seconds on a healthy system; two minutes of
+# retries means something else is wrong, and looping forever would not fix it.
+MAX_RESOURCE_RETRIES = 24
 
 
 def _lovelace(hass: HomeAssistant) -> Any | None:
@@ -105,11 +108,25 @@ async def _async_register_paths(hass: HomeAssistant) -> None:
 
 async def _async_wait_for_resources(hass: HomeAssistant) -> None:
     """Lovelace resources load asynchronously; register once they are ready."""
+    attempts = 0
 
     async def _check(_now: Any = None) -> None:
+        nonlocal attempts
+        if not hass.data.get(DOMAIN):
+            # Every entry was unloaded while we waited; a retry landing now
+            # would register resources for an integration that is gone.
+            return
         resources = _resources(hass)
         if resources is not None and getattr(resources, "loaded", False):
             await _async_register_resources(hass, resources)
+            return
+        attempts += 1
+        if attempts >= MAX_RESOURCE_RETRIES:
+            _LOGGER.warning(
+                "Lovelace resources never became available — add these as "
+                "module resources yourself: %s",
+                ", ".join(f"{URL_CARDS}/{name}" for name in CARD_FILES),
+            )
             return
         _LOGGER.debug("Lovelace resources not loaded yet; retrying in %ss", RETRY_SECONDS)
         async_call_later(hass, RETRY_SECONDS, _check)

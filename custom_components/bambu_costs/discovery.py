@@ -46,6 +46,27 @@ ROLE_KEYS: dict[str, tuple[str, ...]] = {
 TRAY_KEY = "tray"
 
 
+def _root_device(registry: dr.DeviceRegistry, device_id: str) -> str:
+    """Follow ``via_device`` links up to the printer itself.
+
+    ha-bambulab hangs every accessory — AMS units, the external spool, the
+    hotend rack — off the printer via ``via_device``, and only the printer has
+    no parent. Walking up means picking an AMS in the device selector
+    discovers the printer it belongs to, instead of finding nothing.
+    """
+    seen: set[str] = set()
+    device = registry.async_get(device_id)
+    while device is not None and device.via_device_id:
+        if device.id in seen:  # a cycle would be a registry bug; don't spin on it
+            break
+        seen.add(device.id)
+        parent = registry.async_get(device.via_device_id)
+        if parent is None:
+            break
+        device = parent
+    return device.id if device else device_id
+
+
 def _family(hass: HomeAssistant, device_id: str) -> set[str]:
     """The printer plus everything routed through it — AMS units, spools."""
     registry = dr.async_get(hass)
@@ -64,6 +85,8 @@ def discover(hass: HomeAssistant, device_id: str) -> dict[str, Any]:
     """Suggested config for a printer device, plus what could not be paired."""
     entities = er.async_get(hass)
     devices = dr.async_get(hass)
+    # The user may have picked an AMS rather than the printer; same family.
+    device_id = _root_device(devices, device_id)
     family = _family(hass, device_id)
 
     entries = [

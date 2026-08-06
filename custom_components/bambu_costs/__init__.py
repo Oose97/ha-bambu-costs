@@ -30,6 +30,7 @@ from .const import (
     ATTR_SERIAL,
     ATTR_TAGS,
     CONF_PRINT_STATUS,
+    DISCONNECTED_STATES,
     DOMAIN,
     EMPTY_TAG_UIDS,
     PLATFORMS,
@@ -181,11 +182,18 @@ def _async_track_print_status(
         # Coming back to running from a pause, or from a failure the printer
         # recovered out of — an AMS jam, say — is the same job continuing. Only
         # a start from idle/slicing/prepare is new work, and only that may
-        # discard the remembered per-slot split. An unknown previous state
-        # (first event after a restart) is treated as a resume: preserving a
-        # snapshot that turns out to be stale is recoverable, discarding one
-        # that was needed is not.
-        resumed = started and (before is None or before in RESUME_STATES)
+        # discard the remembered per-slot split.
+        #
+        # A start out of a disconnected state is ambiguous: the printer prints
+        # perfectly well without Home Assistant watching, so it may be
+        # re-announcing a job that never stopped, or reporting one that began
+        # while contact was lost. The task name decides, and where it cannot,
+        # the coordinator errs towards resuming.
+        resumed = started and (
+            before is None
+            or before in RESUME_STATES
+            or (before in DISCONNECTED_STATES and coordinator.resumes_marked_job())
+        )
 
         if started:
             idle_cost = coordinator.mark_print_start(new_job=not resumed)

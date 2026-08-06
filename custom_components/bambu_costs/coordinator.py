@@ -132,6 +132,14 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # after a finish, and False at startup — a job already underway when
         # Home Assistant started has no valid integration window either.
         self._saw_print_start: bool = False
+        # Whether the job that most recently *ended* had an observed start.
+        # mark_print_end consumes _saw_print_start, and the job is logged from
+        # an automation that runs after it — so the logging path needs its own
+        # record of the provenance, or it would always read "start never seen".
+        self._ended_had_start: bool = False
+        # Task name captured when the markers were last set, so an ambiguous
+        # start can be told apart from a genuinely new job.
+        self._job_at_start: str = ""
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -387,6 +395,24 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return max(0.0, self.cost_total - self.value(key))
 
     @callback
+    def _bank_idle(self) -> float:
+        """Close the open idle window, banking what standby cost. Returns it.
+
+        The only place standby is ever banked. Anything that moves
+        ``cost_at_print_end`` without coming through here silently discards
+        every cent accrued since that marker last moved — which is exactly how
+        a reconnect used to lose a night of idle.
+        """
+        idle = self.spend_since("cost_at_print_end")
+        if idle <= 0:
+            return 0.0
+        self.set_value("last_idle_cost", idle)
+        # Standby is real money — the printer idles at ~14 W — and nothing else
+        # will ever bank it: log_job only adds what a print itself cost.
+        self.set_value("total_cost", self.value("total_cost") + idle)
+        return idle
+
+    @callback
     def mark_print_start(self, now: datetime | None = None, new_job: bool = True) -> float:
         """Close off the idle period and open the print one. Returns idle cost.
 
@@ -397,17 +423,18 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         the running total up to date.
         """
         self.accrue_cost(now)
+
+        # Set for a resume as well as a new job: either way a print is now
+        # known to be running, which is what makes its integration window and
+        # its eventual end meaningful.
+        self._saw_print_start = True
         if not new_job:
             return 0.0
 
-        self._saw_print_start = True
-        idle = self.spend_since("cost_at_print_end")
-        self.set_value("last_idle_cost", idle)
-        # Standby is real money — the printer idles at ~14 W — and nothing else
-        # will ever bank it: log_job only adds what a print itself cost. Banked
-        # here, at the one point it is known to be complete, and only for a new
-        # job so a resume cannot charge the same stretch twice.
-        self.set_value("total_cost", self.value("total_cost") + idle)
+        self._job_at_start = self._state(CONF_TASK_NAME) or ""
+        # New work: whatever ended before belongs to a different job now.
+        self._ended_had_start = False
+        idle = self._bank_idle()
         self.set_value("cost_at_print_start", self.cost_total)
         # Snapshot the energy meters here rather than from an automation: the
         # print-start transition is already being watched, and the sensors are
@@ -419,13 +446,52 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def mark_print_end(self, now: datetime | None = None) -> float:
         """Close off the print period. Returns what its electricity cost."""
         self.accrue_cost(now)
+
+        if not self._saw_print_start:
+            # Nothing was running, so nothing ended — a printer reconnecting
+            # re-reports the state it was already in, and `finish` is a state
+            # it sits in indefinitely. Only the idle window is resynced, and
+            # what accrued in it is banked rather than dropped. No print cost
+            # is recorded, because no print ended.
+            idle = self._bank_idle()
+            self.set_value("cost_at_print_end", self.cost_total)
+            # No job ended, so anything logged off this transition must not
+            # claim an observed start it does not have.
+            self._ended_had_start = False
+            _LOGGER.debug(
+                "Print-end resync with nothing running; banked %.4f %s of standby",
+                idle,
+                self.currency,
+            )
+            return 0.0
+
         spent = self.spend_since("cost_at_print_start")
         self.set_value("last_print_power_cost", spent)
         self.set_value("cost_at_print_end", self.cost_total)
-        # Cleared last: the next job must prove its own start was seen before
-        # its integration window is trusted.
+        # Recorded before the running flag is cleared: the job is logged by an
+        # automation that fires after this listener, and it needs to know the
+        # ended job's start was observed even though nothing is running by then.
+        self._ended_had_start = True
         self._saw_print_start = False
         return spent
+
+    def resumes_marked_job(self) -> bool:
+        """Whether the job now on the printer is the one the markers belong to.
+
+        Only consulted for an ambiguous start — one arriving from a state that
+        means contact was lost rather than one the printer reported. The same
+        task name means the job was already underway and the markers still
+        apply; a different one means a new job began unobserved.
+
+        With no name to compare, this says resume. Keeping markers that turn
+        out to be stale overcharges one print by the idle before it; discarding
+        markers that were needed loses everything a running job had already
+        spent, with nothing left to reconstruct it from.
+        """
+        current = self._state(CONF_TASK_NAME) or ""
+        if not current or not self._job_at_start:
+            return True
+        return current == self._job_at_start
 
     def energy_now(self) -> float:
         """Summed kWh across every configured energy sensor."""
@@ -484,11 +550,15 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_good = None
 
     # ── filament breakdown ───────────────────────────────────────────────────
-    def breakdown(self) -> dict[str, Any]:
+    def breakdown(self, remember: bool = True) -> dict[str, Any]:
         """Per-slot filament usage and cost for the current job.
 
         Nothing is rounded here — callers round at their own display point, so
         rows can never sum to a different figure than the total.
+
+        ``remember=False`` makes this a pure read: display paths recompute on
+        every state render, and a read should not be what updates the restart
+        snapshot. The breakdown sensor and the action paths keep the default.
         """
         attrs = self._attrs(CONF_PRINT_WEIGHT)
         total_weight = as_float(self._state(CONF_PRINT_WEIGHT))
@@ -566,7 +636,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "restored": False,
         }
 
-        if any(row["id"] != "external" for row in rows):
+        if remember and any(row["id"] != "external" for row in rows):
             self._remember_breakdown(result)
         return result
 
@@ -630,7 +700,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         integrated = self.spend_since("cost_at_print_start")
 
-        if not self._saw_print_start:
+        # Either the job is still running with an observed start, or it just
+        # ended and its end recorded that the start was observed. mark_print_end
+        # clears the running flag before the logging automation fires, so the
+        # flag alone would always say "never seen" here.
+        if not (self._saw_print_start or self._ended_had_start):
             _LOGGER.warning(
                 "This job's start was never seen — the printer was likely "
                 "offline when it began — so the running total was not marked "
@@ -733,14 +807,19 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return await self.hass.async_add_executor_job(_load)
 
     async def async_write_tags(self, tags: list[dict[str, Any]]) -> int:
-        written = await self.hass.async_add_executor_job(self.store.write_tags, tags)
+        # Same lock as scanned adds: a card save landing while an AMS scan is
+        # mid-write is a read-modify-write race on one file, and whichever
+        # side loses is silently gone.
+        async with self._tag_write_lock:
+            written = await self.hass.async_add_executor_job(self.store.write_tags, tags)
         await self.async_request_refresh()
         return written
 
     async def async_set_tag_price(self, serial: str, price: float) -> int:
-        changed = await self.hass.async_add_executor_job(
-            self.store.set_tag_price, serial, price
-        )
+        async with self._tag_write_lock:
+            changed = await self.hass.async_add_executor_job(
+                self.store.set_tag_price, serial, price
+            )
         if changed:
             await self.async_request_refresh()
         return changed

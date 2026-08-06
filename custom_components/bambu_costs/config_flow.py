@@ -52,6 +52,7 @@ from .const import (
     DEFAULT_FILAMENT_PRICE,
     DEFAULT_NAME,
     DOMAIN,
+    PRINTER_MANUFACTURER,
 )
 
 _SENSOR = EntitySelector(EntitySelectorConfig(domain="sensor"))
@@ -64,9 +65,15 @@ _POWER = EntitySelector(
     EntitySelectorConfig(domain="sensor", device_class="power", multiple=True)
 )
 _SLOTS = TextSelector(TextSelectorConfig(multiple=True))
-# Any integration that models a printer as a device works; bambu_lab is only a
-# hint, so a fork or a differently-named integration is still selectable.
-_DEVICE = DeviceSelector(DeviceSelectorConfig())
+# Narrowed by manufacturer rather than by integration, so a fork or a rename of
+# ha-bambulab still lists — every one of them registers its devices under the
+# same brand. Discovery only recognises printer sensors, so offering the whole
+# device registry was offering hundreds of devices that cannot work.
+#
+# AMS units are listed alongside the printer, since they carry the same brand.
+# That is fine: they hang off the printer via ``via_device``, and discovery
+# walks up that link, so picking one discovers its printer.
+_DEVICE = DeviceSelector(DeviceSelectorConfig(manufacturer=PRINTER_MANUFACTURER))
 CONF_DEVICE = "device"
 
 # Every key the flow can set. Options are written in full on each save so that
@@ -88,6 +95,9 @@ ALL_KEYS = (
     CONF_ELECTRICITY_PRICE,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_CURRENCY,
+    # Kept so reconfiguring can show which printer was chosen. Nothing reads it
+    # at runtime — the entities picked from it are what the integration uses.
+    CONF_DEVICE,
 )
 
 
@@ -179,6 +189,8 @@ class BambuCostsConfigFlow(ConfigFlow, domain=DOMAIN):
                 result = discover(self.hass, device_id)
                 self._found = result
                 self._data.update(result["config"])
+                # Stored so reconfiguring can show it already chosen.
+                self._data[CONF_DEVICE] = device_id
             return await self.async_step_sensors()
 
         return self.async_show_form(
@@ -204,6 +216,11 @@ class BambuCostsConfigFlow(ConfigFlow, domain=DOMAIN):
         if not self._found:
             return "No device chosen — fill these in yourself."
         n = len(self._found["config"])
+        if not n:
+            return (
+                "Nothing recognisable on that device or anything connected "
+                "to it — fill these in yourself."
+            )
         left = self._found.get("unpaired_trays") or []
         text = f"Found {n} of these from the device. Check them before continuing."
         if left:
@@ -246,11 +263,17 @@ class BambuCostsOptionsFlow(OptionsFlow):
             if device_id:
                 self._found = discover(self.hass, device_id)
                 self._data.update(self._found["config"])
+            # Carried forward even when the box was left alone, because the
+            # options are rebuilt from ALL_KEYS and anything absent is dropped.
+            self._data[CONF_DEVICE] = device_id or self._current.get(CONF_DEVICE)
             return await self.async_step_sensors()
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema({vol.Optional(CONF_DEVICE): _DEVICE}),
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema({vol.Optional(CONF_DEVICE): _DEVICE}),
+                {CONF_DEVICE: self._current.get(CONF_DEVICE)},
+            ),
         )
 
     async def async_step_sensors(
