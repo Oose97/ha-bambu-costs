@@ -1,3 +1,16 @@
+// Every configurable column. The grip, the ON/OFF toggle and the delete button
+// are structural and always present, so they are not listed here.
+const BTE_COLS = [
+  { key: "swatch",     label: "",         width: "34px",  tight: true },
+  { key: "filament",   label: "Filament" },
+  { key: "hex",        label: "Hex",      width: "100px" },
+  { key: "color_name", label: "Color" },
+  { key: "serial",     label: "Serial",   width: "150px" },
+  { key: "serial_2",   label: "Serial 2", width: "150px" },
+  { key: "price",      label: "PRICE",    width: "120px", tight: true },
+];
+const BTE_DEFAULT_ORDER = BTE_COLS.map(c => c.key);
+
 class BambuCostsTagsEditor extends HTMLElement {
   setConfig(cfg) {
     if (!cfg.entity) throw new Error("Define an entity (sensor.bambu_costs_tag_library)");
@@ -13,6 +26,12 @@ class BambuCostsTagsEditor extends HTMLElement {
     this._filter = "";
     this._showDisabled = false;
     this._nextKey = 1;
+    // Display only. The payload sent on save always carries every field in
+    // its canonical order, so hiding or reordering a column here can never
+    // change what is written.
+    this._order = BTE_DEFAULT_ORDER.slice();
+    this._hidden = new Set();
+    this._restoreCols();
     this._built = false;
     this._busy = false;
     this._mode = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
@@ -50,10 +69,90 @@ class BambuCostsTagsEditor extends HTMLElement {
       color_code: this._norm(r.color_code),
       color_name: r.color_name || "",
       serial: r.serial || "",
+      serial_2: r.serial_2 || "",
       cost_per_kg: Number(r.cost_per_kg) || 0,
       disabled: this._isDisabled(r.disabled),
     }));
+    this._rows = this._grouped();
     this._dirty = false;
+  }
+
+  // ── spool pairs ──────────────────────────────────────────────────────────
+  // A spool carries a tag on each side. When one row names the other's serial
+  // they are two halves of the same spool, and are kept adjacent and moved
+  // together so they cannot drift apart in the list.
+  _groups() {
+    const bySerial = new Map();
+    for (const r of this._rows) {
+      const s = String(r.serial || "").trim().toLowerCase();
+      if (s) bySerial.set(s, r);
+    }
+    const seen = new Set();
+    const groups = [];
+    for (const r of this._rows) {
+      if (seen.has(r._k)) continue;
+      seen.add(r._k);
+      const group = [r];
+      const other = String(r.serial_2 || "").trim().toLowerCase();
+      const partner = other ? bySerial.get(other) : null;
+      if (partner && partner !== r && !seen.has(partner._k)) {
+        seen.add(partner._k);
+        group.push(partner);
+      }
+      groups.push(group);
+    }
+    return groups;
+  }
+
+  _grouped() { return this._groups().flat(); }
+
+  _groupOf(k) {
+    return this._groups().find(g => g.some(r => r._k === Number(k))) || [];
+  }
+
+  _payload() {
+    return this._rows.map(r => ({
+      filament: this._clean(r.filament),
+      color_code: this._clean(r.color_code),
+      color_name: this._clean(r.color_name),
+      serial: this._clean(r.serial),
+      serial_2: this._clean(r.serial_2),
+      cost_per_kg: Number(r.cost_per_kg) || 0,
+      disabled: !!r.disabled,
+    }));
+  }
+
+  // ── column configuration ─────────────────────────────────────────────────
+  _colsKey() { return `bambu-costs-tags-cols:${this._cfg.entity}`; }
+
+  _restoreCols() {
+    try {
+      const raw = localStorage.getItem(this._colsKey());
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (Array.isArray(s.order)) {
+        // Keep only keys that still exist, then append any newly added column
+        // so an upgrade never silently drops one.
+        const known = new Set(BTE_DEFAULT_ORDER);
+        const order = s.order.filter(k => known.has(k));
+        for (const k of BTE_DEFAULT_ORDER) if (!order.includes(k)) order.push(k);
+        this._order = order;
+      }
+      if (Array.isArray(s.hidden)) this._hidden = new Set(s.hidden);
+    } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
+  }
+
+  _saveCols() {
+    try {
+      localStorage.setItem(this._colsKey(),
+        JSON.stringify({ order: this._order, hidden: [...this._hidden] }));
+    } catch (e) { /* private mode — layout just will not persist */ }
+  }
+
+  _cols() {
+    return this._order
+      .map(k => BTE_COLS.find(c => c.key === k))
+      .filter(c => c && !this._hidden.has(c.key));
   }
 
   _row(k) { return this._rows.find(r => r._k === Number(k)); }
@@ -74,17 +173,6 @@ class BambuCostsTagsEditor extends HTMLElement {
   _norm(v) {
     const m = String(v || "").match(/([0-9a-f]{6})/i);
     return m ? "#" + m[1].toUpperCase() : "#808080";
-  }
-
-  _payload() {
-    return this._rows.map(r => ({
-      filament: this._clean(r.filament),
-      color_code: this._clean(r.color_code),
-      color_name: this._clean(r.color_name),
-      serial: this._clean(r.serial),
-      cost_per_kg: Number(r.cost_per_kg) || 0,
-      disabled: !!r.disabled,
-    }));
   }
 
   // ── colors ───────────────────────────────────────────────
@@ -251,6 +339,10 @@ class BambuCostsTagsEditor extends HTMLElement {
           .bte-target-cur { font-size:11px; color:var(--secondary-text-color); }
           .bte-sheet-foot { padding:10px 16px; border-top:1px solid var(--divider-color);
             display:flex; justify-content:flex-end; }
+          /* A spool's two rows read as one block. */
+          table.bte tr.paired td { border-bottom-color:transparent; }
+          table.bte tr.paired:not(.pairtop) td:first-child { border-left:2px solid var(--primary-color); }
+          table.bte tr.pairtop td:first-child { border-left:2px solid var(--primary-color); }
           .del { background:none; border:none; color:var(--secondary-text-color);
             cursor:pointer; font-size:14px; padding:2px 4px; border-radius:6px; }
           .del:hover { color:var(--error-color,#f44336); }
@@ -281,22 +373,13 @@ class BambuCostsTagsEditor extends HTMLElement {
             <button class="tbtn sortType">Sort: type</button>
             <button class="tbtn sortPrice">Sort: price</button>
             <button class="tbtn showdis">Show disabled</button>
+            <button class="tbtn cols">⚙ Columns</button>
             <button class="tbtn reload">↻ Reload</button>
           </div>
           <div class="bte-msg"></div>
           <div class="bte-scroll">
             <table class="bte">
-              <thead><tr>
-                <th class="tight" style="width:56px"><button class="modeBtn" title="Switch reorder mode"></button></th>
-                <th class="tight" style="width:34px"></th>
-                <th>Filament</th>
-                <th style="width:100px">Hex</th>
-                <th>Color</th>
-                <th style="width:150px">Serial</th>
-                <th class="tight" style="width:120px"><span class="phead">${this._esc(this._cfg.unit)}</span></th>
-                <th class="tight" style="width:44px"></th>
-                <th class="tight" style="width:30px"></th>
-              </tr></thead>
+              <thead><tr>${this._headHtml()}</tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -326,7 +409,7 @@ class BambuCostsTagsEditor extends HTMLElement {
 
     q(".add").addEventListener("click", () => {
       this._rows.unshift({ _k: this._nextKey++, filament: "", color_code: "#808080",
-        color_name: "", serial: "", cost_per_kg: 0, disabled: false });
+        color_name: "", serial: "", serial_2: "", cost_per_kg: 0, disabled: false });
       this._dirty = true;
       this._paint();
       const first = this.querySelector("tbody tr input.cell");
@@ -356,6 +439,8 @@ class BambuCostsTagsEditor extends HTMLElement {
         : "Disabled entries hidden.");
     });
 
+    q(".cols").addEventListener("click", () => this._openColumns());
+
     q(".reload").addEventListener("click", () => this._reload());
     q("button.save").addEventListener("click", () => this._save());
 
@@ -375,40 +460,36 @@ class BambuCostsTagsEditor extends HTMLElement {
 
     const total = this._rows.length;
 
-    tbody.innerHTML = this._rows.map((r, idx) => {
-      const key = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial}`
+    const groups = this._groups();
+    const cols = this._cols();
+
+    tbody.innerHTML = groups.map((group, gi) => group.map((r, ri) => {
+      const key = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2}`
         .toLowerCase().replace(/"/g, "");
-      const handle = this._mode === "drag"
-        ? `<span class="grip" data-k="${r._k}" title="Drag to reorder">⠿</span>`
-        : `<span class="arrows">
-             <button class="up" data-k="${r._k}" title="Move up" ${idx === 0 ? "disabled" : ""}>▲</button>
-             <button class="down" data-k="${r._k}" title="Move down" ${idx === total - 1 ? "disabled" : ""}>▼</button>
-           </span>`;
-      return `<tr data-k="${r._k}" data-s="${this._esc(key)}"${r.disabled ? ' data-dis="1" class="dis"' : ""}>
-        <td>${handle}</td>
-        <td><input class="sw" type="color" data-k="${r._k}" data-f="color_code"
-             value="${this._esc(this._norm(r.color_code))}"></td>
-        <td><input class="cell" type="text" data-k="${r._k}" data-f="filament"
-             value="${this._esc(r.filament)}"></td>
-        <td><input class="cell hx" type="text" data-k="${r._k}" data-f="hex"
-             value="${this._esc(this._norm(r.color_code))}"
-             style="color:${this._textFor(r.color_code, bg)}"></td>
-        <td><input class="cell" type="text" data-k="${r._k}" data-f="color_name"
-             value="${this._esc(r.color_name)}"></td>
-        <td><input class="cell ser" type="text" data-k="${r._k}" data-f="serial"
-             value="${this._esc(r.serial)}"></td>
-        <td><span class="pricecell">
-              <input class="cell p" type="number" step="0.01" min="0" data-k="${r._k}"
-                     data-f="cost_per_kg" value="${(Number(r.cost_per_kg) || 0).toFixed(2)}">
-              <button class="setdef" data-k="${r._k}"
-                      title="Push this price into one of the filament price entities">SET</button>
-            </span></td>
+
+      // One handle per spool, spanning its rows: a pair moves as a unit.
+      const handle = ri > 0 ? "" : `<td rowspan="${group.length}">${
+        this._mode === "drag"
+          ? `<span class="grip" data-k="${r._k}" title="Drag to reorder">⠿</span>`
+          : `<span class="arrows">
+               <button class="up" data-k="${r._k}" title="Move up" ${gi === 0 ? "disabled" : ""}>▲</button>
+               <button class="down" data-k="${r._k}" title="Move down" ${
+                 gi === groups.length - 1 ? "disabled" : ""}>▼</button>
+             </span>`}</td>`;
+
+      const cells = cols.map(c => this._cell(c, r, bg)).join("");
+      const cls = [r.disabled ? "dis" : "", group.length > 1 ? "paired" : "",
+                   group.length > 1 && ri === 0 ? "pairtop" : ""].filter(Boolean).join(" ");
+      return `<tr data-k="${r._k}" data-g="${gi}" data-s="${this._esc(key)}"${
+        r.disabled ? ' data-dis="1"' : ""}${cls ? ` class="${cls}"` : ""}>
+        ${handle}${cells}
         <td class="togcell"><button class="tog${r.disabled ? " isoff" : ""}" data-k="${r._k}"
               title="${r.disabled ? "Disabled — click to enable" : "Enabled — click to disable"}"
               >${r.disabled ? "OFF" : "ON"}</button></td>
         <td><button class="del" data-k="${r._k}" title="Delete row">✕</button></td>
       </tr>`;
-    }).join("") || `<tr><td colspan="9" style="text-align:center;padding:24px;opacity:.5">
+    }).join("")).join("") || `<tr><td colspan="${cols.length + 3}"
+      style="text-align:center;padding:24px;opacity:.5">
       No tags — press “+ Row” to add one</td></tr>`;
 
     tbody.querySelectorAll("input[data-f]").forEach(inp => {
@@ -488,31 +569,152 @@ class BambuCostsTagsEditor extends HTMLElement {
     return null;
   }
 
+  _openColumns() {
+    const draw = () => this._order.map(key => {
+      const col = BTE_COLS.find(c => c.key === key);
+      const on = !this._hidden.has(key);
+      return `<div class="bte-target" data-col="${key}">
+        <button class="tog${on ? "" : " isoff"}" data-toggle="${key}"
+                title="${on ? "Shown — click to hide" : "Hidden — click to show"}"
+                >${on ? "ON" : "OFF"}</button>
+        <span class="bte-target-label"><span class="bte-target-name">${
+          this._esc(col.label || col.key)}</span></span>
+        <span class="arrows">
+          <button class="cup" data-move="${key}">▲</button>
+          <button class="cdown" data-move="${key}">▼</button>
+        </span>
+      </div>`;
+    }).join("");
+
+    const ov = document.createElement("div");
+    ov.className = "bte-modal";
+    ov.innerHTML = `
+      <div class="bte-sheet" role="dialog" aria-modal="true">
+        <div class="bte-sheet-head">
+          <div class="bte-sheet-title">Configure columns</div>
+          <div class="bte-sheet-sub">Display only — saving always writes every field.</div>
+        </div>
+        <div class="bte-sheet-body"></div>
+        <div class="bte-sheet-foot">
+          <button class="tbtn reset-cols">Reset</button>
+          <button class="tbtn close">Done</button>
+        </div>
+      </div>`;
+
+    const body = ov.querySelector(".bte-sheet-body");
+    const render = () => {
+      body.innerHTML = draw();
+      body.querySelectorAll("[data-toggle]").forEach(b => {
+        b.addEventListener("click", e => {
+          const key = e.currentTarget.dataset.toggle;
+          if (this._hidden.has(key)) this._hidden.delete(key); else this._hidden.add(key);
+          this._saveCols(); render(); this._refreshTable();
+        });
+      });
+      body.querySelectorAll("[data-move]").forEach(b => {
+        b.addEventListener("click", e => {
+          const key = e.currentTarget.dataset.move;
+          const dir = e.currentTarget.classList.contains("cup") ? -1 : 1;
+          const i = this._order.indexOf(key);
+          const j = i + dir;
+          if (i < 0 || j < 0 || j >= this._order.length) return;
+          this._order.splice(j, 0, this._order.splice(i, 1)[0]);
+          this._saveCols(); render(); this._refreshTable();
+        });
+      });
+    };
+    render();
+
+    const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
+    const esc = e => { if (e.key === "Escape") close(); };
+    ov.addEventListener("click", e => { if (e.target === ov) close(); });
+    ov.querySelector("button.close").addEventListener("click", close);
+    ov.querySelector("button.reset-cols").addEventListener("click", () => {
+      this._order = BTE_DEFAULT_ORDER.slice();
+      this._hidden = new Set();
+      this._saveCols(); render(); this._refreshTable();
+    });
+    document.addEventListener("keydown", esc);
+    this.appendChild(ov);
+  }
+
+  _headHtml() {
+    return `<th class="tight" style="width:56px"><button class="modeBtn" title="Switch reorder mode"></button></th>`
+      + this._cols().map(c => `<th class="${c.tight ? "tight" : ""}"${
+          c.width ? ` style="width:${c.width}"` : ""}>${
+          c.key === "price"
+            ? `<span class="phead">${this._esc(this._cfg.unit)}</span>`
+            : this._esc(c.label)}</th>`).join("")
+      + `<th class="tight" style="width:44px"></th><th class="tight" style="width:30px"></th>`;
+  }
+
+  // Header and body only. A full _render() would rebuild the card's innerHTML
+  // and take any open dialog down with it.
+  _refreshTable() {
+    const head = this.querySelector("thead tr");
+    if (!head) return;
+    head.innerHTML = this._headHtml();
+    const modeBtn = this.querySelector(".modeBtn");
+    if (modeBtn) {
+      modeBtn.addEventListener("click", () => {
+        this._mode = this._mode === "drag" ? "arrows" : "drag";
+        this._paint();
+      });
+    }
+    this._paint();
+  }
+
+  _cell(col, r, bg) {
+    const k = r._k;
+    switch (col.key) {
+      case "swatch":
+        return `<td><input class="sw" type="color" data-k="${k}" data-f="color_code"
+                value="${this._esc(this._norm(r.color_code))}"></td>`;
+      case "filament":
+        return `<td><input class="cell" type="text" data-k="${k}" data-f="filament"
+                value="${this._esc(r.filament)}"></td>`;
+      case "hex":
+        return `<td><input class="cell hx" type="text" data-k="${k}" data-f="hex"
+                value="${this._esc(this._norm(r.color_code))}"
+                style="color:${this._textFor(r.color_code, bg)}"></td>`;
+      case "color_name":
+        return `<td><input class="cell" type="text" data-k="${k}" data-f="color_name"
+                value="${this._esc(r.color_name)}"></td>`;
+      case "serial":
+        return `<td><input class="cell ser" type="text" data-k="${k}" data-f="serial"
+                value="${this._esc(r.serial)}"></td>`;
+      case "serial_2":
+        return `<td><input class="cell ser" type="text" data-k="${k}" data-f="serial_2"
+                placeholder="other side" value="${this._esc(r.serial_2 || "")}"></td>`;
+      case "price":
+        return `<td><span class="pricecell">
+                  <input class="cell p" type="number" step="0.01" min="0" data-k="${k}"
+                         data-f="cost_per_kg" value="${(Number(r.cost_per_kg) || 0).toFixed(2)}">
+                  <button class="setdef" data-k="${k}"
+                          title="Push this price into one of the filament price entities">SET</button>
+                </span></td>`;
+      default:
+        return "<td></td>";
+    }
+  }
+
   _move(k, dir) {
     const block = this._reorderBlock();
     if (block) {
       this._msg(block, "warn");
       return;
     }
-    const i = this._rows.findIndex(r => r._k === Number(k));
+    // Reorder by spool, so a pair steps over its neighbour intact.
+    const groups = this._groups();
+    const i = groups.findIndex(g => g.some(r => r._k === Number(k)));
     const j = i + dir;
-    if (i < 0 || j < 0 || j >= this._rows.length) return;
-    const tmp = this._rows[i];
-    this._rows[i] = this._rows[j];
-    this._rows[j] = tmp;
+    if (i < 0 || j < 0 || j >= groups.length) return;
+    const tmp = groups[i];
+    groups[i] = groups[j];
+    groups[j] = tmp;
+    this._rows = groups.flat();
     this._dirty = true;
     this._paint();
-  }
-
-  // Every number this price can be pushed into. The integration resolves these
-  // from the entity registry, so slots appear and disappear with the config
-  // rather than the card having to rebuild entity IDs from labels.
-  _priceTargets() {
-    const st = this._hass && this._hass.states[this._cfg.entity];
-    const fromSensor = (st && st.attributes && st.attributes.price_targets) || [];
-    if (fromSensor.length) return fromSensor;
-    // Older integration, or the sensor is unavailable: at least offer the default.
-    return [{ entity_id: this._cfg.default_price_entity, label: "Default price (backup)" }];
   }
 
   _openPricePicker(k) {
@@ -619,25 +821,28 @@ class BambuCostsTagsEditor extends HTMLElement {
     const tbody = this.querySelector("tbody");
     const tr = grip.closest("tr");
     if (!tr) return;
-    tr.classList.add("dragging");
+    // The handle spans the spool, so the partner row travels with it.
+    const moving = [...tbody.querySelectorAll(`tr[data-g="${tr.dataset.g}"]`)];
+    moving.forEach(row => row.classList.add("dragging"));
 
     const move = e => {
       e.preventDefault();
       const y = e.clientY;
       const rows = [...tbody.querySelectorAll("tr[data-k]")]
-        .filter(x => x !== tr && x.style.display !== "none");
+        .filter(x => !moving.includes(x) && x.style.display !== "none");
       if (!rows.length) return;
 
+      const place = before => moving.forEach(row => tbody.insertBefore(row, before));
       const first = rows[0];
       const last = rows[rows.length - 1];
-      if (y < first.getBoundingClientRect().top) { tbody.insertBefore(tr, first); return; }
-      if (y > last.getBoundingClientRect().bottom) { tbody.appendChild(tr); return; }
+      if (y < first.getBoundingClientRect().top) { place(first); return; }
+      if (y > last.getBoundingClientRect().bottom) { moving.forEach(r => tbody.appendChild(r)); return; }
 
       for (const over of rows) {
         const rect = over.getBoundingClientRect();
         if (y >= rect.top && y <= rect.bottom) {
           const after = y > rect.top + rect.height / 2;
-          tbody.insertBefore(tr, after ? over.nextSibling : over);
+          place(after ? over.nextSibling : over);
           break;
         }
       }
@@ -647,7 +852,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
       document.removeEventListener("pointercancel", up);
-      tr.classList.remove("dragging");
+      moving.forEach(row => row.classList.remove("dragging"));
       const keys = [...tbody.querySelectorAll("tr[data-k]")].map(x => Number(x.dataset.k));
       const same = keys.every((k, i) => this._rows[i] && this._rows[i]._k === k);
       if (!same) {

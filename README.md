@@ -75,7 +75,10 @@ Settings → Dashboards → Resources, and are removed when the last config entr
 deleted. In YAML-mode Lovelace the files are still served — the URLs are logged at
 startup for you to add by hand.
 
-- `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library. Each row's
+- `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library. **⚙ Columns**
+  hides and reorders columns; that is display only, so a save still writes every field in
+  its canonical order. A spool's two tags are kept adjacent and share one drag handle, so
+  a pair moves as a unit. Each row's
   **SET** button opens a picker listing every filament price entity — the default first,
   then one per configured slot — so a tag's price can be pushed into whichever slot has
   that spool loaded. The list is resolved from the entity registry, so it follows the
@@ -204,7 +207,9 @@ tick costs freshness, never accuracy.
 In order of precedence:
 
 1. The **tag library**, matched on the `tag_uid` the tray reports — the price of the spool
-   actually loaded.
+   actually loaded. A spool carries a tag on each side reporting different serials, so a
+   row can name the other one in `serial_2`; either matches, so it prices the same
+   whichever way round the spool goes in.
 2. The slot's own **price number**, if you have set one.
 3. The **default filament price**.
 

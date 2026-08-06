@@ -174,12 +174,19 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.async_update_listeners()
 
     def tag_for_serial(self, serial: str | None) -> dict[str, Any] | None:
-        """Find a tag-library row by RFID serial."""
+        """Find a tag-library row by RFID serial.
+
+        A spool carries a tag on each side reporting different serials, so a
+        row may name the other one. Either matches: whichever way round the
+        spool goes in, it prices the same.
+        """
         if not serial:
             return None
         wanted = str(serial).strip().lower()
         for tag in (self.data or {}).get("tags", []):
             if str(tag.get("serial", "")).strip().lower() == wanted:
+                return tag
+            if str(tag.get("serial_2", "")).strip().lower() == wanted:
                 return tag
         return None
 
