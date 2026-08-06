@@ -52,6 +52,7 @@ async def async_setup_entry(
             SessionFilamentCostSensor(coordinator),
             CostRateSensor(coordinator),
             CostTotalSensor(coordinator),
+            SpendTotalSensor(coordinator),
             TagLibrarySensor(coordinator),
             JobLogSensor(coordinator),
         ]
@@ -251,6 +252,47 @@ class CostTotalSensor(BambuCostsSensor, RestoreSensor):
     @property
     def native_value(self) -> float:
         return round(self.coordinator.cost_total, 6)
+
+
+class SpendTotalSensor(BambuCostsSensor):
+    """Everything the printer has cost, filament included.
+
+    A mirror of the ``total_cost`` number, which is where the running figure
+    actually lives — that one has to stay a number so it can be seeded when
+    cutting over from an older setup, and numbers carry no state class, so
+    nothing downstream will meter or graph them.
+
+    This exists to be that downstream source. Point a `utility_meter` at it for
+    a monthly figure: cycles, restarts and DST are core's problem then, not
+    this integration's, and you can have daily and yearly off the same sensor
+    without any of it being reimplemented here.
+
+    ``cost_total`` is the narrower one — electricity only. This is the whole
+    bill: filament, electricity, and standby between jobs.
+    """
+
+    _attr_icon = "mdi:cash-multiple"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator: BambuCostsCoordinator) -> None:
+        super().__init__(coordinator, "total_spend", "Total spend")
+        self._attr_native_unit_of_measurement = coordinator.currency
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator.value("total_cost"), 4)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        # Split out so a dashboard can show where the money went without
+        # needing to read three separate entities.
+        return {
+            "filament_total": round(self.coordinator.value("total_filament_used"), 2),
+            "electricity_total": round(self.coordinator.cost_total, 4),
+            "last_print_cost": round(self.coordinator.value("last_print_cost"), 4),
+            "last_idle_cost": round(self.coordinator.value("last_idle_cost"), 4),
+        }
 
 
 class TagLibrarySensor(BambuCostsSensor):

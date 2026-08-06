@@ -23,7 +23,8 @@ slots are free-form, so any AMS layout — or none — works.
 | `sensor.<name>_session_filament_cost` | The same figure rounded for display. |
 | `sensor.<name>_tag_library` | Your filament tag library. State is the row count; `data` holds the rows. |
 | `sensor.<name>_cost_rate` | What the machine is costing per hour right now — power × price. |
-| `sensor.<name>_cost_total` | Everything it has cost to run, printing or idle. Restored across restarts. |
+| `sensor.<name>_cost_total` | **Electricity only.** Everything it has cost to run, printing or idle. Restored across restarts. |
+| `sensor.<name>_total_spend` | **The whole bill** — filament, electricity and standby. Metering source; see [Costs per month](#costs-per-month). |
 | `sensor.<name>_job_log` | Logged jobs. State is the row count; `data` holds the rows. |
 
 ### Numbers
@@ -204,6 +205,37 @@ Two consequences fall out of the accumulator running continuously:
 
 Accrual is computed from elapsed time rather than tick count, so a missed or irregular
 tick costs freshness, never accuracy.
+
+### Costs per month
+
+The integration deliberately does **not** implement monthly cycles. Core's `utility_meter`
+already does that — cycles, restarts, DST, offsets, tariffs — and reimplementing it here
+would be a worse copy that only ever did one period.
+
+What the integration provides is a source worth pointing it at:
+`sensor.<name>_total_spend`, the whole bill with `state_class: total_increasing`. The
+running figure lives in `number.<name>_total_cost` so it can be *seeded* when you cut over
+from an older setup, and numbers carry no state class — nothing will meter or graph one.
+This sensor is that number with the metadata attached.
+
+```yaml
+utility_meter:
+  bambu_costs_monthly:
+    source: sensor.bambu_costs_total_spend
+    cycle: monthly
+```
+
+Add `cycle: daily` or `yearly` blocks off the same source if you want them. Seed the
+number **before** creating the meter, so the starting balance is not counted as this
+month's spend:
+
+```yaml
+action: number.set_value
+target:
+  entity_id: number.bambu_costs_total_cost
+data:
+  value: 212.54
+```
 
 ## How a slot gets its price
 
