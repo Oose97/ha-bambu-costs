@@ -83,6 +83,11 @@ DISCONNECTED_STATES: Final = frozenset(
     {"unavailable", "unknown", "offline", "none", ""}
 )
 
+# Device-registry manufacturer the printer setup step is narrowed to. Matches
+# what ha-bambulab registers its devices under, and what a fork of it keeps —
+# unlike the integration domain, which a rename would change.
+PRINTER_MANUFACTURER: Final = "Bambu Lab"
+
 # How often the cost accumulator ticks when nothing else moves. Accrual is
 # computed from elapsed time, so this only controls freshness, not accuracy.
 COST_TICK_SECONDS: Final = 60
