@@ -11,401 +11,48 @@ It replaces a pile of `command_line` sensors, `shell_command` entries, shell scr
 **Nothing is hard-coded.** Every sensor it reads is chosen during setup, and the filament
 slots are free-form, so any AMS layout — or none — works.
 
----
+## Highlights
 
-## What you get
-
-### Sensors
-
-| Entity | What it holds |
-| --- | --- |
-| `sensor.<name>_filament_breakdown` | Cost of the job on the printer now. The `slots` attribute has the unrounded per-slot rows. |
-| `sensor.<name>_session_filament_cost` | The same figure rounded for display. |
-| `sensor.<name>_tag_library` | Your filament tag library. State is the row count; `data` holds the rows. |
-| `sensor.<name>_cost_rate` | What the machine is costing per hour right now — power × price. |
-| `sensor.<name>_cost_total` | **Electricity only.** Everything it has cost to run, printing or idle. Restored across restarts. |
-| `sensor.<name>_total_spend` | **The whole bill** — filament, electricity and standby. Metering source; see [Costs per month](#costs-per-month). |
-| `sensor.<name>_job_log` | Logged jobs. State is the row count; `data` holds the rows. |
-
-### Numbers
-
-Plain writable numbers — no `input_number` helpers needed. Set them by hand in the UI or
-from an automation with `number.set_value`. Values survive restarts.
-
-- `number.<name>_default_filament_price` — fallback price per kg
-- `number.<name>_<slot>_filament_price` — one per configured slot
-- `number.<name>_electricity_price` — per kWh, the fallback when no price sensor is set
-- `number.<name>_last_print_cost`, `_last_print_filament_cost`, `_last_print_power_cost`
-- `number.<name>_total_filament_used`, `_total_cost` — lifetime running totals
-- `number.<name>_energy_at_print_start` — snapshot taken when a print begins
-- `number.<name>_cost_at_print_start`, `_cost_at_print_end` — markers in the running total
-- `number.<name>_last_idle_cost` — electricity burnt between the last two prints
-
-### Buttons
-
-- `button.<name>_charge_filament_to_totals` — adds the current job's filament cost and
-  weight to the lifetime totals. For a print that failed part-way. Deliberately manual:
-  the printer reports the job's *planned* weight, so charging a failure automatically
-  would bill a first-layer failure in full. The last press is recorded in the button's
-  attributes so a mis-press is visible.
-
-### Switches
-
-- `switch.<name>_use_camera_snapshot` — created when a printer camera is configured.
-  While on, each logged job's picture is a camera frame grabbed the moment the printer
-  reports finish — the part still on the plate — instead of the slicer's render. If the
-  frame grab fails, the render is captured instead, so the job still gets a picture.
-  A switch rather than an option because it is worth flipping per job.
-
-### Services
-
-| Service | Does |
-| --- | --- |
-| `bambu_costs.log_job` | Appends the finished job, captures the cover image, advances the totals. Anything you do not pass is read from the configured sensors. |
-| `bambu_costs.write_tags` | Replaces the tag library. Previous file kept as `tags.csv.bak`. |
-| `bambu_costs.set_tag_price` | Updates the price on every tag with a given RFID serial. |
-| `bambu_costs.refresh` | Re-reads the CSVs from disk. |
-| `bambu_costs.sync_slot_prices` | Copies the loaded spool's tag price into each slot's price number. |
-| `bambu_costs.import_legacy` | Pulls tags, job history and cover images in from the pre-integration CSVs. |
-
-Pass `entry_id` only if you have set up more than one printer.
-
-Job pictures come from the **cover image** entity (the slicer's render) or, with the
-camera switch on, from the **printer camera** — a photo of what actually came off the
-plate, since the job is logged the moment the printer reports finish, while the part is
-still on it. Either way the picture is thumbnailed to 320 px before storage, so a camera
-frame costs tens of kilobytes per job, not a full-resolution snapshot. Old rows keep
-whatever was captured at the time.
-
-### Icon
-
-Shipped with the integration in `custom_components/bambu_costs/brand/`, so it shows in
-Settings → Devices & Services with no brands-repository submission. Requires Home
-Assistant 2026.3 or newer; on older versions the default placeholder is used instead.
-
-### Cards
-
-Registered automatically as Lovelace module resources, with the integration's version
-appended so an upgrade busts the browser cache on its own. They show up under
-Settings → Dashboards → Resources, and are removed when the last config entry is
-deleted. In YAML-mode Lovelace the files are still served — the URLs are logged at
-startup for you to add by hand.
-
-- `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library. A
-  spool's two tags render as one row, the second tag a child row behind a **▸** on the
-  spool's handle — collapsed by default, with the default changeable in settings.
-  Editing a pair's filament, colour or price applies to both rows; serials stay
-  per-row, since they are what tell the two tags apart. Pairs share one handle and
-  move as a unit, and reordering works with rows hidden — it steps over what is not
-  shown. Filtering finds collapsed second tags and surfaces them with their spool.
-  **⚙** opens the table settings: show-disabled, expand-by-default, sorting, and the
-  column layout (display only — a save always writes every field in canonical order).
-  Each row's **SET** button opens a picker listing every filament price entity — the
-  default first, then one per configured slot — so a tag's price can be pushed into
-  whichever slot has that spool loaded. The list is resolved from the entity registry,
-  so it follows the slot configuration on its own.
-- `custom:bambu-costs-jobs-table` — sortable, paginated print history
-- `custom:bambu-costs-calculator` — manual quote: filament, runtime, margin, VAT
-
----
-
-## Requirements
-
-Home Assistant 2024.12 or newer, and a source of printer sensors — in practice the
-[ha-bambulab](https://github.com/greghesp/ha-bambulab) integration, which is what this was
-built against and what the setup screen expects to find.
-
-That dependency is declared as `after_dependencies`, not `dependencies`: if `bambu_lab` is
-installed it loads first so its sensors exist before the first refresh, but this
-integration will still set up without it. Nothing here reads the Bambu integration
-directly — it only reads whichever entities you point it at — so it works with a fork, or
-with an entirely different printer integration, as long as something exposes a per-slot
-print weight sensor.
+- **Per-slot filament costing** from your own tag library, priced by the RFID tag of the
+  spool actually loaded — a spool's two tags count as one spool.
+- **Electricity integrated, not estimated**: a variable tariff is charged as it moved
+  during the print, standby between prints is counted, and even an aborted print's
+  power reaches the total. Cross-checked against the energy counters, so a smart plug
+  dropping off the network cannot silently under-bill a job.
+- **A job log with pictures** — the slicer's render, or a camera photo of what actually
+  came off the plate.
+- **Spools scan themselves in**: loading an unknown tag appends a library row, named
+  from Bambu's colour palette, ready for you to price.
+- **Three cards** — tag library editor, print history, quote calculator — registered
+  automatically, no resource wrangling.
+- Survives restarts, reconnects and mid-print dropouts without losing or double-counting
+  a cent.
 
 ## Install
 
 **HACS** → three-dot menu → *Custom repositories* → add this repo as an **Integration**,
 then download it and restart Home Assistant.
 
-HACS installs the latest release. `zip_release` is deliberately left off — turning it on
-without a published zip is what makes downloads hang — so HACS takes the files from the
-release tag.
-
 **Manually**: copy `custom_components/bambu_costs` into your `config/custom_components/`
 and restart.
 
-Then *Settings → Devices & Services → Add Integration → Bambu Print Costs*.
+Then *Settings → Devices & Services → Add Integration → Bambu Print Costs*. Pick your
+printer and the sensors are filled in for you — see [Setup](docs/setup.md).
 
-## Releasing
+Requires Home Assistant 2024.12+ and a printer integration exposing per-slot print
+weights — in practice [ha-bambulab](https://github.com/greghesp/ha-bambulab), though
+nothing is read from it directly.
 
-`main` is protected: changes land through a pull request that passes Validate.
+## Quick start
 
-Releases are cut automatically. Bump `version` in
-`custom_components/bambu_costs/manifest.json` as part of the change; once it merges and
-Validate passes on `main`, the Release workflow tags `vX.Y.Z` and publishes it with
-generated notes. A merge that does not change the version publishes nothing, so
-documentation-only changes do not churn out releases.
-
-The manifest is the single source of truth — it is what Home Assistant and HACS actually
-read, and the tag follows it rather than the other way round.
-
-## Setup
-
-**Step 1 — pick the printer device.** Everything else is filled in from it: the sensors,
-and any AMS slots the printer is currently reporting, each paired with its tray. Leave it
-empty to configure by hand.
-
-Entities are matched on their `translation_key`, not on entity-id suffixes, so a renamed
-entity is still found — `subtask_name` is displayed as "Task name", which is where
-`sensor.…_task_name` comes from, and matching on the key survives that. Slot attribute
-names are read off the print weight sensor rather than invented, and a tray is attached
-only when the pairing is unambiguous; anything doubtful is listed for you instead.
-
-The catch: the printer only reports per-slot attributes for slots the *current* job uses,
-so a discovery run while idle finds no slots and one mid-print finds only the slots in
-use. The rest are listed as unpaired trays for you to add. Re-running discovery from the
-options later picks up the rest.
-
-**Step 2 — sensors.** Whatever was found, shown so you can correct it before continuing.
-
-**Step 3 — slots and rates.** Add one entry per filament source, using the attribute name
-exactly as the print weight sensor reports it:
-
-```
-AMS 1 Tray 1
-AMS 1 Tray 2|A2
-AMS HT 1|HT|sensor.printer_ams_ht_tray_1
-```
-
-- **First part** — the `print_weight` attribute name. Matched verbatim, never guessed:
-  these names have changed across printer-integration releases before, and a guess that
-  silently misses is worse than a blank.
-- **Second part** *(optional)* — a short label for the dashboard.
-- **Third part** *(optional)* — the tray sensor. Supplies the colour and material for the
-  job log, and its `tag_uid` prices the slot straight from your tag library.
-
-Leave the list empty if you do not use an AMS; everything is then priced at the default.
-
-## Currency
-
-Set during setup, prefilled with `EUR`, and changeable in the options. It is display-only —
-any text works — and flows through the number entities' units, both cost sensors, and the
-cards, which pick it up from the integration rather than needing their own setting.
-
-## Electricity price
-
-Set **Electricity price sensor** to a sensor reporting the price per kWh and a variable
-tariff is followed automatically — `sensor.electricity_price` at `0.22986 EUR/kWh` is the
-shape this expects. The fixed **Electricity price** number stays as the fallback, used
-whenever no sensor is configured or the sensor reads `unknown`/`unavailable`/non-numeric.
-
-Negative prices are passed through rather than filtered, since spot tariffs can go
-negative. The sensor's value is taken as-is, so it must already be per kWh in your
-currency — point it at a template sensor if yours reports ct/kWh or EUR/MWh.
-
-### Cost is integrated, not estimated
-
-Set **Power sensors** and the integration keeps a live cost rate — summed watts × the
-current price — and integrates it over time into `cost_total`. Because the rate is re-read
-whenever the power or the price moves, and each interval is charged at the rate that
-actually applied to it, a tariff that changes mid-print is charged as it changed. That
-removes the approximation of multiplying total kWh by the price at the end.
-
-Two consequences fall out of the accumulator running continuously:
-
-- **A print's electricity** is the total's delta between start and finish, so it is exact
-  even on a spot tariff. `log_job` uses it whenever power sensors are configured, falling
-  back to kWh × price when they are not.
-- **Standby is counted.** The gap between one print ending and the next starting is
-  measured too, and lands in `last_idle_cost`. On a printer drawing ~14 W at rest that is
-  easily larger than the prints themselves.
-- **Every stretch is banked into `total_cost` exactly once.** `cost_at_print_end` doubles
-  as a banked-through mark: idle windows are added when the next print starts (or on a
-  reconnect resync), and a print's own stint is added when it ends — **aborted or not**,
-  so a stopped print's electricity is not lost just because nothing logged it. `log_job`
-  therefore adds only the filament to the total; with no power sensors configured there
-  is no live banking, and the row's estimated power cost rides along instead. A resume
-  banks nothing, so a recovered job cannot be charged twice.
-
-### Losing sight of the printer
-
-A printer prints perfectly well with Home Assistant not watching, and it re-announces its
-state on reconnecting. `finish` is a state it then sits in indefinitely, so a reconnect
-looks exactly like a job ending — and a reconnect mid-job looks exactly like one starting.
-Neither is true, and both used to move the cost markers.
-
-- **A finish with nothing running is a resync.** The idle window is moved forward and the
-  standby accrued in it is *banked first* rather than dropped, and no print cost is
-  recorded, because no print ended.
-- **A start out of a disconnected state is decided by task name.** The same name means the
-  job was already underway and its markers still apply; a different one means new work
-  began unobserved. With no name to compare it counts as a resume — keeping stale markers
-  overcharges one print by the idle before it, while discarding markers that were needed
-  loses everything a running job had spent, with nothing left to rebuild it from.
-
-Standby is banked in exactly one place, so no path can move the idle marker without
-banking what the window held.
-
-Accrual is computed from elapsed time rather than tick count, so a missed or irregular
-tick costs freshness, never accuracy.
-
-### When the power sensor stops reporting
-
-Integrating power has one silent failure mode: a sensor that stops reporting integrates to
-nothing. A smart plug that drops off the network for the length of a print produces a
-confident-looking small number rather than visibly missing data.
-
-An energy **counter** survives that — it keeps counting through the outage and its delta is
-still right once it reconnects. So the integral is used, but checked against the counter at
-the end of every job, and the counter wins when:
-
-- **no print start was observed** — the printer went offline mid-job and came back
-  reporting `finish`, so the window that was integrated belongs to an *earlier* job; or
-- **the counter recorded materially more energy than the integral charged for.** The
-  integral can only ever under-count this way, so the larger figure is the honest one.
-
-Both cases log a `WARNING` naming both figures. Ordinary disagreement is expected — the
-integral follows a moving tariff that a flat price cannot — so a 25% slack applies before
-the second rule fires.
-
-> **Point the energy sensor at a raw counter, not a `utility_meter`.** This matters more
-> than it looks. When a source goes `unavailable`, `utility_meter` deliberately skips the
-> delta across the gap: it cannot tell a genuine jump from a meter reset, so it drops the
-> consumption instead of guessing. A plug's own lifetime `_energy` sensor keeps it. So a
-> meter stacked on a counter can lose most of a print while the counter underneath it
-> recorded the lot — and the meter is the one that looks like the tidier choice.
-
-**Configure the power and energy lists over the same devices.** They are cross-checked
-against each other, so metering three sockets while integrating one makes the metered
-figure legitimately larger every time and the check fires on every job. Whichever set you
-choose — printer only, or printer plus AMS plus a dryer — put the same sockets in both.
-
-**After changing which energy sensors are configured, re-snapshot the start marker.** The
-counters are cumulative and each one reads a different lifetime total, so swapping them
-leaves `number.<name>_energy_at_print_start` pointing at a number from a different scale
-and the next job computes an enormous delta. Set it to the new sum:
+Add the cards to a dashboard:
 
 ```yaml
-action: number.set_value
-target:
-  entity_id: number.bambu_costs_energy_at_print_start
-data:
-  value: >-
-    {{ (states('sensor.printer_socket_energy') | float(0)
-      + states('sensor.ams_socket_energy') | float(0)) | round(6) }}
+type: custom:bambu-costs-tags-editor
+entity: sensor.bambu_costs_tag_library
 ```
 
-Forgetting is not catastrophic — a delta implying an average draw above 3 kW is rejected as
-a counter discontinuity and the integral is kept, with an `ERROR` naming the figure — but
-the guard is a backstop, not a substitute for re-snapshotting.
-
-### Costs per month
-
-The integration deliberately does **not** implement monthly cycles. Core's `utility_meter`
-already does that — cycles, restarts, DST, offsets, tariffs — and reimplementing it here
-would be a worse copy that only ever did one period.
-
-What the integration provides is a source worth pointing it at:
-`sensor.<name>_total_spend`, the whole bill with `state_class: total_increasing`. The
-running figure lives in `number.<name>_total_cost` so it can be *seeded* when you cut over
-from an older setup, and numbers carry no state class — nothing will meter or graph one.
-This sensor is that number with the metadata attached.
-
-```yaml
-utility_meter:
-  bambu_costs_monthly:
-    source: sensor.bambu_costs_total_spend
-    cycle: monthly
-```
-
-Check the entity ID before pasting that. If the integration's device is assigned to an
-area, Home Assistant prefixes entities created *after* the assignment with the area slug,
-while entities that existed before the move keep the unprefixed ID — so both forms can
-coexist in one install.
-
-Add `cycle: daily` or `yearly` blocks off the same source if you want them. Seed the
-number **before** creating the meter, so the starting balance is not counted as this
-month's spend:
-
-```yaml
-action: number.set_value
-target:
-  entity_id: number.bambu_costs_total_cost
-data:
-  value: 0  # whatever the old setup had spent to date
-```
-
-## How a slot gets its price
-
-In order of precedence:
-
-1. The **tag library**, matched on the `tag_uid` the tray reports — the price of the spool
-   actually loaded. A spool carries a tag on each side reporting different serials, so a
-   row can name the other one in `serial_2`; either matches, so it prices the same
-   whichever way round the spool goes in.
-2. The slot's own **price number**, if you have set one.
-3. The **default filament price**.
-
-Each row in the breakdown carries `price_source` so you can see which applied.
-
-### When a slot's price entity updates
-
-The price numbers track what is loaded rather than being settings you maintain. They are
-rewritten **the moment a tray changes** — the tray sensors are watched, so loading a spool
-prices the slot from its tag immediately, and unloading one drops it to **0**. They are
-also refreshed when a print **starts** and when it **finishes**, and on demand via
-`bambu_costs.sync_slot_prices`.
-
-A slot holding a spool the library does not know also goes to 0. Zero means "no price of
-its own", so costing falls back to the default rather than charging nothing.
-
-Two cases are deliberately skipped instead of zeroed, because neither means empty: a slot
-with no tray sensor configured, and a tray whose own state is `unavailable` — usually the
-printer being switched off, which must not look like every spool was unloaded.
-
-None of this affects what a print costs. The tag price is resolved live at calculation
-time, so the figures are right even if these entities are stale.
-
-Filament the printer counted that no configured slot claimed — an external spool, or a
-slot whose attribute name drifted — becomes an `External` row priced at the default,
-rather than being dropped. Mixed AMS + external jobs therefore total correctly.
-
-### Scanned spools are added to the library
-
-The same tray sensors carry newly read RFID tags, so loading a spool the library has never
-seen **appends a row for it** instead of leaving you to type it in. The printer reports the
-product name and colour but never a price, so the row starts at **0** — which reads as "no
-price of its own" — and an `INFO` line in the log tells you to set it in the tags card.
-
-The colour is named from Bambu's own palette (274 hexes, e.g. `#00AE42` → *Bambu Green
-(10501)*). A third-party hex that isn't one of theirs is not an error; the row is added
-with `Unknown Color` for you to rename.
-
-Nothing is added for an empty tray, and re-reading a tag already in the library does
-nothing. A serial named as some row's **`serial_2`** counts as already known — so if you
-fill in a spool's second tag before scanning that side, it will not create a duplicate.
-Leave `serial_2` blank and the second tag becomes its own row, which you can pair up later
-by hand.
-
-## Surviving a restart mid-print
-
-A print weight sensor typically keeps its total across a Home Assistant restart but
-loses the per-slot attributes until the next print begins. Left alone, the whole job
-would fall through to the External branch and be repriced at the default — a
-plausible-looking but wrong number, quietly written into the job log.
-
-So the last breakdown computed from real per-slot data is persisted with the sensor. If
-the attributes disappear while the job name and total weight still match that snapshot,
-the remembered split is used and the breakdown carries `restored: true`.
-
-It is deliberately conservative. A different job name or a changed total rejects the
-snapshot, live attributes always win over it, an External-only result is never
-remembered as good, and the snapshot is dropped the moment a new print starts so it can
-never be applied to different filament. Prices are kept as they were rather than
-re-resolved — the tray sensors lose their `tag_uid` in the same restart, so recomputing
-would reintroduce the fallback this exists to avoid.
-
-## Logging a finished job
+Log each finished job from an automation:
 
 ```yaml
 triggers:
@@ -418,98 +65,19 @@ actions:
       print_time_min: "{{ states('sensor.printer_print_time') | float(0) }}"
 ```
 
-No automation is needed to snapshot the meters. The integration is already watching the
-print-status transition, so it records both the energy total and the running cost total
-when a print starts, and measures the job against them.
+Everything else — meter snapshots, slot prices, idle tracking — happens on its own.
 
-A resume is not a new job: coming back from a pause, or from a failure the printer
-recovered out of, leaves both markers where they were. Re-marking would restart the meters
-part-way through and undercount everything already spent.
+## Documentation
 
-## Card examples
-
-```yaml
-type: custom:bambu-costs-tags-editor
-entity: sensor.bambu_costs_tag_library
-```
-
-```yaml
-type: custom:bambu-costs-jobs-table
-entity: sensor.bambu_costs_job_log
-page_size: 20
-```
-
-```yaml
-type: custom:bambu-costs-calculator
-entity: sensor.bambu_costs_tag_library
-rate_per_minute: 0.0008
-margin_percent: 30
-vat_percent: 21
-```
-
-## Files on disk
-
-```
-config/bambu_costs/<entry_id>/tags.csv
-config/bambu_costs/<entry_id>/tags.csv.bak
-config/bambu_costs/<entry_id>/jobs.csv
-config/bambu_costs/<entry_id>/covers/*.jpg
-```
-
-Both CSVs have a header row and are written with a real CSV writer, so commas and quotes
-inside a value are quoted rather than stripped. A headerless file still loads, so you can
-drop an existing tag list in unchanged.
-
-Covers are served at `/bambu-costs-covers/`. Nothing else under `config/` is exposed.
-
-The bulky `data` and `slots` attributes are excluded from the recorder automatically —
-no hand-written `recorder:` exclusion needed.
-
-## Importing existing CSVs
-
-Call `bambu_costs.import_legacy` from *Developer Tools → Actions*:
-
-```yaml
-action: bambu_costs.import_legacy
-data:
-  tags_path: /config/www/bambu_tags.csv
-  jobs_path: /config/www/bambu_jobs_log.csv
-  covers_path: /config/www/images/bambu_jobs
-```
-
-It returns how many of each it took. What it handles:
-
-- **Tags** — 5-column files (no `disabled` column, so everything imports enabled) and
-  6-column ones, with or without a header row.
-- **Jobs** — the 16-column layout, including dropping the derived `eur_per_100g` column
-  so nothing after it lands in the wrong field.
-- **Trays** — `A1:Bambu PLA Basic:#00AE42:148.71g:1.966 | EXT:…` is unpacked into proper
-  objects. The unit price was never stored in that format, so it is recovered from cost
-  and weight; it lands within a fraction of a percent of what was charged at the time.
-- **Covers** — images referenced by the job log are copied in and re-served under the
-  integration's own URL.
-
-Blank lines are skipped, and re-running is safe: jobs are matched on timestamp and tags
-on serial, so nothing duplicates. Pass `replace: true` to wipe first instead of merging.
-
-You can also just drop a **tags** CSV straight in at
-`config/bambu_costs/<entry_id>/tags.csv` — the reader falls back to headerless parsing.
-That shortcut does *not* work for the job log, whose columns have changed; use the
-service for that.
-
-## Running alongside an existing setup
-
-Every name here is distinct from the YAML/shell setup this grew out of, so both can run
-at once while you migrate:
-
-| | Old | New |
-| --- | --- | --- |
-| Tag sensor | `sensor.bambu_tags` | `sensor.bambu_costs_tag_library` |
-| Job sensor | `sensor.bambu_jobs_log` | `sensor.bambu_costs_job_log` |
-| Prices | `input_number.3d_printer_*` | `number.bambu_costs_*` |
-| Cards | `bambu-tags-editor`, … | `bambu-costs-tags-editor`, … |
-| Data | `config/www/bambu_tags.csv` | `config/bambu_costs/<entry>/tags.csv` |
-| Writes | `shell_command.*` | `bambu_costs.*` |
+| | |
+| --- | --- |
+| [Setup](docs/setup.md) | The config flow, device discovery, slot syntax, currency, icon. |
+| [Entities & services](docs/entities.md) | Every sensor, number, button, switch and service, plus the job-logging automation. |
+| [Electricity costing](docs/costing.md) | Variable tariffs, integration vs estimation, outage handling, monthly costs via `utility_meter`. |
+| [Filament pricing](docs/filament.md) | How a slot gets its price, tag scanning, spool pairs, restart survival. |
+| [Cards](docs/cards.md) | The three cards and their options. |
+| [Data & migration](docs/data.md) | Files on disk, importing legacy CSVs, running alongside an old setup. |
+| [Releasing](docs/releasing.md) | How versions and releases are cut. |
 
 ## Not included yet
 
