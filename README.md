@@ -206,6 +206,32 @@ Two consequences fall out of the accumulator running continuously:
 Accrual is computed from elapsed time rather than tick count, so a missed or irregular
 tick costs freshness, never accuracy.
 
+### When the power sensor stops reporting
+
+Integrating power has one silent failure mode: a sensor that stops reporting integrates to
+nothing. A smart plug that drops off the network for the length of a print produces a
+confident-looking small number rather than visibly missing data.
+
+An energy **counter** survives that — it keeps counting through the outage and its delta is
+still right once it reconnects. So the integral is used, but checked against the counter at
+the end of every job, and the counter wins when:
+
+- **no print start was observed** — the printer went offline mid-job and came back
+  reporting `finish`, so the window that was integrated belongs to an *earlier* job; or
+- **the counter recorded materially more energy than the integral charged for.** The
+  integral can only ever under-count this way, so the larger figure is the honest one.
+
+Both cases log a `WARNING` naming both figures. Ordinary disagreement is expected — the
+integral follows a moving tariff that a flat price cannot — so a 25% slack applies before
+the second rule fires.
+
+> **Point the energy sensor at a raw counter, not a `utility_meter`.** This matters more
+> than it looks. When a source goes `unavailable`, `utility_meter` deliberately skips the
+> delta across the gap: it cannot tell a genuine jump from a meter reset, so it drops the
+> consumption instead of guessing. A plug's own lifetime `_energy` sensor keeps it. In a
+> real outage measured here, the raw counter recorded **0.837 kWh** while the monthly meter
+> on top of it recorded **0.087** — the utility meter lost 90% of a print.
+
 ### Costs per month
 
 The integration deliberately does **not** implement monthly cycles. Core's `utility_meter`

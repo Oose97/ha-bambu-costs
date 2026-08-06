@@ -79,6 +79,12 @@ RESUME_STATES: Final = frozenset({"pause", "paused", "failed"})
 # computed from elapsed time, so this only controls freshness, not accuracy.
 COST_TICK_SECONDS: Final = 60
 
+# How far the metered figure may exceed the integrated one before the integral
+# is treated as having lost a stretch rather than merely disagreeing. Integrating
+# power follows a moving tariff that a flat price cannot, so some disagreement is
+# normal and expected; a reporting gap is not subtle.
+POWER_COST_TOLERANCE: Final = 0.25
+
 # tag_uid values that mean "no spool here" rather than naming one. The printer
 # reports the all-zero UID for a tray it can see but cannot read a tag from.
 EMPTY_TAG_UIDS: Final = frozenset(

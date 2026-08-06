@@ -44,6 +44,7 @@ from .const import (
     EMPTY_TAG_UIDS,
     EXTERNAL_TOLERANCE_G,
     NUMBER_DEFS,
+    POWER_COST_TOLERANCE,
     SLOT_PRICE_PREFIX,
     SLOT_SEPARATOR,
 )
@@ -125,6 +126,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.cost_total: float = 0.0
         self._rate: float = 0.0
         self._rate_since: datetime | None = None
+
+        # Whether a print start was observed for the job now running. False
+        # after a finish, and False at startup — a job already underway when
+        # Home Assistant started has no valid integration window either.
+        self._saw_print_start: bool = False
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -393,6 +399,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not new_job:
             return 0.0
 
+        self._saw_print_start = True
         idle = self.spend_since("cost_at_print_end")
         self.set_value("last_idle_cost", idle)
         # Standby is real money — the printer idles at ~14 W — and nothing else
@@ -414,6 +421,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         spent = self.spend_since("cost_at_print_start")
         self.set_value("last_print_power_cost", spent)
         self.set_value("cost_at_print_end", self.cost_total)
+        # Cleared last: the next job must prove its own start was seen before
+        # its integration window is trusted.
+        self._saw_print_start = False
         return spent
 
     def energy_now(self) -> float:
@@ -559,6 +569,69 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._remember_breakdown(result)
         return result
 
+    # ── what the electricity for a job cost ──────────────────────────────────
+    def power_cost_for_job(self, energy_kwh: float) -> float:
+        """Electricity cost for the job just finished.
+
+        Integrating power is the better method when it works: a tariff that
+        moved mid-print is charged as it actually moved, which multiplying
+        total kWh by one price cannot do.
+
+        It has one failure mode, and it is silent. Integrating a sensor that
+        stops reporting yields nothing — a printer whose smart plug drops off
+        the network for the length of a print integrates to about zero, and the
+        result looks like a confident small number rather than missing data.
+        An energy *counter* survives that: it keeps counting through the outage
+        and the delta is still right once it reconnects.
+
+        So the integral is used, but never blindly:
+
+        * If no print start was observed, the window it integrated over does
+          not correspond to this job at all. That happens when the printer
+          finishes a job Home Assistant never saw begin — it went offline
+          mid-job and came back reporting ``finish``.
+        * If the counter says materially more energy was used than the integral
+          charged for, the integral lost a stretch. It can only ever *under*
+          count this way — a sensor that stops reporting cannot invent
+          consumption — so the larger figure is the honest one.
+
+        Either way the counter's figure wins and the shortfall is logged.
+        """
+        price, price_source = self.electricity_price()
+        metered = energy_kwh * price
+
+        if not self.options.get(CONF_POWER_SENSORS):
+            _LOGGER.debug("Costing %s kWh at %s/kWh (%s)", energy_kwh, price, price_source)
+            return metered
+
+        integrated = self.spend_since("cost_at_print_start")
+
+        if not self._saw_print_start:
+            _LOGGER.warning(
+                "This job's start was never seen — the printer was likely "
+                "offline when it began — so the running total was not marked "
+                "for it. Costing the %.4f kWh the energy sensors recorded at "
+                "%s/kWh (%.4f %s) rather than the %.4f %s integrated over a "
+                "window that belongs to an earlier job.",
+                energy_kwh, price, metered, self.currency, integrated, self.currency,
+            )
+            return metered
+
+        # A little slack so ordinary disagreement — the integral following a
+        # tariff the flat price cannot, sensors sampling at different moments —
+        # does not read as a lost stretch.
+        if metered > integrated * (1.0 + POWER_COST_TOLERANCE):
+            _LOGGER.warning(
+                "Power integration captured %.4f %s but the energy sensors "
+                "recorded %.4f kWh (%.4f %s at %s/kWh). A power sensor that "
+                "stops reporting integrates to nothing, so this job most "
+                "likely spans a gap; charging the metered figure.",
+                integrated, self.currency, energy_kwh, metered, self.currency, price,
+            )
+            return metered
+
+        return integrated
+
     # ── job logging ──────────────────────────────────────────────────────────
     def build_job_row(self, overrides: dict[str, Any]) -> dict[str, Any]:
         """Assemble one job-log row from live state plus any explicit values."""
@@ -574,15 +647,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         power_cost = overrides.get("power_cost")
         if power_cost is None:
-            if self.options.get(CONF_POWER_SENSORS):
-                # Integrated over the print, so a tariff that moved during it
-                # is charged as it actually moved.
-                power_cost = self.spend_since("cost_at_print_start")
-            else:
-                # No power sensors configured: fall back to the flat estimate.
-                price, source = self.electricity_price()
-                _LOGGER.debug("Costing %s kWh at %s/kWh (%s)", energy_kwh, price, source)
-                power_cost = energy_kwh * price
+            power_cost = self.power_cost_for_job(energy_kwh)
 
         minutes = as_float(overrides.get("print_time_min"))
         job_name = overrides.get("job") or self._state(CONF_TASK_NAME) or "unknown"
