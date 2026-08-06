@@ -399,22 +399,25 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return max(0.0, self.cost_total - self.value(key))
 
     @callback
-    def _bank_idle(self) -> float:
-        """Close the open idle window, banking what standby cost. Returns it.
+    def _bank_through_now(self, idle: bool) -> float:
+        """Bank all electricity accrued since the banked-through marker.
 
-        The only place standby is ever banked. Anything that moves
-        ``cost_at_print_end`` without coming through here silently discards
-        every cent accrued since that marker last moved — which is exactly how
-        a reconnect used to lose a night of idle.
+        ``cost_at_print_end`` doubles as the high-water mark of what has been
+        banked: everything below it is already in ``total_cost``, everything
+        between it and ``cost_total`` is not. Moving the marker and adding to
+        the total happen together, here and nowhere else — so every accrued
+        cent is banked exactly once, whether it was spent idling, printing, or
+        in a stint that ended in an abort nothing ever logged.
+
+        Idle windows also land in ``last_idle_cost``; print stints do not.
         """
-        idle = self.spend_since("cost_at_print_end")
-        if idle <= 0:
-            return 0.0
-        self.set_value("last_idle_cost", idle)
-        # Standby is real money — the printer idles at ~14 W — and nothing else
-        # will ever bank it: log_job only adds what a print itself cost.
-        self.set_value("total_cost", self.value("total_cost") + idle)
-        return idle
+        amount = self.spend_since("cost_at_print_end")
+        if amount > 0:
+            if idle:
+                self.set_value("last_idle_cost", amount)
+            self.set_value("total_cost", self.value("total_cost") + amount)
+        self.set_value("cost_at_print_end", self.cost_total)
+        return amount
 
     @callback
     def mark_print_start(self, now: datetime | None = None, new_job: bool = True) -> float:
@@ -438,7 +441,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._job_at_start = self._state(CONF_TASK_NAME) or ""
         # New work: whatever ended before belongs to a different job now.
         self._ended_had_start = False
-        idle = self._bank_idle()
+        idle = self._bank_through_now(idle=True)
         self.set_value("cost_at_print_start", self.cost_total)
         # Snapshot the energy meters here rather than from an automation: the
         # print-start transition is already being watched, and the sensors are
@@ -457,8 +460,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # it sits in indefinitely. Only the idle window is resynced, and
             # what accrued in it is banked rather than dropped. No print cost
             # is recorded, because no print ended.
-            idle = self._bank_idle()
-            self.set_value("cost_at_print_end", self.cost_total)
+            idle = self._bank_through_now(idle=True)
             # No job ended, so anything logged off this transition must not
             # claim an observed start it does not have.
             self._ended_had_start = False
@@ -471,7 +473,10 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         spent = self.spend_since("cost_at_print_start")
         self.set_value("last_print_power_cost", spent)
-        self.set_value("cost_at_print_end", self.cost_total)
+        # The stint is banked here, not by log_job: an aborted print gets no
+        # log call, and its electricity was just as real. log_job adds only
+        # the filament, so nothing is counted twice.
+        self._bank_through_now(idle=False)
         # Recorded before the running flag is cleared: the job is logged by an
         # automation that fires after this listener, and it needs to know the
         # ended job's start was observed even though nothing is running by then.

@@ -29,6 +29,7 @@ from .const import (
     ATTR_PRICE,
     ATTR_SERIAL,
     ATTR_TAGS,
+    CONF_POWER_SENSORS,
     CONF_PRINT_STATUS,
     DISCONNECTED_STATES,
     DOMAIN,
@@ -363,8 +364,16 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 "total_filament_used",
                 coordinator.value("total_filament_used") + row["weight_g"],
             )
+            # Electricity is banked live by the coordinator whenever power
+            # sensors are configured — the stint landed in the total at the
+            # finish transition, aborted or not, so adding the row's power
+            # here would count it twice. Without power sensors there is no
+            # live banking, and the estimated power cost rides along instead.
+            addition = row["filament_cost"]
+            if not coordinator.options.get(CONF_POWER_SENSORS):
+                addition += row["power_cost"]
             coordinator.set_value(
-                "total_cost", coordinator.value("total_cost") + row["total_cost"]
+                "total_cost", coordinator.value("total_cost") + addition
             )
         return {"logged": True, "total_cost": row["total_cost"], "cover": row["cover"]}
 
