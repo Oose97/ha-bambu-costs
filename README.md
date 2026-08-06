@@ -51,20 +51,10 @@ type: custom:bambu-costs-tags-editor
 entity: sensor.bambu_costs_tag_library
 ```
 
-Log each finished job from an automation:
-
-```yaml
-triggers:
-  - trigger: state
-    entity_id: sensor.printer_print_status
-    to: finished
-actions:
-  - action: bambu_costs.log_job
-    data:
-      print_time_min: "{{ states('sensor.printer_print_time') | float(0) }}"
-```
-
-Everything else — meter snapshots, slot prices, idle tracking — happens on its own.
+That is all. No automations are needed: finished jobs are logged by the integration
+itself, along with meter snapshots, slot prices, durations and idle tracking. An
+automation may still call `bambu_costs.log_job` — a second call for a job that is
+already logged is skipped, so notification automations coexist safely.
 
 ## Documentation
 

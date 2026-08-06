@@ -22,8 +22,11 @@ from homeassistant.util import slugify
 from .colors import color_name
 from .const import (
     DOMAIN,
+    CONF_AUTO_LOG,
     CONF_CAMERA,
     CONF_COVER_IMAGE,
+    CONF_END_TIME,
+    CONF_START_TIME,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_CURRENCY,
     CONF_ELECTRICITY_PRICE,
@@ -136,6 +139,14 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # after a finish, and False at startup — a job already underway when
         # Home Assistant started has no valid integration window either.
         self._saw_print_start: bool = False
+        # Wall-clock bounds of the current/last print, measured off the same
+        # transitions the meters use, so the logged duration needs no sensor.
+        self._print_started_at: datetime | None = None
+        self._print_ended_at: datetime | None = None
+        # Whether the current job has already been written to the log — the
+        # integration logs on finish, and an automation calling log_job on the
+        # same transition must not produce a second row.
+        self._job_logged: bool = False
         # Whether the job that most recently *ended* had an observed start.
         # mark_print_end consumes _saw_print_start, and the job is logged from
         # an automation that runs after it — so the logging path needs its own
@@ -441,6 +452,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._job_at_start = self._state(CONF_TASK_NAME) or ""
         # New work: whatever ended before belongs to a different job now.
         self._ended_had_start = False
+        self._job_logged = False
+        self._print_started_at = now or dt_util.utcnow()
+        self._print_ended_at = None
         idle = self._bank_through_now(idle=True)
         self.set_value("cost_at_print_start", self.cost_total)
         # Snapshot the energy meters here rather than from an automation: the
@@ -450,8 +464,13 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return idle
 
     @callback
-    def mark_print_end(self, now: datetime | None = None) -> float:
-        """Close off the print period. Returns what its electricity cost."""
+    def mark_print_end(self, now: datetime | None = None) -> float | None:
+        """Close off the print period. Returns what its electricity cost.
+
+        Returns ``None`` when nothing was running — a reconnect resync rather
+        than a job ending — so the caller can tell "a print finished" apart
+        from "the printer came back", and only auto-log the former.
+        """
         self.accrue_cost(now)
 
         if not self._saw_print_start:
@@ -469,8 +488,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 idle,
                 self.currency,
             )
-            return 0.0
+            return None
 
+        self._print_ended_at = now or dt_util.utcnow()
         spent = self.spend_since("cost_at_print_start")
         self.set_value("last_print_power_cost", spent)
         # The stint is banked here, not by log_job: an aborted print gets no
@@ -740,6 +760,90 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return integrated
 
     # ── job logging ──────────────────────────────────────────────────────────
+    @property
+    def auto_log(self) -> bool:
+        """Whether finished jobs are logged without an automation asking."""
+        return bool(self.options.get(CONF_AUTO_LOG, True))
+
+    def _ts(self, key: str) -> datetime | None:
+        state = self._state(key)
+        return dt_util.parse_datetime(state) if state else None
+
+    def print_minutes(self) -> float:
+        """How long the current or last print ran, in minutes.
+
+        Measured off the same transitions the meters use, so no duration
+        sensor is needed. A job whose start was never observed — a restart or
+        an outage — falls back to the printer's own start/end time sensors,
+        which re-report after a reconnect.
+        """
+        if self._print_started_at is not None:
+            end = self._print_ended_at or dt_util.utcnow()
+            return max(0.0, (end - self._print_started_at).total_seconds() / 60.0)
+
+        start = self._ts(CONF_START_TIME)
+        end = self._ts(CONF_END_TIME)
+        if start and end and end > start:
+            return (end - start).total_seconds() / 60.0
+        return 0.0
+
+    async def async_log_current_job(
+        self,
+        overrides: dict[str, Any] | None = None,
+        capture_cover: bool = True,
+        update_totals: bool = True,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Append the current job to the log — the one place a row is written.
+
+        The integration logs on the finish transition and an automation may
+        call ``log_job`` on the same transition, so the first write per job
+        wins and the second is skipped. ``force`` is the deliberate override,
+        for re-logging with corrected values.
+        """
+        if self._job_logged and not force:
+            _LOGGER.debug("Job already logged; skipping duplicate log call")
+            return {"logged": False, "reason": "already logged — pass force to re-log"}
+
+        row = self.build_job_row(overrides or {})
+
+        if capture_cover:
+            stamp = str(row["timestamp"]).replace("-", "").replace(":", "").replace(" ", "-")
+            row["cover"] = await self.async_capture_cover(stamp)
+
+        await self.async_append_job(row)
+        self._job_logged = True
+
+        if update_totals:
+            self.set_value("last_print_filament_cost", row["filament_cost"])
+            self.set_value("last_print_power_cost", row["power_cost"])
+            self.set_value("last_print_cost", row["total_cost"])
+            self.set_value(
+                "total_filament_used",
+                self.value("total_filament_used") + row["weight_g"],
+            )
+            # Electricity is banked live by the coordinator whenever power
+            # sensors are configured — the stint landed in the total at the
+            # finish transition, aborted or not, so adding the row's power
+            # here would count it twice. Without power sensors there is no
+            # live banking, and the estimated power cost rides along instead.
+            addition = row["filament_cost"]
+            if not self.options.get(CONF_POWER_SENSORS):
+                addition += row["power_cost"]
+            self.set_value("total_cost", self.value("total_cost") + addition)
+
+        return {"logged": True, "total_cost": row["total_cost"], "cover": row["cover"]}
+
+    async def async_auto_log(self) -> None:
+        """Log the job that just finished, guarded so a failure stays local."""
+        try:
+            result = await self.async_log_current_job()
+        except Exception:  # noqa: BLE001 — must never take the listener down
+            _LOGGER.exception("Auto-logging the finished job failed")
+            return
+        if result.get("logged"):
+            _LOGGER.info("Logged finished job automatically (%s)", result.get("cover") or "no cover")
+
     def build_job_row(self, overrides: dict[str, Any]) -> dict[str, Any]:
         """Assemble one job-log row from live state plus any explicit values."""
         breakdown = self.breakdown()
@@ -753,8 +857,12 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             energy_kwh = max(0.0, self.energy_now() - self.value("energy_at_print_start"))
 
         # Read before the power cost: the duration is what makes an implausible
-        # energy delta recognisable as a counter discontinuity.
-        minutes = as_float(overrides.get("print_time_min"))
+        # energy delta recognisable as a counter discontinuity. An explicit
+        # override wins; otherwise the measured duration.
+        if overrides.get("print_time_min") is not None:
+            minutes = as_float(overrides.get("print_time_min"))
+        else:
+            minutes = self.print_minutes()
 
         power_cost = overrides.get("power_cost")
         if power_cost is None:

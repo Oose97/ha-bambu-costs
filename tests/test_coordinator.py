@@ -30,6 +30,9 @@ def make(power_sensors=True, price=0.23):
     c._saw_print_start = False
     c._ended_had_start = False
     c._job_at_start = ""
+    c._job_logged = False
+    c._print_started_at = None
+    c._print_ended_at = None
     c.last_good = None
     # the pieces that would need hass, pinned per test instead
     c.async_update_listeners = lambda: None
@@ -141,6 +144,89 @@ def test_discontinuity_guard_rejects_impossible_deltas():
 def test_without_power_sensors_the_estimate_is_used():
     c = make(power_sensors=False)
     assert c.power_cost_for_job(0.8372, 376.0) == pytest.approx(0.8372 * 0.23)
+
+
+# ── self-logging ─────────────────────────────────────────────────────────────
+def test_resync_and_real_end_are_distinguishable():
+    c = make()
+    c.cost_total = 0.30
+    assert c.mark_print_end() is None, "resync: nothing was running"
+    c.mark_print_start(new_job=True)
+    c.cost_total = 0.35
+    assert c.mark_print_end() == pytest.approx(0.05), "a real end returns the stint"
+
+
+def test_print_minutes_measured_and_fallback():
+    import datetime as dt
+
+    c = make()
+    t0 = dt.datetime(2026, 8, 6, 12, 0, tzinfo=dt.UTC)
+    c.mark_print_start(new_job=True, now=t0)
+    c.mark_print_end(now=t0 + dt.timedelta(minutes=76))
+    assert c.print_minutes() == pytest.approx(76.0)
+
+    # start never observed: the printer's own clocks are the fallback
+    c2 = make()
+    c2._state = lambda key: {
+        "start_time": "2026-08-06T15:53:42+00:00",
+        "end_time": "2026-08-06T16:24:42+00:00",
+    }.get(key, "Job")
+    assert c2.print_minutes() == pytest.approx(31.0)
+
+    c3 = make()
+    c3._state = lambda key: None
+    assert c3.print_minutes() == 0.0
+
+
+def _run(coro):
+    import asyncio
+
+    return asyncio.new_event_loop().run_until_complete(coro)
+
+
+def _loggable(c):
+    """Stub the I/O around async_log_current_job so only the logic runs."""
+    c.build_job_row = lambda overrides: {
+        "timestamp": "2026-08-06 12:00:00", "filament_cost": 1.0,
+        "power_cost": 0.25, "total_cost": 1.25, "weight_g": 40.0, "cover": "",
+    }
+
+    async def _noop_cover(name):
+        return ""
+
+    async def _noop_append(row):
+        c.appended = getattr(c, "appended", 0) + 1
+
+    c.async_capture_cover = _noop_cover
+    c.async_append_job = _noop_append
+    return c
+
+
+def test_second_log_call_for_the_same_job_is_skipped():
+    c = _loggable(make())
+    c.mark_print_start(new_job=True)
+    c.mark_print_end()
+
+    first = _run(c.async_log_current_job())        # the integration, on finish
+    second = _run(c.async_log_current_job())       # an automation, same finish
+    assert first["logged"] is True
+    assert second["logged"] is False
+    assert c.appended == 1
+    assert c.value("total_cost") == pytest.approx(101.0), "totals advanced once"
+
+    forced = _run(c.async_log_current_job(force=True))
+    assert forced["logged"] is True and c.appended == 2
+
+
+def test_next_job_can_log_again():
+    c = _loggable(make())
+    c.mark_print_start(new_job=True)
+    c.mark_print_end()
+    _run(c.async_log_current_job())
+    c.mark_print_start(new_job=True)               # new job resets the guard
+    c.mark_print_end()
+    assert _run(c.async_log_current_job())["logged"] is True
+    assert c.appended == 2
 
 
 # ── tags ─────────────────────────────────────────────────────────────────────

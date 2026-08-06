@@ -27,6 +27,12 @@ COVERS_DIR: Final = "covers"
 CONF_PRINT_WEIGHT: Final = "print_weight"
 CONF_PRINT_STATUS: Final = "print_status"
 CONF_TASK_NAME: Final = "task_name"
+# Timestamp sensors, used only when the duration could not be measured live —
+# a job whose start Home Assistant never saw (restart, outage).
+CONF_START_TIME: Final = "start_time"
+CONF_END_TIME: Final = "end_time"
+# Log finished jobs without needing an automation to call log_job.
+CONF_AUTO_LOG: Final = "auto_log"
 CONF_COVER_IMAGE: Final = "cover_image"
 CONF_CAMERA: Final = "camera_entity"
 CONF_LAYERS: Final = "layers"

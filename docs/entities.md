@@ -71,21 +71,22 @@ whatever was captured at the time.
 
 ### Logging a finished job
 
-```yaml
-triggers:
-  - trigger: state
-    entity_id: sensor.printer_print_status
-    to: finished
-actions:
-  - action: bambu_costs.log_job
-    data:
-      print_time_min: "{{ states('sensor.printer_print_time') | float(0) }}"
-```
+No automation is needed. The integration watches the print-status transition itself: it
+snapshots the meters when a print starts, measures the duration off the same transitions,
+and **appends the job to the log when the printer reports finish** — cover picture,
+totals and all. The *Log finished jobs automatically* option (on by default) controls
+this.
 
-No automation is needed to snapshot the meters. The integration is already watching the
-print-status transition, so it records both the energy total and the running cost total
-when a print starts, and measures the job against them.
+Aborted prints are deliberately not logged — the printer reports a job's *planned*
+weight, so logging a failure would bill a first-layer crash in full. Their electricity
+still reaches the total (see [costing](costing.md)); the charge button covers the
+filament, as a judgement call.
+
+An automation may still call `bambu_costs.log_job` — to pass overrides, or because it
+already exists for notifications. A call for a job that is already logged is skipped, so
+nothing rows twice; pass `force: true` to deliberately re-log with corrected values.
 
 A resume is not a new job: coming back from a pause, or from a failure the printer
-recovered out of, leaves both markers where they were. Re-marking would restart the meters
-part-way through and undercount everything already spent.
+recovered out of, leaves the meters and the duration where they were. The job's length is
+measured live; the printer's own start/end time sensors are only a fallback for a job
+whose start Home Assistant never saw.
