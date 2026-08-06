@@ -57,7 +57,6 @@ from an automation with `number.set_value`. Values survive restarts.
 | `bambu_costs.set_tag_price` | Updates the price on every tag with a given RFID serial. |
 | `bambu_costs.refresh` | Re-reads the CSVs from disk. |
 | `bambu_costs.sync_slot_prices` | Copies the loaded spool's tag price into each slot's price number. |
-| `bambu_costs.import_legacy` | Pulls tags, job history and cover images in from the pre-integration CSVs. |
 
 Pass `entry_id` only if you have set up more than one printer.
 

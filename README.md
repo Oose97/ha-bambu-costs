@@ -76,7 +76,7 @@ Everything else — meter snapshots, slot prices, idle tracking — happens on i
 | [Electricity costing](docs/costing.md) | Variable tariffs, integration vs estimation, outage handling, monthly costs via `utility_meter`. |
 | [Filament pricing](docs/filament.md) | How a slot gets its price, tag scanning, spool pairs, restart survival. |
 | [Cards](docs/cards.md) | The three cards and their options. |
-| [Data & migration](docs/data.md) | Files on disk, importing legacy CSVs, running alongside an old setup. |
+| [Data on disk](docs/data.md) | Where the CSVs and cover images live, and how they are written. |
 | [Releasing](docs/releasing.md) | How versions and releases are cut. |
 
 ## Not included yet
