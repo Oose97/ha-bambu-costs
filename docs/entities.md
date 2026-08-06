@@ -20,8 +20,8 @@ are possible shapes in one install.
 
 ## Numbers
 
-Plain writable numbers — no `input_number` helpers needed. Set them by hand in the UI or
-from an automation with `number.set_value`. Values survive restarts.
+Plain writable numbers. Set them by hand in the UI or from an automation with
+`number.set_value`. Values survive restarts.
 
 - `number.<name>_default_filament_price` — fallback price per kg
 - `number.<name>_<slot>_filament_price` — one per configured slot

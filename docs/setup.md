@@ -8,10 +8,10 @@ built against and what the setup screen expects to find.
 
 That dependency is declared as `after_dependencies`, not `dependencies`: if `bambu_lab` is
 installed it loads first so its sensors exist before the first refresh, but this
-integration will still set up without it. Nothing here reads the Bambu integration
-directly — it only reads whichever entities you point it at — so it works with a fork, or
-with an entirely different printer integration, as long as something exposes a per-slot
-print weight sensor.
+integration will still set up without it. All data comes in through the entities you pick
+during setup rather than through ha-bambulab's internals, so a fork — or an entirely
+different printer integration — works too, as long as it exposes a per-slot print weight
+sensor.
 
 ## The setup flow
 

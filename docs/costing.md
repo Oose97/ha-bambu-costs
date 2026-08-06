@@ -115,9 +115,10 @@ would be a worse copy that only ever did one period.
 
 What the integration provides is a source worth pointing it at:
 `sensor.<name>_total_spend`, the whole bill with `state_class: total_increasing`. The
-running figure lives in `number.<name>_total_cost` so it can be *seeded* when you cut over
-from an older setup, and numbers carry no state class — nothing will meter or graph one.
-This sensor is that number with the metadata attached.
+running figure lives in `number.<name>_total_cost` so it can be *seeded* with a starting
+balance if you already know what the printer has cost you, and numbers carry no state
+class — nothing will meter or graph one. This sensor is that number with the metadata
+attached.
 
 ```yaml
 utility_meter:
@@ -140,5 +141,5 @@ action: number.set_value
 target:
   entity_id: number.bambu_costs_total_cost
 data:
-  value: 0  # whatever the old setup had spent to date
+  value: 0  # the printer's spend to date, if you know it
 ```

@@ -5,10 +5,7 @@
 A Home Assistant integration that works out what a 3D print actually cost — filament per
 AMS slot, electricity, and a per-job history — and ships the Lovelace cards to manage it.
 
-It replaces a pile of `command_line` sensors, `shell_command` entries, shell scripts,
-`input_number` helpers and manually-registered card resources with one config entry.
-
-**Nothing is hard-coded.** Every sensor it reads is chosen during setup, and the filament
+Point it at your printer during setup and the sensors are found for you. The filament
 slots are free-form, so any AMS layout — or none — works.
 
 ## Highlights
@@ -30,8 +27,9 @@ slots are free-form, so any AMS layout — or none — works.
 
 ## Install
 
-**HACS** → three-dot menu → *Custom repositories* → add this repo as an **Integration**,
-then download it and restart Home Assistant.
+**HACS** → three-dot menu → *Custom repositories* → add
+`https://github.com/Oose97/ha-bambu-costs` as an **Integration**, then download it and
+restart Home Assistant.
 
 **Manually**: copy `custom_components/bambu_costs` into your `config/custom_components/`
 and restart.
@@ -39,9 +37,10 @@ and restart.
 Then *Settings → Devices & Services → Add Integration → Bambu Print Costs*. Pick your
 printer and the sensors are filled in for you — see [Setup](docs/setup.md).
 
-Requires Home Assistant 2024.12+ and a printer integration exposing per-slot print
-weights — in practice [ha-bambulab](https://github.com/greghesp/ha-bambulab), though
-nothing is read from it directly.
+Requires Home Assistant 2024.12+ and a printer integration whose sensors this reads —
+in practice [ha-bambulab](https://github.com/greghesp/ha-bambulab). Every sensor is
+picked during setup rather than wired to ha-bambulab's internals, so a fork or another
+printer integration works too, as long as it exposes per-slot print weights.
 
 ## Quick start
 
