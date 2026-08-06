@@ -237,6 +237,23 @@ Filament the printer counted that no configured slot claimed — an external spo
 slot whose attribute name drifted — becomes an `External` row priced at the default,
 rather than being dropped. Mixed AMS + external jobs therefore total correctly.
 
+### Scanned spools are added to the library
+
+The same tray sensors carry newly read RFID tags, so loading a spool the library has never
+seen **appends a row for it** instead of leaving you to type it in. The printer reports the
+product name and colour but never a price, so the row starts at **0** — which reads as "no
+price of its own" — and an `INFO` line in the log tells you to set it in the tags card.
+
+The colour is named from Bambu's own palette (274 hexes, e.g. `#00AE42` → *Bambu Green
+(10501)*). A third-party hex that isn't one of theirs is not an error; the row is added
+with `Unknown Color` for you to rename.
+
+Nothing is added for an empty tray, and re-reading a tag already in the library does
+nothing. A serial named as some row's **`serial_2`** counts as already known — so if you
+fill in a spool's second tag before scanning that side, it will not create a duplicate.
+Leave `serial_2` blank and the second tag becomes its own row, which you can pair up later
+by hand.
+
 ## Surviving a restart mid-print
 
 A print weight sensor typically keeps its total across a Home Assistant restart but
@@ -364,7 +381,6 @@ at once while you migrate:
 ## Not included yet
 
 - No dashboard is created for you; the cards are yours to place.
-- Tag scanning (appending a newly-seen spool to the library) is not wired to an event yet.
 - Idle/standby cost tracking between prints.
 
 ## License

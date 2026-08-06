@@ -6,6 +6,7 @@ entities, and the per-slot filament maths that used to live in a Jinja macro.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -18,6 +19,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import slugify
 
+from .colors import color_name
 from .const import (
     DOMAIN,
     CONF_COVER_IMAGE,
@@ -39,6 +41,7 @@ from .const import (
     DEFAULT_CURRENCY,
     DEFAULT_ELECTRICITY_PRICE,
     DEFAULT_FILAMENT_PRICE,
+    EMPTY_TAG_UIDS,
     EXTERNAL_TOLERANCE_G,
     NUMBER_DEFS,
     SLOT_PRICE_PREFIX,
@@ -111,6 +114,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.store = BambuCostsStore(hass.config.path(DATA_DIR, entry.entry_id))
         self.slots = parse_slots(self.options.get(CONF_SLOTS))
         self.values: dict[str, float] = {}
+        self._tag_write_lock = asyncio.Lock()
         # Last breakdown that was computed from real per-slot data. Persisted by
         # the breakdown sensor, so a restart mid-print does not lose the split.
         self.last_good: dict[str, Any] | None = None
@@ -247,10 +251,52 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "available": state.state.lower() not in _BAD_STATES,
             "color": normalise_colour(attrs.get("color")) if attrs.get("color") else None,
+            # `name` is the full product name ("Bambu PLA Basic"); `type` is
+            # just the polymer ("PLA"). The tag library's filament column holds
+            # the former, so both are carried.
+            "name": attrs.get("name"),
             "material": attrs.get("type")
             or (state.state if state.state.lower() not in _BAD_STATES else None),
             "tag_uid": attrs.get("tag_uid"),
         }
+
+    # ── tag scanning ─────────────────────────────────────────────────────────
+    async def async_add_scanned_tag(self, slot: SlotDef) -> dict[str, Any] | None:
+        """Add a spool the AMS just read to the tag library, if it is new.
+
+        The printer knows the material and colour of what was loaded but never
+        its price, so a scanned row starts at 0 — which :meth:`slot_price` reads
+        as "no price of its own" and falls back on. The row exists so the price
+        can be filled in from the tags card instead of having to be typed from
+        scratch after the spool is already in use.
+
+        Returns the row that was added, or None when nothing was.
+        """
+        tray = self.tray_info(slot)
+        serial = str(tray.get("tag_uid") or "").strip()
+        if serial.lower() in EMPTY_TAG_UIDS:
+            return None
+
+        color_code = normalise_colour(tray.get("color") or "")
+        tag = {
+            "filament": tray.get("name") or tray.get("material") or "Unknown",
+            "color_code": color_code,
+            "color_name": color_name(color_code),
+            "serial": serial,
+            "cost_per_kg": 0.0,
+            "disabled": False,
+            "serial_2": "",
+        }
+
+        # Reloading a whole AMS scans four spools at once, and add_tag_if_new is
+        # a read-modify-write of the same file. Serialised here so concurrent
+        # scans queue instead of overwriting each other.
+        async with self._tag_write_lock:
+            added = await self.hass.async_add_executor_job(self.store.add_tag_if_new, tag)
+        if not added:
+            return None
+        await self.async_request_refresh()
+        return tag
 
     # ── state helpers ────────────────────────────────────────────────────────
     def _state(self, key: str) -> str | None:
