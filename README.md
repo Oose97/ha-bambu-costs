@@ -232,6 +232,30 @@ the second rule fires.
 > real outage measured here, the raw counter recorded **0.837 kWh** while the monthly meter
 > on top of it recorded **0.087** — the utility meter lost 90% of a print.
 
+**Configure the power and energy lists over the same devices.** They are cross-checked
+against each other, so metering three sockets while integrating one makes the metered
+figure legitimately larger every time and the check fires on every job. Whichever set you
+choose — printer only, or printer plus AMS plus a dryer — put the same sockets in both.
+
+**After changing which energy sensors are configured, re-snapshot the start marker.** The
+counters are cumulative and each one reads a different lifetime total, so swapping them
+leaves `number.<name>_energy_at_print_start` pointing at a number from a different scale
+and the next job computes an enormous delta. Set it to the new sum:
+
+```yaml
+action: number.set_value
+target:
+  entity_id: number.bambu_costs_energy_at_print_start
+data:
+  value: >-
+    {{ (states('sensor.printer_socket_energy') | float(0)
+      + states('sensor.ams_socket_energy') | float(0)) | round(6) }}
+```
+
+Forgetting is not catastrophic — a delta implying an average draw above 3 kW is rejected as
+a counter discontinuity and the integral is kept, with an `ERROR` naming the figure — but
+the guard is a backstop, not a substitute for re-snapshotting.
+
 ### Costs per month
 
 The integration deliberately does **not** implement monthly cycles. Core's `utility_meter`

@@ -85,6 +85,12 @@ COST_TICK_SECONDS: Final = 60
 # normal and expected; a reporting gap is not subtle.
 POWER_COST_TOLERANCE: Final = 0.25
 
+# Average draw above which an energy delta is a counter discontinuity — the
+# energy sensors were repointed, a meter reset, or a counter rolled over —
+# rather than consumption. Set well clear of a printer plus AMS plus a dryer
+# all drawing flat out, so only genuine nonsense trips it.
+MAX_PLAUSIBLE_WATTS: Final = 3000.0
+
 # tag_uid values that mean "no spool here" rather than naming one. The printer
 # reports the all-zero UID for a tray it can see but cannot read a tag from.
 EMPTY_TAG_UIDS: Final = frozenset(

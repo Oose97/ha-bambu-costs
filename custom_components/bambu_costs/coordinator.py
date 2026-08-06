@@ -43,6 +43,7 @@ from .const import (
     DEFAULT_FILAMENT_PRICE,
     EMPTY_TAG_UIDS,
     EXTERNAL_TOLERANCE_G,
+    MAX_PLAUSIBLE_WATTS,
     NUMBER_DEFS,
     POWER_COST_TOLERANCE,
     SLOT_PRICE_PREFIX,
@@ -570,7 +571,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return result
 
     # ── what the electricity for a job cost ──────────────────────────────────
-    def power_cost_for_job(self, energy_kwh: float) -> float:
+    def power_cost_for_job(self, energy_kwh: float, minutes: float = 0.0) -> float:
         """Electricity cost for the job just finished.
 
         Integrating power is the better method when it works: a tariff that
@@ -596,9 +597,32 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
           consumption — so the larger figure is the honest one.
 
         Either way the counter's figure wins and the shortfall is logged.
+
+        The counter has its own failure mode, though, and it is the opposite
+        one: a *discontinuity* rather than a gap. Repointing the energy sensors
+        at different entities, a meter reset, or a counter rolling over all make
+        the delta enormous rather than small. ``minutes`` guards against that —
+        a delta implying a draw no domestic printer could produce is a
+        discontinuity, not consumption, and the integral is kept instead.
         """
         price, price_source = self.electricity_price()
         metered = energy_kwh * price
+
+        # Physically impossible readings are rejected before anything else, so
+        # a discontinuity cannot be charged by either branch below.
+        if minutes and minutes > 0:
+            watts = energy_kwh * 1000.0 / (minutes / 60.0)
+            if watts > MAX_PLAUSIBLE_WATTS:
+                _LOGGER.error(
+                    "Energy sensors report %.4f kWh over %.0f min — an average "
+                    "of %.0f W, which no printer draws. Treating this as a "
+                    "counter discontinuity (sensors repointed, meter reset or "
+                    "rollover) rather than consumption. If you have just "
+                    "changed which energy sensors are configured, set "
+                    "energy_at_print_start to their current sum.",
+                    energy_kwh, minutes, watts,
+                )
+                return self.spend_since("cost_at_print_start")
 
         if not self.options.get(CONF_POWER_SENSORS):
             _LOGGER.debug("Costing %s kWh at %s/kWh (%s)", energy_kwh, price, price_source)
@@ -645,11 +669,13 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if energy_kwh is None:
             energy_kwh = max(0.0, self.energy_now() - self.value("energy_at_print_start"))
 
+        # Read before the power cost: the duration is what makes an implausible
+        # energy delta recognisable as a counter discontinuity.
+        minutes = as_float(overrides.get("print_time_min"))
+
         power_cost = overrides.get("power_cost")
         if power_cost is None:
-            power_cost = self.power_cost_for_job(energy_kwh)
-
-        minutes = as_float(overrides.get("print_time_min"))
+            power_cost = self.power_cost_for_job(energy_kwh, minutes)
         job_name = overrides.get("job") or self._state(CONF_TASK_NAME) or "unknown"
 
         return {
