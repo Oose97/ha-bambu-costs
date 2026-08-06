@@ -75,6 +75,14 @@ FINISHED_STATES: Final = frozenset({"finish", "finished", "failed"})
 # genuinely new job may discard the remembered per-slot split.
 RESUME_STATES: Final = frozenset({"pause", "paused", "failed"})
 
+# States meaning Home Assistant lost sight of the printer, rather than a state
+# the printer reported about itself. Transitions out of these are ambiguous:
+# the printer re-announces whatever it is doing now, which may be a job that
+# was already running before contact was lost, or one that began unobserved.
+DISCONNECTED_STATES: Final = frozenset(
+    {"unavailable", "unknown", "offline", "none", ""}
+)
+
 # How often the cost accumulator ticks when nothing else moves. Accrual is
 # computed from elapsed time, so this only controls freshness, not accuracy.
 COST_TICK_SECONDS: Final = 60

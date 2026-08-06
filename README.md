@@ -198,10 +198,29 @@ Two consequences fall out of the accumulator running continuously:
   back to kWh × price when they are not.
 - **Standby is counted.** The gap between one print ending and the next starting is
   measured too, and lands in `last_idle_cost`. On a printer drawing ~14 W at rest that is
-  easily larger than the prints themselves. It is also **added to `total_cost`** at the
-  start of the next print — `log_job` only ever banks what a print itself cost, so
-  standby would otherwise be measured and then thrown away. A print resuming after a
-  pause or an AMS jam banks nothing, so a recovered job cannot be charged twice.
+  easily larger than the prints themselves. It is also **added to `total_cost`** —
+  `log_job` only ever banks what a print itself cost, so standby would otherwise be
+  measured and then thrown away. A print resuming after a pause or an AMS jam banks
+  nothing, so a recovered job cannot be charged twice.
+
+### Losing sight of the printer
+
+A printer prints perfectly well with Home Assistant not watching, and it re-announces its
+state on reconnecting. `finish` is a state it then sits in indefinitely, so a reconnect
+looks exactly like a job ending — and a reconnect mid-job looks exactly like one starting.
+Neither is true, and both used to move the cost markers.
+
+- **A finish with nothing running is a resync.** The idle window is moved forward and the
+  standby accrued in it is *banked first* rather than dropped, and no print cost is
+  recorded, because no print ended.
+- **A start out of a disconnected state is decided by task name.** The same name means the
+  job was already underway and its markers still apply; a different one means new work
+  began unobserved. With no name to compare it counts as a resume — keeping stale markers
+  overcharges one print by the idle before it, while discarding markers that were needed
+  loses everything a running job had spent, with nothing left to rebuild it from.
+
+Standby is banked in exactly one place, so no path can move the idle marker without
+banking what the window held.
 
 Accrual is computed from elapsed time rather than tick count, so a missed or irregular
 tick costs freshness, never accuracy.
