@@ -228,9 +228,9 @@ the second rule fires.
 > **Point the energy sensor at a raw counter, not a `utility_meter`.** This matters more
 > than it looks. When a source goes `unavailable`, `utility_meter` deliberately skips the
 > delta across the gap: it cannot tell a genuine jump from a meter reset, so it drops the
-> consumption instead of guessing. A plug's own lifetime `_energy` sensor keeps it. In a
-> real outage measured here, the raw counter recorded **0.837 kWh** while the monthly meter
-> on top of it recorded **0.087** — the utility meter lost 90% of a print.
+> consumption instead of guessing. A plug's own lifetime `_energy` sensor keeps it. So a
+> meter stacked on a counter can lose most of a print while the counter underneath it
+> recorded the lot — and the meter is the one that looks like the tidier choice.
 
 **Configure the power and energy lists over the same devices.** They are cross-checked
 against each other, so metering three sockets while integrating one makes the metered
@@ -275,6 +275,11 @@ utility_meter:
     cycle: monthly
 ```
 
+Check the entity ID before pasting that. If the integration's device is assigned to an
+area, Home Assistant prefixes entities created *after* the assignment with the area slug,
+while entities that existed before the move keep the unprefixed ID — so both forms can
+coexist in one install.
+
 Add `cycle: daily` or `yearly` blocks off the same source if you want them. Seed the
 number **before** creating the meter, so the starting balance is not counted as this
 month's spend:
@@ -284,7 +289,7 @@ action: number.set_value
 target:
   entity_id: number.bambu_costs_total_cost
 data:
-  value: 212.54
+  value: 0  # whatever the old setup had spent to date
 ```
 
 ## How a slot gets its price
