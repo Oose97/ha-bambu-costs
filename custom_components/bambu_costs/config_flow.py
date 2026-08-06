@@ -70,9 +70,9 @@ _SLOTS = TextSelector(TextSelectorConfig(multiple=True))
 # same brand. Discovery only recognises printer sensors, so offering the whole
 # device registry was offering hundreds of devices that cannot work.
 #
-# This does still list the AMS units alongside the printer; they carry the same
-# brand and nothing in the registry separates them. Picking one finds no
-# sensors, and the summary on the next step says so.
+# AMS units are listed alongside the printer, since they carry the same brand.
+# That is fine: they hang off the printer via ``via_device``, and discovery
+# walks up that link, so picking one discovers its printer.
 _DEVICE = DeviceSelector(DeviceSelectorConfig(manufacturer=PRINTER_MANUFACTURER))
 CONF_DEVICE = "device"
 
@@ -218,9 +218,8 @@ class BambuCostsConfigFlow(ConfigFlow, domain=DOMAIN):
         n = len(self._found["config"])
         if not n:
             return (
-                "Nothing recognisable on that device. AMS units are listed "
-                "next to the printer and carry none of its sensors, so pick "
-                "the printer itself — or fill these in by hand."
+                "Nothing recognisable on that device or anything connected "
+                "to it — fill these in yourself."
             )
         left = self._found.get("unpaired_trays") or []
         text = f"Found {n} of these from the device. Check them before continuing."
