@@ -62,6 +62,13 @@ from an automation with `number.set_value`. Values survive restarts.
 
 Pass `entry_id` only if you have set up more than one printer.
 
+The cover entity may be an **image** (the slicer's render of the model) or a **camera** —
+a photo of what actually came off the plate, since the job is logged the moment the
+printer reports finish, while the part is still on it. Either way the picture is
+thumbnailed to 320 px before storage, so a camera frame costs tens of kilobytes per job,
+not a full-resolution snapshot. Switching between them is just changing the entity in
+the options; old rows keep whatever was captured at the time.
+
 ### Icon
 
 Shipped with the integration in `custom_components/bambu_costs/brand/`, so it shows in

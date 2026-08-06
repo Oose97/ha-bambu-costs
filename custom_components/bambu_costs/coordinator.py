@@ -783,12 +783,22 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     async def async_capture_cover(self, name: str) -> str:
-        """Fetch and store the current job's cover image. Returns the filename."""
+        """Fetch and store the current job's cover image. Returns the filename.
+
+        The configured entity may be an ``image`` (the slicer's render of the
+        model) or a ``camera`` (a photo of what actually came off the plate —
+        the job is logged the moment the printer reports finish, so the part
+        is still on it). Each domain has its own fetch helper, so this
+        dispatches; either way the bytes go through the same thumbnailing.
+        """
         entity_id = self.entity_of(CONF_COVER_IMAGE)
         if not entity_id:
             return ""
         try:
-            from homeassistant.components.image import async_get_image
+            if entity_id.startswith("camera."):
+                from homeassistant.components.camera import async_get_image
+            else:
+                from homeassistant.components.image import async_get_image
 
             image = await async_get_image(self.hass, entity_id, timeout=20)
         except Exception as err:  # noqa: BLE001 — a missing cover must not lose the job
