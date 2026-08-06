@@ -17,6 +17,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
+    CONF_CAMERA,
     CONF_COVER_IMAGE,
     CONF_LAYERS,
     CONF_LENGTH,
@@ -41,6 +42,9 @@ ROLE_KEYS: dict[str, tuple[str, ...]] = {
     CONF_NOZZLE_SIZE: ("nozzle_diameter", "nozzle_size"),
     CONF_NOZZLE_TYPE: ("nozzle_type",),
     CONF_COVER_IMAGE: ("cover_image",),
+    # The printer integration names its camera "camera" on most models and
+    # "p1p_camera" on the ones that stream differently.
+    CONF_CAMERA: ("camera", "p1p_camera"),
 }
 
 TRAY_KEY = "tray"
