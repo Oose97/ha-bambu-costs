@@ -31,6 +31,7 @@ from .const import (
     ATTR_TAGS,
     CONF_PRINT_STATUS,
     DOMAIN,
+    EMPTY_TAG_UIDS,
     PLATFORMS,
     FINISHED_STATES,
     RESUME_STATES,
@@ -54,6 +55,9 @@ _TAG_SCHEMA = vol.Schema(
         vol.Optional("color_code"): cv.string,
         vol.Optional("color_name"): cv.string,
         vol.Optional("serial"): cv.string,
+        # The spool's second RFID tag. Must be listed: REMOVE_EXTRA drops any
+        # key the schema does not name, which would strip pairings on save.
+        vol.Optional("serial_2"): cv.string,
         vol.Optional("cost_per_kg"): vol.Coerce(float),
         vol.Optional("disabled"): vol.Any(cv.boolean, cv.string),
     },
@@ -216,9 +220,15 @@ def _async_track_trays(
     Loading a spool sets the slot's price from its tag; unloading one drops it
     to 0. Watching the tray entities is what makes that immediate instead of
     waiting for the next print to start.
+
+    The same events carry newly read RFID tags, so a spool the library has
+    never seen is added here rather than needing to be typed in by hand.
     """
-    trays = [slot.entity for slot in coordinator.slots if slot.entity]
-    if not trays:
+    by_entity: dict[str, Any] = {}
+    for slot in coordinator.slots:
+        if slot.entity:
+            by_entity.setdefault(slot.entity, slot)
+    if not by_entity:
         return
 
     @callback
@@ -230,7 +240,41 @@ def _async_track_trays(
         if updated:
             _LOGGER.debug("Tray change; slot prices updated: %s", updated)
 
-    entry.async_on_unload(async_track_state_change_event(hass, trays, _tray_changed))
+        new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
+        if new_state is None:
+            return
+
+        # Only a tag_uid that actually changed is a scan. Trays report their
+        # remaining percentage and drying state continuously, and re-adding on
+        # every one of those would hammer the CSV for no reason.
+        serial = str(new_state.attributes.get("tag_uid") or "").strip()
+        before = str((old_state.attributes.get("tag_uid") if old_state else "") or "").strip()
+        if not serial or serial == before or serial.lower() in EMPTY_TAG_UIDS:
+            return
+
+        slot = by_entity.get(event.data["entity_id"])
+        if slot is None:
+            return
+
+        async def _add() -> None:
+            added = await coordinator.async_add_scanned_tag(slot)
+            if added:
+                _LOGGER.info(
+                    "New spool scanned in %s: %s %s (%s) — set its price in the tags card",
+                    slot.label,
+                    added["filament"],
+                    added["color_name"],
+                    added["serial"],
+                )
+                # The row exists now, so the slot can take its price from it.
+                coordinator.sync_slot_prices()
+
+        entry.async_create_task(hass, _add())
+
+    entry.async_on_unload(
+        async_track_state_change_event(hass, list(by_entity), _tray_changed)
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

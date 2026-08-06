@@ -23,7 +23,8 @@ slots are free-form, so any AMS layout — or none — works.
 | `sensor.<name>_session_filament_cost` | The same figure rounded for display. |
 | `sensor.<name>_tag_library` | Your filament tag library. State is the row count; `data` holds the rows. |
 | `sensor.<name>_cost_rate` | What the machine is costing per hour right now — power × price. |
-| `sensor.<name>_cost_total` | Everything it has cost to run, printing or idle. Restored across restarts. |
+| `sensor.<name>_cost_total` | **Electricity only.** Everything it has cost to run, printing or idle. Restored across restarts. |
+| `sensor.<name>_total_spend` | **The whole bill** — filament, electricity and standby. Metering source; see [Costs per month](#costs-per-month). |
 | `sensor.<name>_job_log` | Logged jobs. State is the row count; `data` holds the rows. |
 
 ### Numbers
@@ -75,7 +76,10 @@ Settings → Dashboards → Resources, and are removed when the last config entr
 deleted. In YAML-mode Lovelace the files are still served — the URLs are logged at
 startup for you to add by hand.
 
-- `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library. Each row's
+- `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library. **⚙ Columns**
+  hides and reorders columns; that is display only, so a save still writes every field in
+  its canonical order. A spool's two tags are kept adjacent and share one drag handle, so
+  a pair moves as a unit. Each row's
   **SET** button opens a picker listing every filament price entity — the default first,
   then one per configured slot — so a tag's price can be pushed into whichever slot has
   that spool loaded. The list is resolved from the entity registry, so it follows the
@@ -194,17 +198,53 @@ Two consequences fall out of the accumulator running continuously:
   back to kWh × price when they are not.
 - **Standby is counted.** The gap between one print ending and the next starting is
   measured too, and lands in `last_idle_cost`. On a printer drawing ~14 W at rest that is
-  easily larger than the prints themselves.
+  easily larger than the prints themselves. It is also **added to `total_cost`** at the
+  start of the next print — `log_job` only ever banks what a print itself cost, so
+  standby would otherwise be measured and then thrown away. A print resuming after a
+  pause or an AMS jam banks nothing, so a recovered job cannot be charged twice.
 
 Accrual is computed from elapsed time rather than tick count, so a missed or irregular
 tick costs freshness, never accuracy.
+
+### Costs per month
+
+The integration deliberately does **not** implement monthly cycles. Core's `utility_meter`
+already does that — cycles, restarts, DST, offsets, tariffs — and reimplementing it here
+would be a worse copy that only ever did one period.
+
+What the integration provides is a source worth pointing it at:
+`sensor.<name>_total_spend`, the whole bill with `state_class: total_increasing`. The
+running figure lives in `number.<name>_total_cost` so it can be *seeded* when you cut over
+from an older setup, and numbers carry no state class — nothing will meter or graph one.
+This sensor is that number with the metadata attached.
+
+```yaml
+utility_meter:
+  bambu_costs_monthly:
+    source: sensor.bambu_costs_total_spend
+    cycle: monthly
+```
+
+Add `cycle: daily` or `yearly` blocks off the same source if you want them. Seed the
+number **before** creating the meter, so the starting balance is not counted as this
+month's spend:
+
+```yaml
+action: number.set_value
+target:
+  entity_id: number.bambu_costs_total_cost
+data:
+  value: 212.54
+```
 
 ## How a slot gets its price
 
 In order of precedence:
 
 1. The **tag library**, matched on the `tag_uid` the tray reports — the price of the spool
-   actually loaded.
+   actually loaded. A spool carries a tag on each side reporting different serials, so a
+   row can name the other one in `serial_2`; either matches, so it prices the same
+   whichever way round the spool goes in.
 2. The slot's own **price number**, if you have set one.
 3. The **default filament price**.
 
@@ -231,6 +271,23 @@ time, so the figures are right even if these entities are stale.
 Filament the printer counted that no configured slot claimed — an external spool, or a
 slot whose attribute name drifted — becomes an `External` row priced at the default,
 rather than being dropped. Mixed AMS + external jobs therefore total correctly.
+
+### Scanned spools are added to the library
+
+The same tray sensors carry newly read RFID tags, so loading a spool the library has never
+seen **appends a row for it** instead of leaving you to type it in. The printer reports the
+product name and colour but never a price, so the row starts at **0** — which reads as "no
+price of its own" — and an `INFO` line in the log tells you to set it in the tags card.
+
+The colour is named from Bambu's own palette (274 hexes, e.g. `#00AE42` → *Bambu Green
+(10501)*). A third-party hex that isn't one of theirs is not an error; the row is added
+with `Unknown Color` for you to rename.
+
+Nothing is added for an empty tray, and re-reading a tag already in the library does
+nothing. A serial named as some row's **`serial_2`** counts as already known — so if you
+fill in a spool's second tag before scanning that side, it will not create a duplicate.
+Leave `serial_2` blank and the second tag becomes its own row, which you can pair up later
+by hand.
 
 ## Surviving a restart mid-print
 
@@ -359,8 +416,8 @@ at once while you migrate:
 ## Not included yet
 
 - No dashboard is created for you; the cards are yours to place.
-- Tag scanning (appending a newly-seen spool to the library) is not wired to an event yet.
-- Idle/standby cost tracking between prints.
+- Pricing fallbacks by material or colour when a spool carries no known tag; every
+  unknown spool falls back to the one default price.
 
 ## License
 

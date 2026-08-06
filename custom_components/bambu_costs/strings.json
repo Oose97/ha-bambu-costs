@@ -103,7 +103,7 @@
         },
         "tags": {
           "name": "Tags",
-          "description": "List of tag objects: filament, color_code, color_name, serial, cost_per_kg, disabled."
+          "description": "List of tag objects: filament, color_code, color_name, serial, serial_2, cost_per_kg, disabled."
         }
       }
     },

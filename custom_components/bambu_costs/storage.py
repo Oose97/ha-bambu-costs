@@ -19,7 +19,11 @@ from .const import COVERS_DIR, JOBS_FILE, TAGS_FILE
 
 _LOGGER = logging.getLogger(__name__)
 
-TAG_FIELDS = ["filament", "color_code", "color_name", "serial", "cost_per_kg", "disabled"]
+# serial_2 is appended rather than slotted next to serial: a file written
+# before it existed has six columns, and appending keeps those readable.
+TAG_FIELDS = [
+    "filament", "color_code", "color_name", "serial", "cost_per_kg", "disabled", "serial_2",
+]
 
 JOB_FIELDS = [
     "timestamp",
@@ -116,9 +120,18 @@ class BambuCostsStore:
                     "serial": serial,
                     "cost_per_kg": as_float(raw.get("cost_per_kg")),
                     "disabled": is_disabled(raw.get("disabled")),
+                    "serial_2": (raw.get("serial_2") or "").strip(),
                 }
             )
         return rows
+
+    @staticmethod
+    def _serials(tag: dict[str, Any]) -> set[str]:
+        """Both tags on a spool, lowercased, blanks dropped."""
+        return {
+            str(tag.get(k, "")).strip().lower()
+            for k in ("serial", "serial_2")
+        } - {""}
 
     def write_tags(self, tags: list[dict[str, Any]]) -> int:
         """Replace the whole tag library, keeping the previous copy as .bak."""
@@ -130,6 +143,7 @@ class BambuCostsStore:
                 "serial": str(t.get("serial") or "").strip(),
                 "cost_per_kg": f"{as_float(t.get('cost_per_kg')):.2f}",
                 "disabled": "true" if is_disabled(t.get("disabled")) else "false",
+                "serial_2": str(t.get("serial_2") or "").strip(),
             }
             for t in tags
         ]
@@ -143,7 +157,8 @@ class BambuCostsStore:
         wanted = serial.strip().lower()
         changed = 0
         for tag in tags:
-            if tag["serial"].strip().lower() == wanted:
+            # Either side of the spool identifies it.
+            if wanted in self._serials(tag):
                 tag["cost_per_kg"] = price
                 changed += 1
         if changed:
@@ -151,12 +166,16 @@ class BambuCostsStore:
         return changed
 
     def add_tag_if_new(self, tag: dict[str, Any]) -> bool:
-        """Append a scanned tag when its serial is not already known."""
+        """Append a scanned tag when its serial is not already known.
+
+        A serial already named as some row's second tag counts as known, so
+        scanning the other side of a paired spool does not create a duplicate.
+        """
         serial = str(tag.get("serial") or "").strip()
         if not serial:
             return False
         tags = self.read_tags()
-        if any(t["serial"].strip().lower() == serial.lower() for t in tags):
+        if any(serial.lower() in self._serials(t) for t in tags):
             return False
         tags.append(tag)
         self.write_tags(tags)

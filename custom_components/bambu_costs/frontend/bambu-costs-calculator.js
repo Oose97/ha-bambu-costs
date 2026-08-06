@@ -1,3 +1,8 @@
+// Sentinel for the manual entry. A real key is "type|name|price", so this
+// cannot collide — and unlike a control character it survives being written
+// into a data- attribute and read back.
+const OTHER_KEY = "__other__";
+
 class BambuCostsCalculator extends HTMLElement {
   setConfig(cfg) {
     if (!cfg.entity) throw new Error("Define an entity (sensor.bambu_costs_tag_library)");
@@ -66,21 +71,47 @@ class BambuCostsCalculator extends HTMLElement {
   // Spools usually carry two RFID tags, so the same filament appears twice with
   // different serials. Collapse on type + colour name + price.
   _options() {
+    // Two rows naming each other's serial are the two tags on one spool, so
+    // they collapse to a single choice even if their type or price differ.
+    const partnerOf = new Map();
+    for (const r of this._sensorData()) {
+      const a = String(r.serial || "").trim().toLowerCase();
+      const b = String(r.serial_2 || "").trim().toLowerCase();
+      if (a && b) { partnerOf.set(a, b); partnerOf.set(b, a); }
+    }
+
     const map = new Map();
+    const claimed = new Set();
     for (const r of this._sensorData()) {
       if (this._isDisabled(r.disabled)) continue;
       const type = String(r.filament || "").trim();
       const name = String(r.color_name || "").trim();
       const price = Number(r.cost_per_kg) || 0;
       if (!type && !name) continue;
+
+      const serial = String(r.serial || "").trim().toLowerCase();
+      if (serial && claimed.has(serial)) continue;
+      if (serial) {
+        claimed.add(serial);
+        const other = partnerOf.get(serial);
+        if (other) claimed.add(other);
+      }
+
       const key = `${type}|${name}|${price.toFixed(2)}`;
-      if (!map.has(key)) map.set(key, { key, type, name, price, color: this._norm(r.color_code) });
+      if (!map.has(key)) {
+        map.set(key, { key, type, name, price, color: this._norm(r.color_code) });
+      }
     }
-    return [...map.values()].sort((a, b) => {
+
+    const out = [...map.values()].sort((a, b) => {
       const x = (a.type + " " + a.name).toLowerCase();
       const y = (b.type + " " + b.name).toLowerCase();
       return x < y ? -1 : x > y ? 1 : 0;
     });
+    // Always last: filament that is not in the library, priced by hand.
+    out.push({ key: OTHER_KEY, type: "Other", name: "enter the price yourself",
+               price: 0, color: "#808080", other: true });
+    return out;
   }
 
   _sig() { return this._options().map(o => o.key).join(""); }
@@ -88,7 +119,7 @@ class BambuCostsCalculator extends HTMLElement {
   _opt(key) { return this._options().find(o => o.key === key) || null; }
 
   // ── state helpers ────────────────────────────────────────
-  _newLine() { return { _k: this._nextKey++, key: "", grams: "" }; }
+  _newLine() { return { _k: this._nextKey++, key: "", grams: "", price: "" }; }
 
   _line(k) { return this._lines.find(l => l._k === Number(k)); }
 
@@ -123,7 +154,7 @@ class BambuCostsCalculator extends HTMLElement {
     if (!this._cfg.remember) return;
     try {
       localStorage.setItem(this._storeKey(), JSON.stringify({
-        lines: this._lines.map(l => ({ key: l.key, grams: l.grams })),
+        lines: this._lines.map(l => ({ key: l.key, grams: l.grams, price: l.price })),
         minutes: this._minutes, rate: this._rate,
         margin: this._margin, vat: this._vat,
       }));
@@ -139,6 +170,7 @@ class BambuCostsCalculator extends HTMLElement {
       if (Array.isArray(s.lines) && s.lines.length) {
         this._lines = s.lines.map(l => ({
           _k: this._nextKey++, key: String(l.key || ""), grams: String(l.grams || ""),
+          price: String(l.price || ""),
         }));
       }
       if (s.minutes !== undefined) this._minutes = String(s.minutes);
@@ -154,7 +186,9 @@ class BambuCostsCalculator extends HTMLElement {
     const rows = this._lines.map(l => {
       const o = this._opt(l.key);
       const g = this._num(l.grams);
-      return { line: l, opt: o, grams: g, cost: o ? (g / 1000) * o.price : 0 };
+      // "Other" takes its price from the line rather than the library.
+      const price = o ? (o.other ? this._num(l.price) : o.price) : 0;
+      return { line: l, opt: o, grams: g, price, cost: o ? (g / 1000) * price : 0 };
     });
 
     const filament = rows.reduce((a, r) => a + r.cost, 0);
@@ -221,6 +255,7 @@ class BambuCostsCalculator extends HTMLElement {
           .cc-opt.sel { background:rgba(var(--rgb-primary-color),.08); }
           .cc-none { padding:14px 11px; font-size:12.5px; color:var(--secondary-text-color); }
 
+          input.g.pr { width:82px; }
           input.g { width:96px; flex:none; box-sizing:border-box; padding:8px 10px;
             border-radius:9px; border:1px solid var(--divider-color);
             background:var(--card-background-color); color:var(--primary-text-color);
@@ -337,7 +372,7 @@ class BambuCostsCalculator extends HTMLElement {
     return `<span class="sw" style="background:${this._esc(o.color)}"></span>
       <span class="cc-lbl">${this._esc(o.type)}${o.name
         ? ` <span class="nm">· ${this._esc(o.name)}</span>` : ""}</span>
-      <span class="cc-pr">${this._money(o.price)}/kg</span>`;
+      <span class="cc-pr">${o.other ? "" : this._money(o.price) + "/kg"}</span>`;
   }
 
   _paintLines() {
@@ -355,6 +390,10 @@ class BambuCostsCalculator extends HTMLElement {
           <button class="cc-trig" data-k="${l._k}">${inner}<span class="cc-caret">▾</span></button>
         </span>
         <span class="cc-tail">
+          ${o && o.other ? `<input class="g pr" data-k="${l._k}" type="text" inputmode="decimal"
+                 placeholder="price" value="${this._esc(l.price || "")}"
+                 aria-label="Price per kilogram">
+            <span class="unit">/kg</span>` : ""}
           <input class="g" data-k="${l._k}" type="text" inputmode="decimal"
                  placeholder="0" value="${this._esc(l.grams)}" aria-label="Weight in grams">
           <span class="unit">g</span>
@@ -376,7 +415,8 @@ class BambuCostsCalculator extends HTMLElement {
       inp.addEventListener("input", e => {
         const l = this._line(e.target.dataset.k);
         if (!l) return;
-        l.grams = e.target.value;
+        if (e.target.classList.contains("pr")) l.price = e.target.value;
+        else l.grams = e.target.value;
         this._calc();
         this._save();
       });

@@ -79,6 +79,12 @@ RESUME_STATES: Final = frozenset({"pause", "paused", "failed"})
 # computed from elapsed time, so this only controls freshness, not accuracy.
 COST_TICK_SECONDS: Final = 60
 
+# tag_uid values that mean "no spool here" rather than naming one. The printer
+# reports the all-zero UID for a tray it can see but cannot read a tag from.
+EMPTY_TAG_UIDS: Final = frozenset(
+    {"", "none", "unknown", "unavailable", "0000000000000000"}
+)
+
 ATTR_ENTRY_ID: Final = "entry_id"
 ATTR_TAGS: Final = "tags"
 ATTR_SERIAL: Final = "serial"

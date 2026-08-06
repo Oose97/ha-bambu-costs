@@ -94,6 +94,7 @@ def read_legacy_tags(path: str) -> list[dict[str, Any]]:
                 "cost_per_kg": as_float(_cell(row, 4)),
                 # Column absent on the original 5-column file: that means enabled.
                 "disabled": is_disabled(_cell(row, 5)),
+                "serial_2": _cell(row, 6),
             }
         )
     return tags
