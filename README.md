@@ -49,6 +49,14 @@ from an automation with `number.set_value`. Values survive restarts.
   would bill a first-layer failure in full. The last press is recorded in the button's
   attributes so a mis-press is visible.
 
+### Switches
+
+- `switch.<name>_use_camera_snapshot` — created when a printer camera is configured.
+  While on, each logged job's picture is a camera frame grabbed the moment the printer
+  reports finish — the part still on the plate — instead of the slicer's render. If the
+  frame grab fails, the render is captured instead, so the job still gets a picture.
+  A switch rather than an option because it is worth flipping per job.
+
 ### Services
 
 | Service | Does |
@@ -62,12 +70,12 @@ from an automation with `number.set_value`. Values survive restarts.
 
 Pass `entry_id` only if you have set up more than one printer.
 
-The cover entity may be an **image** (the slicer's render of the model) or a **camera** —
-a photo of what actually came off the plate, since the job is logged the moment the
-printer reports finish, while the part is still on it. Either way the picture is
-thumbnailed to 320 px before storage, so a camera frame costs tens of kilobytes per job,
-not a full-resolution snapshot. Switching between them is just changing the entity in
-the options; old rows keep whatever was captured at the time.
+Job pictures come from the **cover image** entity (the slicer's render) or, with the
+camera switch on, from the **printer camera** — a photo of what actually came off the
+plate, since the job is logged the moment the printer reports finish, while the part is
+still on it. Either way the picture is thumbnailed to 320 px before storage, so a camera
+frame costs tens of kilobytes per job, not a full-resolution snapshot. Old rows keep
+whatever was captured at the time.
 
 ### Icon
 

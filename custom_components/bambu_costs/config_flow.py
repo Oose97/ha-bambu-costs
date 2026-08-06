@@ -32,6 +32,7 @@ from homeassistant.helpers.selector import (
 
 from .discovery import discover
 from .const import (
+    CONF_CAMERA,
     CONF_COVER_IMAGE,
     CONF_CURRENCY,
     CONF_DEFAULT_FILAMENT_PRICE,
@@ -58,6 +59,7 @@ from .const import (
 _SENSOR = EntitySelector(EntitySelectorConfig(domain="sensor"))
 _SENSOR_OPT = EntitySelector(EntitySelectorConfig(domain="sensor"))
 _IMAGE = EntitySelector(EntitySelectorConfig(domain=["image", "camera"]))
+_CAMERA = EntitySelector(EntitySelectorConfig(domain="camera"))
 _ENERGY = EntitySelector(
     EntitySelectorConfig(domain="sensor", device_class="energy", multiple=True)
 )
@@ -88,6 +90,7 @@ ALL_KEYS = (
     CONF_NOZZLE_SIZE,
     CONF_NOZZLE_TYPE,
     CONF_COVER_IMAGE,
+    CONF_CAMERA,
     CONF_SLOTS,
     CONF_ENERGY_SENSORS,
     CONF_POWER_SENSORS,
@@ -134,6 +137,7 @@ def _printer_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Optional(CONF_NOZZLE_SIZE, description=dflt(CONF_NOZZLE_SIZE)): _SENSOR_OPT,
             vol.Optional(CONF_NOZZLE_TYPE, description=dflt(CONF_NOZZLE_TYPE)): _SENSOR_OPT,
             vol.Optional(CONF_COVER_IMAGE, description=dflt(CONF_COVER_IMAGE)): _IMAGE,
+            vol.Optional(CONF_CAMERA, description=dflt(CONF_CAMERA)): _CAMERA,
         }
     )
 

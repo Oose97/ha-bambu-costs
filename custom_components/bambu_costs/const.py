@@ -11,7 +11,7 @@ from typing import Final
 
 DOMAIN: Final = "bambu_costs"
 
-PLATFORMS: Final = ["button", "number", "sensor"]
+PLATFORMS: Final = ["button", "number", "sensor", "switch"]
 
 # URLs the integration serves.
 URL_CARDS: Final = "/bambu-costs-cards"
@@ -28,6 +28,7 @@ CONF_PRINT_WEIGHT: Final = "print_weight"
 CONF_PRINT_STATUS: Final = "print_status"
 CONF_TASK_NAME: Final = "task_name"
 CONF_COVER_IMAGE: Final = "cover_image"
+CONF_CAMERA: Final = "camera_entity"
 CONF_LAYERS: Final = "layers"
 CONF_LENGTH: Final = "print_length"
 CONF_NOZZLE_SIZE: Final = "nozzle_size"

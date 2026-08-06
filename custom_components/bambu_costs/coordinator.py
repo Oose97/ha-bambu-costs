@@ -22,6 +22,7 @@ from homeassistant.util import slugify
 from .colors import color_name
 from .const import (
     DOMAIN,
+    CONF_CAMERA,
     CONF_COVER_IMAGE,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_CURRENCY,
@@ -116,6 +117,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.store = BambuCostsStore(hass.config.path(DATA_DIR, entry.entry_id))
         self.slots = parse_slots(self.options.get(CONF_SLOTS))
         self.values: dict[str, float] = {}
+        # Whether job covers come from the camera instead of the slicer's
+        # render. Owned by the "Use camera snapshot" switch, which restores it.
+        self.use_camera_cover: bool = False
         self._tag_write_lock = asyncio.Lock()
         # Last breakdown that was computed from real per-slot data. Persisted by
         # the breakdown sensor, so a restart mid-print does not lose the split.
@@ -782,31 +786,43 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ],
         }
 
-    async def async_capture_cover(self, name: str) -> str:
-        """Fetch and store the current job's cover image. Returns the filename.
+    def _cover_sources(self) -> list[str]:
+        """Entities to try for the job's picture, in order.
 
-        The configured entity may be an ``image`` (the slicer's render of the
-        model) or a ``camera`` (a photo of what actually came off the plate —
-        the job is logged the moment the printer reports finish, so the part
-        is still on it). Each domain has its own fetch helper, so this
-        dispatches; either way the bytes go through the same thumbnailing.
+        With the camera switch on, the camera leads and the slicer's render
+        stays as the fallback — a failed frame grab should degrade to the
+        render, not to a job with no picture at all.
         """
-        entity_id = self.entity_of(CONF_COVER_IMAGE)
-        if not entity_id:
-            return ""
-        try:
-            if entity_id.startswith("camera."):
-                from homeassistant.components.camera import async_get_image
-            else:
-                from homeassistant.components.image import async_get_image
+        cover = self.entity_of(CONF_COVER_IMAGE)
+        camera = self.entity_of(CONF_CAMERA)
+        if self.use_camera_cover and camera:
+            return [e for e in (camera, cover) if e]
+        return [cover] if cover else []
 
-            image = await async_get_image(self.hass, entity_id, timeout=20)
-        except Exception as err:  # noqa: BLE001 — a missing cover must not lose the job
-            _LOGGER.warning("Could not fetch cover image from %s: %s", entity_id, err)
-            return ""
-        return await self.hass.async_add_executor_job(
-            self.store.save_cover, image.content, name
-        )
+    async def async_capture_cover(self, name: str) -> str:
+        """Fetch and store the current job's picture. Returns the filename.
+
+        A source may be an ``image`` (the slicer's render of the model) or a
+        ``camera`` (a photo of what actually came off the plate — the job is
+        logged the moment the printer reports finish, so the part is still on
+        it). Each domain has its own fetch helper, so this dispatches; either
+        way the bytes go through the same thumbnailing.
+        """
+        for entity_id in self._cover_sources():
+            try:
+                if entity_id.startswith("camera."):
+                    from homeassistant.components.camera import async_get_image
+                else:
+                    from homeassistant.components.image import async_get_image
+
+                image = await async_get_image(self.hass, entity_id, timeout=20)
+            except Exception as err:  # noqa: BLE001 — a missing cover must not lose the job
+                _LOGGER.warning("Could not fetch cover image from %s: %s", entity_id, err)
+                continue
+            return await self.hass.async_add_executor_job(
+                self.store.save_cover, image.content, name
+            )
+        return ""
 
     # ── file access ──────────────────────────────────────────────────────────
     async def _async_update_data(self) -> dict[str, Any]:
