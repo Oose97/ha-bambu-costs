@@ -395,6 +395,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         idle = self.spend_since("cost_at_print_end")
         self.set_value("last_idle_cost", idle)
+        # Standby is real money — the printer idles at ~14 W — and nothing else
+        # will ever bank it: log_job only adds what a print itself cost. Banked
+        # here, at the one point it is known to be complete, and only for a new
+        # job so a resume cannot charge the same stretch twice.
+        self.set_value("total_cost", self.value("total_cost") + idle)
         self.set_value("cost_at_print_start", self.cost_total)
         # Snapshot the energy meters here rather than from an automation: the
         # print-start transition is already being watched, and the sensors are

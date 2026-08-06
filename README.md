@@ -197,7 +197,10 @@ Two consequences fall out of the accumulator running continuously:
   back to kWh × price when they are not.
 - **Standby is counted.** The gap between one print ending and the next starting is
   measured too, and lands in `last_idle_cost`. On a printer drawing ~14 W at rest that is
-  easily larger than the prints themselves.
+  easily larger than the prints themselves. It is also **added to `total_cost`** at the
+  start of the next print — `log_job` only ever banks what a print itself cost, so
+  standby would otherwise be measured and then thrown away. A print resuming after a
+  pause or an AMS jam banks nothing, so a recovered job cannot be charged twice.
 
 Accrual is computed from elapsed time rather than tick count, so a missed or irregular
 tick costs freshness, never accuracy.
@@ -381,7 +384,8 @@ at once while you migrate:
 ## Not included yet
 
 - No dashboard is created for you; the cards are yours to place.
-- Idle/standby cost tracking between prints.
+- Pricing fallbacks by material or colour when a spool carries no known tag; every
+  unknown spool falls back to the one default price.
 
 ## License
 
