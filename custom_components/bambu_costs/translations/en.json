@@ -51,7 +51,7 @@
           "electricity_price_entity": "Optional. Follows a variable tariff — point it at a sensor reporting the price per kWh (e.g. EUR/kWh). When set it overrides the fixed price below, which stays as the fallback for when the sensor is unavailable.",
           "currency": "Shown on the cost entities and in the cards. Any text works — EUR, USD, PLN, £.",
           "power_sensors": "Summed and multiplied by the price to give a live cost rate, which is integrated over time. This is what makes a variable tariff come out right, and it captures standby between prints. Usually the printer and AMS sockets.",
-          "auto_log": "The job log needs no automation: each finished print is appended by the integration itself. An automation calling log_job on the same finish is skipped as a duplicate."
+          "auto_log": "Each finished print is appended to the job log by the integration itself — no automation needed. Aborted prints are not logged."
         }
       }
     }
@@ -103,7 +103,7 @@
           "electricity_price_entity": "Optional. Follows a variable tariff — point it at a sensor reporting the price per kWh (e.g. EUR/kWh). When set it overrides the fixed price below, which stays as the fallback for when the sensor is unavailable.",
           "currency": "Shown on the cost entities and in the cards. Any text works — EUR, USD, PLN, £.",
           "power_sensors": "Summed and multiplied by the price to give a live cost rate, which is integrated over time. This is what makes a variable tariff come out right, and it captures standby between prints. Usually the printer and AMS sockets.",
-          "auto_log": "The job log needs no automation: each finished print is appended by the integration itself. An automation calling log_job on the same finish is skipped as a duplicate."
+          "auto_log": "Each finished print is appended to the job log by the integration itself — no automation needed. Aborted prints are not logged."
         }
       }
     }

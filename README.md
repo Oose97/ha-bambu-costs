@@ -52,9 +52,7 @@ entity: sensor.bambu_costs_tag_library
 ```
 
 That is all. No automations are needed: finished jobs are logged by the integration
-itself, along with meter snapshots, slot prices, durations and idle tracking. An
-automation may still call `bambu_costs.log_job` — a second call for a job that is
-already logged is skipped, so notification automations coexist safely.
+itself, along with meter snapshots, slot prices, durations and idle tracking.
 
 ## Documentation
 

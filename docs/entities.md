@@ -82,9 +82,10 @@ weight, so logging a failure would bill a first-layer crash in full. Their elect
 still reaches the total (see [costing](costing.md)); the charge button covers the
 filament, as a judgement call.
 
-An automation may still call `bambu_costs.log_job` — to pass overrides, or because it
-already exists for notifications. A call for a job that is already logged is skipped, so
-nothing rows twice; pass `force: true` to deliberately re-log with corrected values.
+The `bambu_costs.log_job` service stays for passing overrides — a corrected duration, an
+explicit cost. A call for a job that is already logged is skipped, so a service call on
+the same finish transition cannot write a second row; pass `force: true` to deliberately
+re-log with corrected values.
 
 A resume is not a new job: coming back from a pause, or from a failure the printer
 recovered out of, leaves the meters and the duration where they were. The job's length is
