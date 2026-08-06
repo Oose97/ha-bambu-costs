@@ -91,14 +91,19 @@ Settings → Dashboards → Resources, and are removed when the last config entr
 deleted. In YAML-mode Lovelace the files are still served — the URLs are logged at
 startup for you to add by hand.
 
-- `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library. **⚙ Columns**
-  hides and reorders columns; that is display only, so a save still writes every field in
-  its canonical order. A spool's two tags are kept adjacent and share one drag handle, so
-  a pair moves as a unit. Each row's
-  **SET** button opens a picker listing every filament price entity — the default first,
-  then one per configured slot — so a tag's price can be pushed into whichever slot has
-  that spool loaded. The list is resolved from the entity registry, so it follows the
-  slot configuration on its own.
+- `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library. A
+  spool's two tags render as one row, the second tag a child row behind a **▸** on the
+  spool's handle — collapsed by default, with the default changeable in settings.
+  Editing a pair's filament, colour or price applies to both rows; serials stay
+  per-row, since they are what tell the two tags apart. Pairs share one handle and
+  move as a unit, and reordering works with rows hidden — it steps over what is not
+  shown. Filtering finds collapsed second tags and surfaces them with their spool.
+  **⚙** opens the table settings: show-disabled, expand-by-default, sorting, and the
+  column layout (display only — a save always writes every field in canonical order).
+  Each row's **SET** button opens a picker listing every filament price entity — the
+  default first, then one per configured slot — so a tag's price can be pushed into
+  whichever slot has that spool loaded. The list is resolved from the entity registry,
+  so it follows the slot configuration on its own.
 - `custom:bambu-costs-jobs-table` — sortable, paginated print history
 - `custom:bambu-costs-calculator` — manual quote: filament, runtime, margin, VAT
 
