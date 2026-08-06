@@ -23,6 +23,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     this._rows = [];
     this._baseSig = null;
     this._dirty = false;
+    this._justSaved = false;
     this._filter = "";
     this._showDisabled = false;
     // A pair renders as one spool row with its second tag as a child row.
@@ -51,10 +52,25 @@ class BambuCostsTagsEditor extends HTMLElement {
       this._cfg.unit = cur ? `${cur}/kg` : "EUR/kg";
     }
     if (!this._built) { this._load(); this._render(); return; }
-    if (this._dirty || this._busy) return;
-    if (JSON.stringify(this._sensorData()) === this._baseSig) return;
+    if (this._busy) return;
+    const sig = JSON.stringify(this._sensorData());
+    if (sig === this._baseSig) return;
+
+    if (this._justSaved) {
+      // Our own write coming back from the sensor, not an external change:
+      // adopt it as the new baseline. The table already shows exactly this
+      // data, so there is nothing to revert to or flash through.
+      this._justSaved = false;
+      this._baseSig = sig;
+      if (!this._dirty) { this._load(); this._paint(); }
+      return;
+    }
+
+    if (this._dirty) return;
     this._load();
-    this._render();
+    // Repaint rather than rebuild: a full render would wipe the filter box
+    // and any status banner just because a tag was scanned in the background.
+    this._paint();
   }
 
   getCardSize() { return 12; }
@@ -1110,7 +1126,6 @@ class BambuCostsTagsEditor extends HTMLElement {
       this._msg("Writing the tag library…");
       const [domain, service] = this._cfg.save_service.split(".");
       await this._hass.callService(domain, service, { tags: this._payload() });
-      await this._sleep(1500);
     } catch (err) {
       this._msg("Save failed: " + err, "err");
       this._busy = false;
@@ -1119,9 +1134,14 @@ class BambuCostsTagsEditor extends HTMLElement {
       return;
     }
 
+    // What is on screen IS what was just written — do not reload from the
+    // sensor, which lags the write and would flash the pre-save list until
+    // its refresh lands. The hass setter adopts that refresh as the new
+    // baseline when it arrives (_justSaved).
     this._busy = false;
-    this._load();
-    this._paint();
+    this._dirty = false;
+    this._justSaved = true;
+    this._updateFoot();
     this._msg(`Saved ${this._rows.length} rows. Previous version kept as tags.csv.bak.`);
   }
 }
