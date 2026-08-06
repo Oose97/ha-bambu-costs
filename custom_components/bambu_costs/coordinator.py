@@ -538,11 +538,15 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_good = None
 
     # ── filament breakdown ───────────────────────────────────────────────────
-    def breakdown(self) -> dict[str, Any]:
+    def breakdown(self, remember: bool = True) -> dict[str, Any]:
         """Per-slot filament usage and cost for the current job.
 
         Nothing is rounded here — callers round at their own display point, so
         rows can never sum to a different figure than the total.
+
+        ``remember=False`` makes this a pure read: display paths recompute on
+        every state render, and a read should not be what updates the restart
+        snapshot. The breakdown sensor and the action paths keep the default.
         """
         attrs = self._attrs(CONF_PRINT_WEIGHT)
         total_weight = as_float(self._state(CONF_PRINT_WEIGHT))
@@ -620,7 +624,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "restored": False,
         }
 
-        if any(row["id"] != "external" for row in rows):
+        if remember and any(row["id"] != "external" for row in rows):
             self._remember_breakdown(result)
         return result
 

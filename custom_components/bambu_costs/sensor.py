@@ -173,7 +173,8 @@ class SessionFilamentCostSensor(BambuCostsSensor):
 
     @property
     def native_value(self) -> float:
-        return round(self.coordinator.breakdown()["cost"], 2)
+        # A display read must not be what updates the restart snapshot.
+        return round(self.coordinator.breakdown(remember=False)["cost"], 2)
 
 
 class CostRateSensor(BambuCostsSensor):
@@ -306,8 +307,9 @@ class SpendTotalSensor(BambuCostsSensor):
 class TagLibrarySensor(BambuCostsSensor):
     """The filament tag library. State is the row count so it always changes."""
 
+    # Deliberately no state_class: a row count is not a measurement, and the
+    # class would have the recorder build long-term statistics nobody reads.
     _attr_icon = "mdi:tag-multiple"
-    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: BambuCostsCoordinator) -> None:
         super().__init__(coordinator, "tag_library", "Tag library")
@@ -351,8 +353,8 @@ class TagLibrarySensor(BambuCostsSensor):
 class JobLogSensor(BambuCostsSensor):
     """Logged print jobs, newest last."""
 
+    # No state_class, for the same reason as the tag library.
     _attr_icon = "mdi:history"
-    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: BambuCostsCoordinator) -> None:
         super().__init__(coordinator, "job_log", "Job log")
