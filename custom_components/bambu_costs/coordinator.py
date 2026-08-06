@@ -132,6 +132,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # after a finish, and False at startup — a job already underway when
         # Home Assistant started has no valid integration window either.
         self._saw_print_start: bool = False
+        # Whether the job that most recently *ended* had an observed start.
+        # mark_print_end consumes _saw_print_start, and the job is logged from
+        # an automation that runs after it — so the logging path needs its own
+        # record of the provenance, or it would always read "start never seen".
+        self._ended_had_start: bool = False
         # Task name captured when the markers were last set, so an ambiguous
         # start can be told apart from a genuinely new job.
         self._job_at_start: str = ""
@@ -427,6 +432,8 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return 0.0
 
         self._job_at_start = self._state(CONF_TASK_NAME) or ""
+        # New work: whatever ended before belongs to a different job now.
+        self._ended_had_start = False
         idle = self._bank_idle()
         self.set_value("cost_at_print_start", self.cost_total)
         # Snapshot the energy meters here rather than from an automation: the
@@ -448,6 +455,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # is recorded, because no print ended.
             idle = self._bank_idle()
             self.set_value("cost_at_print_end", self.cost_total)
+            # No job ended, so anything logged off this transition must not
+            # claim an observed start it does not have.
+            self._ended_had_start = False
             _LOGGER.debug(
                 "Print-end resync with nothing running; banked %.4f %s of standby",
                 idle,
@@ -458,8 +468,10 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         spent = self.spend_since("cost_at_print_start")
         self.set_value("last_print_power_cost", spent)
         self.set_value("cost_at_print_end", self.cost_total)
-        # Cleared last: the next job must prove its own start was seen before
-        # its integration window is trusted.
+        # Recorded before the running flag is cleared: the job is logged by an
+        # automation that fires after this listener, and it needs to know the
+        # ended job's start was observed even though nothing is running by then.
+        self._ended_had_start = True
         self._saw_print_start = False
         return spent
 
@@ -688,7 +700,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         integrated = self.spend_since("cost_at_print_start")
 
-        if not self._saw_print_start:
+        # Either the job is still running with an observed start, or it just
+        # ended and its end recorded that the start was observed. mark_print_end
+        # clears the running flag before the logging automation fires, so the
+        # flag alone would always say "never seen" here.
+        if not (self._saw_print_start or self._ended_had_start):
             _LOGGER.warning(
                 "This job's start was never seen — the printer was likely "
                 "offline when it began — so the running total was not marked "
