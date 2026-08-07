@@ -374,4 +374,4 @@ class JobLogSensor(BambuCostsSensor):
                 f"{URL_COVERS}/{entry_id}/covers/{cover}" if cover else ""
             )
             jobs.append(row)
-        return {"data": jobs}
+        return {"data": jobs, "currency": self.coordinator.currency}

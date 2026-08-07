@@ -63,6 +63,7 @@ EXTERNAL_TOLERANCE_G: Final = 0.1
 
 # ── services ─────────────────────────────────────────────────────────────────
 SERVICE_WRITE_TAGS: Final = "write_tags"
+SERVICE_WRITE_JOBS: Final = "write_jobs"
 SERVICE_SET_TAG_PRICE: Final = "set_tag_price"
 SERVICE_LOG_JOB: Final = "log_job"
 SERVICE_REFRESH: Final = "refresh"
@@ -119,6 +120,7 @@ EMPTY_TAG_UIDS: Final = frozenset(
 
 ATTR_ENTRY_ID: Final = "entry_id"
 ATTR_TAGS: Final = "tags"
+ATTR_ROWS: Final = "rows"
 ATTR_SERIAL: Final = "serial"
 ATTR_PRICE: Final = "price"
 

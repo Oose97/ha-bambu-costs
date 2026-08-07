@@ -229,6 +229,88 @@ def test_next_job_can_log_again():
     assert c.appended == 2
 
 
+def test_job_row_names_each_material_once():
+    c = make()
+    slots = [
+        {"id": "a1", "label": "Tray 1", "name": "Green", "material": "PLA",
+         "filament": "Bambu PLA Basic", "color": "#00AE42",
+         "weight": 30.0, "price": 20.0, "cost": 0.6},
+        {"id": "a2", "label": "Tray 2", "name": "Blue", "material": "PLA",
+         "filament": "Bambu PLA Basic", "color": "#0A2989",
+         "weight": 10.0, "price": 20.0, "cost": 0.2},
+        {"id": "ht", "label": "HT", "name": "Black", "material": "PETG",
+         "filament": "Bambu PETG HF", "color": "#000000",
+         "weight": 5.0, "price": 25.0, "cost": 0.125},
+    ]
+    c.breakdown = lambda: {
+        "slots": slots, "cost": 0.925, "weight": 45.0, "weight_total": 45.0,
+        "source": "slots", "restored": False,
+    }
+    c.print_minutes = lambda: 76.0
+    c.power_cost_for_job = lambda kwh, minutes: 0.05
+
+    row = c.build_job_row({})
+    assert row["filament_type"] == "PLA Basic, PETG HF"
+    assert [t["type"] for t in row["trays"]] == ["PLA Basic", "PLA Basic", "PETG HF"]
+
+    forced = c.build_job_row({"filament_type": "hand-typed"})
+    assert forced["filament_type"] == "hand-typed", "the override wins"
+
+
+def test_generic_spool_scan_never_writes_a_library_row():
+    """The tag library only ever holds tagged spools.
+
+    A spool with no readable tag has no serial to match it by later — two
+    generic spools are indistinguishable — and the printer does not even know
+    what it is until the user says so. So loading one must not auto-add a row.
+    """
+    from custom_components.bambu_costs.coordinator import SlotDef
+
+    c = make()
+    slot = SlotDef(attribute="AMS 1 Tray 1", label="A1", entity="sensor.tray_1")
+    for uid in ("", "0000000000000000", "unknown", None):
+        c.tray_info = lambda s, uid=uid: {"available": True, "empty": False, "tag_uid": uid}
+        assert _run(c.async_add_scanned_tag(slot)) is None
+
+
+# ── slot price sync ──────────────────────────────────────────────────────────
+def test_sync_leaves_a_generic_spools_manual_price_alone():
+    """A loaded spool with no RFID tag is priced by hand, not zeroed.
+
+    sync_slot_prices runs on every tray update, so if it zeroed a tagless
+    slot, a manually entered price would be wiped moments after typing it.
+    """
+    from custom_components.bambu_costs.coordinator import SlotDef
+
+    c = make()
+    slot = SlotDef(attribute="AMS 1 Tray 1", label="A1", entity="sensor.tray_1")
+    c.slots = [slot]
+    c.data = {"tags": [{"serial": "AAA", "serial_2": "", "cost_per_kg": 13.22}]}
+    c.set_value(slot.price_key, 18.0)
+
+    trays = {}
+    c.tray_info = lambda s: trays
+
+    # Generic spool: loaded, but the printer read no tag.
+    trays = {"available": True, "empty": False, "tag_uid": "0000000000000000"}
+    assert c.sync_slot_prices() == {}
+    assert c.value(slot.price_key) == 18.0
+
+    # Same for a fork whose tray sensor has no empty attribute at all.
+    trays = {"available": True, "empty": None, "tag_uid": ""}
+    assert c.sync_slot_prices() == {}
+    assert c.value(slot.price_key) == 18.0
+
+    # Actually unloading the slot still clears it.
+    trays = {"available": True, "empty": True, "tag_uid": ""}
+    assert c.sync_slot_prices() == {"A1": 0.0}
+    assert c.value(slot.price_key) == 0.0
+
+    # And a known tag still takes over.
+    trays = {"available": True, "empty": False, "tag_uid": "aaa"}
+    assert c.sync_slot_prices() == {"A1": 13.22}
+
+
 # ── tags ─────────────────────────────────────────────────────────────────────
 def test_tag_for_serial_matches_either_side():
     c = make()

@@ -27,6 +27,7 @@ from .cards import async_unregister as async_unregister_cards
 from .const import (
     ATTR_ENTRY_ID,
     ATTR_PRICE,
+    ATTR_ROWS,
     ATTR_SERIAL,
     ATTR_TAGS,
     CONF_PRINT_STATUS,
@@ -42,6 +43,7 @@ from .const import (
     SERVICE_REFRESH,
     SERVICE_SET_TAG_PRICE,
     SERVICE_SYNC_SLOT_PRICES,
+    SERVICE_WRITE_JOBS,
     SERVICE_WRITE_TAGS,
 )
 from .coordinator import BambuCostsCoordinator
@@ -72,6 +74,40 @@ _WRITE_TAGS_SCHEMA = vol.Schema(
     }
 )
 
+# One edited job-log row, in the shape the job_log sensor publishes, plus
+# orig_ts — the timestamp the row was loaded with, which is what matches it to
+# a file row even after the visible timestamp has been edited. As with tags,
+# every key must be listed: REMOVE_EXTRA drops what the schema does not name.
+_JOB_ROW_SCHEMA = vol.Schema(
+    {
+        vol.Required("orig_ts"): cv.string,
+        vol.Optional("ts"): cv.string,
+        vol.Optional("job"): cv.string,
+        vol.Optional("time"): cv.string,
+        vol.Optional("mins"): vol.Coerce(float),
+        vol.Optional("layers"): vol.Coerce(float),
+        vol.Optional("weight"): vol.Coerce(float),
+        vol.Optional("length"): vol.Coerce(float),
+        vol.Optional("nozzle"): cv.string,
+        vol.Optional("nozzle_type"): cv.string,
+        vol.Optional("kwh"): vol.Coerce(float),
+        vol.Optional("f_cost"): vol.Coerce(float),
+        vol.Optional("p_cost"): vol.Coerce(float),
+        vol.Optional("cost"): vol.Coerce(float),
+        vol.Optional("cover"): cv.string,
+        vol.Optional("types"): cv.string,
+        vol.Optional("trays"): list,
+    },
+    extra=vol.REMOVE_EXTRA,
+)
+
+_WRITE_JOBS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): cv.string,
+        vol.Required(ATTR_ROWS): vol.All(cv.ensure_list, [_JOB_ROW_SCHEMA]),
+    }
+)
+
 _SET_PRICE_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_ENTRY_ID): cv.string,
@@ -90,6 +126,7 @@ _LOG_JOB_SCHEMA = vol.Schema(
         vol.Optional("length_m"): vol.Coerce(float),
         vol.Optional("nozzle_size"): cv.string,
         vol.Optional("nozzle_type"): cv.string,
+        vol.Optional("filament_type"): cv.string,
         vol.Optional("filament_cost"): vol.Coerce(float),
         vol.Optional("power_cost"): vol.Coerce(float),
         vol.Optional("energy_kwh"): vol.Coerce(float),
@@ -347,6 +384,16 @@ def _async_register_services(hass: HomeAssistant) -> None:
         written = await coordinator.async_write_tags(call.data[ATTR_TAGS])
         return {"written": written}
 
+    async def _write_jobs(call: ServiceCall) -> ServiceResponse:
+        coordinator = _resolve(hass, call)
+        try:
+            written = await coordinator.async_write_jobs(call.data[ATTR_ROWS])
+        except LookupError as err:
+            # An unmatchable row means the file changed under the editor —
+            # a user problem with a user remedy, not an internal failure.
+            raise ServiceValidationError(str(err)) from err
+        return {"written": written}
+
     async def _set_tag_price(call: ServiceCall) -> ServiceResponse:
         coordinator = _resolve(hass, call)
         changed = await coordinator.async_set_tag_price(
@@ -400,6 +447,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_WRITE_TAGS,
         _write_tags,
         schema=_WRITE_TAGS_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_WRITE_JOBS,
+        _write_jobs,
+        schema=_WRITE_JOBS_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
