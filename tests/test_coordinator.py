@@ -229,6 +229,34 @@ def test_next_job_can_log_again():
     assert c.appended == 2
 
 
+def test_job_row_names_each_material_once():
+    c = make()
+    slots = [
+        {"id": "a1", "label": "Tray 1", "name": "Green", "material": "PLA",
+         "filament": "Bambu PLA Basic", "color": "#00AE42",
+         "weight": 30.0, "price": 20.0, "cost": 0.6},
+        {"id": "a2", "label": "Tray 2", "name": "Blue", "material": "PLA",
+         "filament": "Bambu PLA Basic", "color": "#0A2989",
+         "weight": 10.0, "price": 20.0, "cost": 0.2},
+        {"id": "ht", "label": "HT", "name": "Black", "material": "PETG",
+         "filament": "Bambu PETG HF", "color": "#000000",
+         "weight": 5.0, "price": 25.0, "cost": 0.125},
+    ]
+    c.breakdown = lambda: {
+        "slots": slots, "cost": 0.925, "weight": 45.0, "weight_total": 45.0,
+        "source": "slots", "restored": False,
+    }
+    c.print_minutes = lambda: 76.0
+    c.power_cost_for_job = lambda kwh, minutes: 0.05
+
+    row = c.build_job_row({})
+    assert row["filament_type"] == "PLA Basic, PETG HF"
+    assert [t["type"] for t in row["trays"]] == ["PLA Basic", "PLA Basic", "PETG HF"]
+
+    forced = c.build_job_row({"filament_type": "hand-typed"})
+    assert forced["filament_type"] == "hand-typed", "the override wins"
+
+
 # ── tags ─────────────────────────────────────────────────────────────────────
 def test_tag_for_serial_matches_either_side():
     c = make()

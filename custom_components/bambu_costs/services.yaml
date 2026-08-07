@@ -10,6 +10,17 @@ write_tags:
       selector:
         object:
 
+write_jobs:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    rows:
+      required: true
+      selector:
+        object:
+
 set_tag_price:
   fields:
     entry_id:
@@ -73,6 +84,10 @@ log_job:
       selector:
         text:
     nozzle_type:
+      required: false
+      selector:
+        text:
+    filament_type:
       required: false
       selector:
         text:

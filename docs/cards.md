@@ -32,13 +32,29 @@ entity: sensor.bambu_costs_tag_library
 
 ## Jobs table
 
-`custom:bambu-costs-jobs-table` — sortable, paginated print history.
+`custom:bambu-costs-jobs-table` — editable print history: sortable, paginated, with
+configurable columns.
+
+- Every value field edits in place — click a cell, type, and press **Save**. Only the
+  rows you touched are written, matched into the file by the timestamp they were loaded
+  with, so jobs logged while you were editing are never overwritten. The previous file
+  is kept as `jobs.csv.bak`.
+- **⚙** opens the table settings: column order and visibility, the default sort column
+  and direction, and the rows per page — all remembered per browser. Display only; a
+  save always writes every field.
+- The **Material** column lists each distinct filament type once, brand prefix dropped —
+  `PLA Basic` for a single-material job, `PLA Basic, PETG HF` for a multi-material one.
+  Filled in automatically when a job is logged; free text when editing.
+- The image cell is a **View** button opening the job's cover in a modal.
 
 ```yaml
 type: custom:bambu-costs-jobs-table
 entity: sensor.bambu_costs_job_log
 page_size: 20
 ```
+
+`page_size` is the default page length for browsers that have not chosen their own in
+the settings.
 
 ## Cost calculator
 

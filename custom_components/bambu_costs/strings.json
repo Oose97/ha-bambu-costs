@@ -123,6 +123,20 @@
         }
       }
     },
+    "write_jobs": {
+      "name": "Write job log rows",
+      "description": "Apply edits to logged jobs. Each row is matched to the file by the timestamp it was loaded with; the rest of the log is untouched. The previous file is kept as jobs.csv.bak.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed when more than one Bambu Print Costs entry is set up."
+        },
+        "rows": {
+          "name": "Rows",
+          "description": "List of edited rows in the job log sensor's shape, each carrying orig_ts — the timestamp the row had when it was read."
+        }
+      }
+    },
     "set_tag_price": {
       "name": "Set tag price",
       "description": "Update the price of every tag carrying a serial number.",
@@ -176,6 +190,10 @@
         "nozzle_type": {
           "name": "Nozzle type",
           "description": "Nozzle material."
+        },
+        "filament_type": {
+          "name": "Filament type",
+          "description": "Overrides the detected material list, e.g. PLA Basic, PETG HF."
         },
         "filament_cost": {
           "name": "Filament cost",

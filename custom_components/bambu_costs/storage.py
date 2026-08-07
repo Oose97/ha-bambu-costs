@@ -25,6 +25,8 @@ TAG_FIELDS = [
     "filament", "color_code", "color_name", "serial", "cost_per_kg", "disabled", "serial_2",
 ]
 
+# filament_type is appended for the same reason serial_2 is above: files
+# written before it existed keep their column order.
 JOB_FIELDS = [
     "timestamp",
     "job",
@@ -41,6 +43,7 @@ JOB_FIELDS = [
     "total_cost",
     "cover",
     "trays",
+    "filament_type",
 ]
 
 _TRUTHY = {"1", "true", "yes", "on", "disabled"}
@@ -72,6 +75,34 @@ def as_float(value: Any, default: float = 0.0) -> float:
         return float(text)
     except ValueError:
         return default
+
+
+def minimal_filament(name: Any) -> str:
+    """A filament product name cut down to what distinguishes it.
+
+    The printer reports full product names ("Bambu PLA Basic"). On a Bambu
+    printer the brand prefix carries no information, so it is dropped and the
+    job log reads "PLA Basic".
+    """
+    text = " ".join(str(name or "").split())
+    if text.lower().startswith("bambu "):
+        text = text[len("bambu "):]
+    return text
+
+
+def distinct_filaments(slots: list[dict[str, Any]]) -> str:
+    """The distinct filament types across a job's slots, in slot order.
+
+    Four trays of the same PLA are one entry; a multi-material job lists each
+    material once — "PLA Basic, PETG HF". Slots with no name at all (an
+    untracked external spool) contribute nothing rather than an empty entry.
+    """
+    seen: list[str] = []
+    for slot in slots:
+        name = minimal_filament(slot.get("filament") or slot.get("material"))
+        if name and name not in seen:
+            seen.append(name)
+    return ", ".join(seen)
 
 
 def normalise_colour(value: Any) -> str:
@@ -208,6 +239,7 @@ class BambuCostsStore:
                     "cost": as_float(raw.get("total_cost")),
                     "cover": raw.get("cover", ""),
                     "trays": trays if isinstance(trays, list) else [],
+                    "types": (raw.get("filament_type") or "").strip(),
                 }
             )
         return rows[-limit:] if limit else rows
@@ -216,12 +248,104 @@ class BambuCostsStore:
         payload = {field: row.get(field, "") for field in JOB_FIELDS}
         if isinstance(payload.get("trays"), (list, dict)):
             payload["trays"] = json.dumps(payload["trays"], separators=(",", ":"))
+        self._upgrade_jobs_header()
         exists = os.path.exists(self.jobs_path)
         with open(self.jobs_path, "a", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=JOB_FIELDS)
             if not exists or os.path.getsize(self.jobs_path) == 0:
                 writer.writeheader()
             writer.writerow(payload)
+
+    def _upgrade_jobs_header(self) -> None:
+        """Bring an older jobs file up to the current column set.
+
+        The jobs file is append-only, so its header is written once and then
+        outlives column additions. Appending a wider row under a narrower
+        header would silently drop the new columns on read — the reader keys
+        rows off the header — so the whole file is rewritten with the current
+        header the first time it matters. Headerless files get one too.
+        """
+        if not os.path.exists(self.jobs_path) or os.path.getsize(self.jobs_path) == 0:
+            return
+        with open(self.jobs_path, "r", encoding="utf-8", newline="") as handle:
+            first = handle.readline().strip()
+        if first == ",".join(JOB_FIELDS):
+            return
+        rows = self._read_rows(self.jobs_path, JOB_FIELDS)
+        self._backup(self.jobs_path)
+        self._write_rows(
+            self.jobs_path, JOB_FIELDS,
+            [{field: raw.get(field, "") for field in JOB_FIELDS} for raw in rows],
+        )
+
+    def update_jobs(self, edits: list[dict[str, Any]]) -> int:
+        """Rewrite edited log rows in place, matched by original timestamp.
+
+        The card only ever sees the tail of the file (``read_jobs`` windows
+        it), so a save must not replace the file with what the card holds —
+        that would drop every older row. Instead each edited row names the
+        timestamp it was loaded with (``orig_ts``), and only the matching file
+        rows are swapped out; everything else, including a job the integration
+        logged while the edit was open, is carried through untouched.
+
+        A row that cannot be matched means the file changed under the editor,
+        and the whole save is refused rather than half-applied.
+        """
+        raw_rows = self._read_rows(self.jobs_path, JOB_FIELDS)
+
+        by_ts: dict[str, list[int]] = {}
+        for index, raw in enumerate(raw_rows):
+            by_ts.setdefault((raw.get("timestamp") or "").strip(), []).append(index)
+
+        replacements: list[tuple[int, dict[str, Any]]] = []
+        for edit in edits:
+            key = str(edit.get("orig_ts") or edit.get("ts") or "").strip()
+            queue = by_ts.get(key)
+            if not queue:
+                raise LookupError(
+                    f"No logged job with timestamp '{key}' — the log changed on "
+                    "disk; reload the table and redo the edit"
+                )
+            # Duplicate timestamps pair up in file order, so two same-second
+            # rows each get their own edit instead of both taking the first.
+            replacements.append((queue.pop(0), self._job_to_csv(edit)))
+
+        for index, converted in replacements:
+            raw_rows[index] = converted
+
+        self._backup(self.jobs_path)
+        self._write_rows(
+            self.jobs_path, JOB_FIELDS,
+            [{field: raw.get(field, "") for field in JOB_FIELDS} for raw in raw_rows],
+        )
+        return len(replacements)
+
+    @staticmethod
+    def _job_to_csv(row: dict[str, Any]) -> dict[str, Any]:
+        """Map a row from the sensor's shape back onto the CSV columns."""
+        trays = row.get("trays", [])
+        return {
+            # An emptied timestamp falls back to the original: a blank one
+            # would make the row invisible to read_jobs, deleting it in effect.
+            "timestamp": str(row.get("ts") or row.get("orig_ts") or "").strip(),
+            "job": str(row.get("job") or "").strip(),
+            "print_time": str(row.get("time") or "").strip(),
+            "print_time_min": round(as_float(row.get("mins")), 2),
+            "layers": as_float(row.get("layers")),
+            "weight_g": round(as_float(row.get("weight")), 3),
+            "length_m": as_float(row.get("length")),
+            "nozzle_size": str(row.get("nozzle") or "").strip(),
+            "nozzle_type": str(row.get("nozzle_type") or "").strip(),
+            "energy_kwh": round(as_float(row.get("kwh")), 4),
+            "filament_cost": round(as_float(row.get("f_cost")), 4),
+            "power_cost": round(as_float(row.get("p_cost")), 4),
+            "total_cost": round(as_float(row.get("cost")), 4),
+            "cover": str(row.get("cover") or "").strip(),
+            "trays": json.dumps(trays, separators=(",", ":"))
+            if isinstance(trays, (list, dict))
+            else str(trays or "[]"),
+            "filament_type": str(row.get("types") or "").strip(),
+        }
 
     # ── covers ───────────────────────────────────────────────────────────────
     def save_cover(self, content: bytes, name: str) -> str:

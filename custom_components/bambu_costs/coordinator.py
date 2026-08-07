@@ -53,7 +53,7 @@ from .const import (
     SLOT_PRICE_PREFIX,
     SLOT_SEPARATOR,
 )
-from .storage import BambuCostsStore, as_float, normalise_colour
+from .storage import BambuCostsStore, as_float, distinct_filaments, minimal_filament, normalise_colour
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,6 +124,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # render. Owned by the "Use camera snapshot" switch, which restores it.
         self.use_camera_cover: bool = False
         self._tag_write_lock = asyncio.Lock()
+        # Jobs have the same read-modify-write hazard: a card save landing
+        # while a finished print is being appended must queue, not interleave.
+        self._job_write_lock = asyncio.Lock()
         # Last breakdown that was computed from real per-slot data. Persisted by
         # the breakdown sensor, so a restart mid-print does not lose the split.
         self.last_good: dict[str, Any] | None = None
@@ -607,6 +610,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "attribute": slot.attribute,
                     "name": (tag or {}).get("color_name") or tray.get("material") or "",
                     "material": tray.get("material") or "",
+                    # Full product name for the job log. The tray's own report
+                    # wins over the tag library, whose text is hand-edited.
+                    "filament": tray.get("name") or (tag or {}).get("filament") or "",
                     "color": tray.get("color") or (tag or {}).get("color_code") or "",
                     "weight": weight,
                     "price": price,
@@ -639,6 +645,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "attribute": None,
                     "name": "",
                     "material": "",
+                    "filament": "",
                     "color": "",
                     "weight": remainder,
                     "price": default_price,
@@ -890,6 +897,8 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 {
                     "label": row["label"],
                     "name": row["name"],
+                    # Product name minus the brand ("PLA Basic"), per slot.
+                    "type": minimal_filament(row.get("filament") or row.get("material")),
                     "color": row["color"],
                     "weight": round(row["weight"], 3),
                     "price": row["price"],
@@ -897,6 +906,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
                 for row in breakdown["slots"]
             ],
+            # The distinct types once each, however many slots fed the job —
+            # "PLA Basic" for a single-material print, "PLA Basic, PETG HF"
+            # for a multi-material one.
+            "filament_type": overrides.get("filament_type")
+            or distinct_filaments(breakdown["slots"]),
         }
 
     def _cover_sources(self) -> list[str]:
@@ -964,5 +978,13 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return changed
 
     async def async_append_job(self, row: dict[str, Any]) -> None:
-        await self.hass.async_add_executor_job(self.store.append_job, row)
+        async with self._job_write_lock:
+            await self.hass.async_add_executor_job(self.store.append_job, row)
         await self.async_request_refresh()
+
+    async def async_write_jobs(self, rows: list[dict[str, Any]]) -> int:
+        """Apply edited log rows. Raises LookupError when a row cannot be matched."""
+        async with self._job_write_lock:
+            written = await self.hass.async_add_executor_job(self.store.update_jobs, rows)
+        await self.async_request_refresh()
+        return written
