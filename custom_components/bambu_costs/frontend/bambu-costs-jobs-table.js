@@ -158,8 +158,15 @@ class BambuCostsJobsTable extends HTMLElement {
       .padStart(2, "0")).join("").toUpperCase();
   }
 
+  // The configured currency, as its symbol where one is well known — cells
+  // read "0.09 €" rather than "0.09 EUR" three times per row.
+  _cur() {
+    const cur = this._cfg.currency;
+    return { EUR: "€", USD: "$", GBP: "£" }[cur] || cur;
+  }
+
   _unit(col) {
-    return col.unit === "$" ? this._cfg.currency : col.unit;
+    return col.unit === "$" ? this._cur() : col.unit;
   }
 
   // ── view pipeline ────────────────────────────────────────
@@ -207,7 +214,7 @@ class BambuCostsJobsTable extends HTMLElement {
     const trays = Array.isArray(r.trays) ? r.trays : [];
     const totalW = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
     const totalC = trays.reduce((s, t) => s + (parseFloat(t.cost) || 0), 0);
-    const cur = this._esc(this._cfg.currency);
+    const cur = this._esc(this._cur());
 
     const rows = trays.map(t => {
       const rgb = this._parseColor(t.color || "");
@@ -295,11 +302,8 @@ class BambuCostsJobsTable extends HTMLElement {
           .bcjt-scroll { overflow-x:auto; }
           table.bcjt { width:100%; border-collapse:collapse; font-size:12.5px; }
           table.bcjt th { text-align:left; font-weight:500; color:var(--secondary-text-color);
-            font-size:11px; text-transform:uppercase; letter-spacing:.4px; white-space:normal;
-            vertical-align:bottom; padding:6px 4px; border-bottom:1px solid var(--divider-color);
-            user-select:none; }
-          table.bcjt th .u { display:block; font-size:9px; letter-spacing:0;
-            text-transform:none; opacity:.75; }
+            font-size:11px; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap;
+            padding:6px 4px; border-bottom:1px solid var(--divider-color); user-select:none; }
           table.bcjt th.stretch { width:99%; }
           table.bcjt th.s { cursor:pointer; }
           table.bcjt th.s:hover { color:var(--primary-text-color); }
@@ -315,16 +319,21 @@ class BambuCostsJobsTable extends HTMLElement {
              carrying the same text in the same font, and the wider of the two
              — always the text — sets the width. Pixel-accurate where the
              size attribute's character estimate kept clipping. */
-          .grow { display:inline-grid; align-items:center; }
-          /* Twin and input must share the exact same font, or their widths
-             drift a few pixels apart and long values clip by a hair. */
+          .grow { display:inline-grid; align-items:center; vertical-align:middle; }
+          /* Twin and input must share the same font metrics or their widths
+             drift and long values clip. font and letter-spacing are pinned on
+             both, and the twin carries two trailing spaces plus wider right
+             padding as slack for the drift a themed frontend still causes. */
           .grow::after { content:attr(data-v) " "; visibility:hidden; white-space:pre;
-            grid-area:1/1; font:inherit; font-size:12.5px; padding:4px 6px;
-            border:1px solid transparent; }
+            grid-area:1/1; font:inherit; font-size:12.5px; letter-spacing:inherit;
+            padding:4px 9px 4px 6px; border:1px solid transparent; }
           .grow input { grid-area:1/1; width:100%; box-sizing:border-box; min-width:0; }
           input.cell { padding:4px 6px; border-radius:7px;
             border:1px solid transparent; background:transparent;
-            color:var(--primary-text-color); font:inherit; font-size:12.5px; }
+            color:var(--primary-text-color); font:inherit; font-size:12.5px;
+            letter-spacing:inherit; }
+          .cu { font-size:11px; color:var(--secondary-text-color); margin-left:1px;
+            white-space:nowrap; }
           input.cell:hover { border-color:var(--divider-color); }
           input.cell:focus { border-color:var(--primary-color);
             background:var(--card-background-color); outline:none; }
@@ -483,12 +492,11 @@ class BambuCostsJobsTable extends HTMLElement {
       const on = c.sortable === false ? "" : "s";
       const active = on && this._sort.key === sk;
       const arrow = active ? (this._sort.dir === 1 ? " ▲" : " ▼") : "";
-      const u = this._unit(c);
-      // The unit sits under the label instead of beside it, so a column of
-      // short numbers is not held open by a long one-line header.
+      // Units live in the cells, next to their values; the header is just
+      // the label, on one line.
       return `<th class="${on} ${active ? "active" : ""} ${c.stretch ? "stretch" : ""}"
         data-k="${sk}" ${c.type === "num" ? 'style="text-align:right"' : ""}>${
-        this._esc(c.t)}${arrow}${u ? `<span class="u">(${this._esc(u)})</span>` : ""}</th>`;
+        this._esc(c.t)}${arrow}</th>`;
     }).join("");
   }
 
@@ -509,9 +517,11 @@ class BambuCostsJobsTable extends HTMLElement {
     if (col.type === "num") {
       const n = parseFloat(r[col.k]);
       const v = isNaN(n) ? "" : n.toFixed(col.dp === undefined ? 0 : col.dp);
+      const u = this._unit(col);
       return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
         style="min-width:${col.min || 4}ch"><input class="cell num"
-        type="number" step="any" data-k="${r._k}" data-f="${col.k}" value="${v}"></span></td>`;
+        type="number" step="any" data-k="${r._k}" data-f="${col.k}" value="${v}"></span>${
+        u ? `<span class="cu">${this._esc(u)}</span>` : ""}</td>`;
     }
     const v = String(r[col.k] ?? "");
     return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
