@@ -257,6 +257,22 @@ def test_job_row_names_each_material_once():
     assert forced["filament_type"] == "hand-typed", "the override wins"
 
 
+def test_generic_spool_scan_never_writes_a_library_row():
+    """The tag library only ever holds tagged spools.
+
+    A spool with no readable tag has no serial to match it by later — two
+    generic spools are indistinguishable — and the printer does not even know
+    what it is until the user says so. So loading one must not auto-add a row.
+    """
+    from custom_components.bambu_costs.coordinator import SlotDef
+
+    c = make()
+    slot = SlotDef(attribute="AMS 1 Tray 1", label="A1", entity="sensor.tray_1")
+    for uid in ("", "0000000000000000", "unknown", None):
+        c.tray_info = lambda s, uid=uid: {"available": True, "empty": False, "tag_uid": uid}
+        assert _run(c.async_add_scanned_tag(slot)) is None
+
+
 # ── slot price sync ──────────────────────────────────────────────────────────
 def test_sync_leaves_a_generic_spools_manual_price_alone():
     """A loaded spool with no RFID tag is priced by hand, not zeroed.

@@ -63,8 +63,13 @@ The colour is named from Bambu's own palette (274 hexes, e.g. `#00AE42` → *Bam
 (10501)*). A third-party hex that isn't one of theirs is not an error; the row is added
 with `Unknown Color` for you to rename.
 
-Nothing is added for an empty tray, and re-reading a tag already in the library does
-nothing. A serial named as some row's **`serial_2`** counts as already known — so if you
+Nothing is added for an empty tray — or for a loaded spool with no readable tag. The
+library only ever holds tagged spools: without a serial there is nothing to match a row
+by later, and two generic spools cannot be told apart. (A "no tag" report in any of its
+spellings — blank, `none`, `unknown`, `unavailable`, the all-zero UID — is recognised
+case-insensitively.) Rows without a serial can still be typed into the tags card by
+hand; they are inert for slot pricing but show in the calculator's filament list.
+Re-reading a tag already in the library does nothing. A serial named as some row's **`serial_2`** counts as already known — so if you
 fill in a spool's second tag before scanning that side, it will not create a duplicate.
 Leave `serial_2` blank and the second tag becomes its own row, which you can pair up later
 by hand.
