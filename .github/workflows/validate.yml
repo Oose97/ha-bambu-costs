@@ -50,7 +50,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          cache: pip
 
       - name: Install Home Assistant and pytest
         run: pip install --quiet homeassistant pytest
