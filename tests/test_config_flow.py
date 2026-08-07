@@ -8,14 +8,19 @@ happened; this keeps it from happening again.
 
 import ast
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("homeassistant")
 
 from custom_components.bambu_costs import config_flow
-from custom_components.bambu_costs.config_flow import ALL_KEYS, CONF_DEVICE
-from custom_components.bambu_costs.const import CONF_CAMERA
+from custom_components.bambu_costs.config_flow import (
+    ALL_KEYS,
+    CONF_DEVICE,
+    _device_from_entities,
+)
+from custom_components.bambu_costs.const import CONF_CAMERA, CONF_PRINT_STATUS
 
 
 def test_device_and_camera_survive_the_round_trip():
@@ -43,3 +48,16 @@ def test_every_key_written_to_flow_state_is_persisted():
 
     missing = written - persisted
     assert not missing, f"written to _data but dropped on save: {missing}"
+
+
+def test_device_inferred_from_the_status_sensor(monkeypatch):
+    """An entry from before the device id was stored still pre-fills the box."""
+    registry = SimpleNamespace(
+        async_get=lambda entity_id: SimpleNamespace(device_id="printer-1")
+        if entity_id == "sensor.printer_status" else None
+    )
+    monkeypatch.setattr(config_flow.er, "async_get", lambda hass: registry)
+
+    current = {CONF_PRINT_STATUS: "sensor.printer_status"}
+    assert _device_from_entities(object(), current) == "printer-1"
+    assert _device_from_entities(object(), {}) is None, "nothing configured, nothing guessed"

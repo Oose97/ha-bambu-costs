@@ -17,7 +17,8 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     BooleanSelector,
     DeviceSelector,
@@ -109,6 +110,24 @@ ALL_KEYS = (
     # at runtime — the entities picked from it are what the integration uses.
     CONF_DEVICE,
 )
+
+
+def _device_from_entities(hass: HomeAssistant, current: dict[str, Any]) -> str | None:
+    """The printer device inferred from the entities already configured.
+
+    Entries created before the device id was stored have every sensor but no
+    device key, so the options flow's device box came up empty until the
+    printer was picked again by hand. The sensors know which device they
+    belong to, and the status and weight sensors live on the printer itself —
+    so the registry can answer instead of the user.
+    """
+    registry = er.async_get(hass)
+    for key in (CONF_PRINT_STATUS, CONF_PRINT_WEIGHT):
+        entity_id = current.get(key)
+        entry = registry.async_get(entity_id) if entity_id else None
+        if entry and entry.device_id:
+            return entry.device_id
+    return None
 
 
 def _price(maximum: float) -> NumberSelector:
@@ -281,14 +300,23 @@ class BambuCostsOptionsFlow(OptionsFlow):
                 self._data.update(self._found["config"])
             # Carried forward even when the box was left alone, because the
             # options are rebuilt from ALL_KEYS and anything absent is dropped.
-            self._data[CONF_DEVICE] = device_id or self._current.get(CONF_DEVICE)
+            # The registry fallback backfills entries set up before the device
+            # id was stored, so one pass through here repairs them.
+            self._data[CONF_DEVICE] = (
+                device_id
+                or self._current.get(CONF_DEVICE)
+                or _device_from_entities(self.hass, self._current)
+            )
             return await self.async_step_sensors()
 
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(
                 vol.Schema({vol.Optional(CONF_DEVICE): _DEVICE}),
-                {CONF_DEVICE: self._current.get(CONF_DEVICE)},
+                {
+                    CONF_DEVICE: self._current.get(CONF_DEVICE)
+                    or _device_from_entities(self.hass, self._current)
+                },
             ),
         )
 
