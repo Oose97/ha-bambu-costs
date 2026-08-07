@@ -12,7 +12,7 @@ const BCJT_COLS = [
   { k: "layers",      t: "Layers",        type: "num",  edit: true },
   { k: "weight",      t: "Weight",        type: "num",  edit: true, unit: "g",   dp: 1 },
   { k: "length",      t: "Length",        type: "num",  edit: true, unit: "m",   dp: 2 },
-  { k: "nozzle",      t: "Nozzle",        type: "text", edit: true, min: 2, max: 6 },
+  { k: "nozzle",      t: "Nozzle",        type: "text", edit: true, min: 2, max: 6, center: true },
   { k: "nozzle_type", t: "Nozzle type",   type: "text", edit: true, min: 6, max: 26 },
   { k: "kwh",         t: "Energy",        type: "num",  edit: true, unit: "kWh", dp: 3 },
   { k: "f_cost",      t: "Filament",      type: "num",  edit: true, unit: "$",   dp: 2 },
@@ -312,6 +312,8 @@ class BambuCostsJobsTable extends HTMLElement {
             vertical-align:middle; }
           table.bcjt td.nw, table.bcjt th.nw { white-space:nowrap; }
           table.bcjt td.num { text-align:right; white-space:nowrap; }
+          table.bcjt td.ctr { text-align:center; }
+          table.bcjt td.ctr input.cell { text-align:center; }
           table.bcjt td.b input.cell { font-weight:600; }
           .muted { opacity:.5; }
           /* An input cannot size itself to its text, so a hidden twin does it:
@@ -494,8 +496,9 @@ class BambuCostsJobsTable extends HTMLElement {
       const arrow = active ? (this._sort.dir === 1 ? " ▲" : " ▼") : "";
       // Units live in the cells, next to their values; the header is just
       // the label, on one line.
+      const align = c.type === "num" ? "right" : c.center ? "center" : "";
       return `<th class="${on} ${active ? "active" : ""} ${c.stretch ? "stretch" : ""}"
-        data-k="${sk}" ${c.type === "num" ? 'style="text-align:right"' : ""}>${
+        data-k="${sk}" ${align ? `style="text-align:${align}"` : ""}>${
         this._esc(c.t)}${arrow}</th>`;
     }).join("");
   }
@@ -510,8 +513,8 @@ class BambuCostsJobsTable extends HTMLElement {
     }
     if (col.type === "trays") return `<td class="nw">${this._traysCell(r)}</td>`;
 
-    const cls = [col.type === "num" ? "num" : "", col.nowrap ? "nw" : "", col.bold ? "b" : ""]
-      .filter(Boolean).join(" ");
+    const cls = [col.type === "num" ? "num" : "", col.center ? "ctr" : "",
+      col.nowrap ? "nw" : "", col.bold ? "b" : ""].filter(Boolean).join(" ");
     if (!col.edit) return `<td class="${cls}">${this._esc(r[col.k] ?? "—")}</td>`;
 
     if (col.type === "num") {
@@ -523,7 +526,11 @@ class BambuCostsJobsTable extends HTMLElement {
         type="number" step="any" data-k="${r._k}" data-f="${col.k}" value="${v}"></span>${
         u ? `<span class="cu">${this._esc(u)}</span>` : ""}</td>`;
     }
-    const v = String(r[col.k] ?? "");
+    let v = String(r[col.k] ?? "");
+    // Bambu's nozzles are all sub-millimetre (0.2–0.8), so the leading zero
+    // says nothing — ".4" reads cleaner. A 1.0+ value shows as-is, and the
+    // stored data keeps the zero either way (the edit path restores it).
+    if (col.k === "nozzle") v = v.replace(/^0(?=[.,])/, "");
     return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
       style="min-width:${col.min || 4}ch"><input class="cell"
       type="text" data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"></span></td>`;
@@ -544,6 +551,10 @@ class BambuCostsJobsTable extends HTMLElement {
     const f = el.dataset.f;
     if (BCJT_COLS.find(c => c.k === f && c.type === "num")) {
       row[f] = parseFloat(String(el.value).replace(",", ".")) || 0;
+    } else if (f === "nozzle") {
+      // The display drops the leading zero; the data never does.
+      const t = el.value.trim().replace(",", ".");
+      row[f] = t.startsWith(".") ? "0" + t : t;
     } else {
       row[f] = el.value;
       // The minutes behind the print-time text are what sorting and the file
