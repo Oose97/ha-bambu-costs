@@ -18,8 +18,12 @@ startup for you to add by hand.
 - Pairs share one handle and move as a unit, and reordering works with rows hidden — it
   steps over what is not shown. Filtering finds collapsed second tags and surfaces them
   with their spool.
-- **⚙** opens the table settings: show-disabled, expand-by-default, sorting, and the
-  column layout (display only — a save always writes every field in canonical order).
+- **⚙** opens the table settings: show-disabled, expand-by-default, sorting, the table
+  height, and the column layout (display only — a save always writes every field in
+  canonical order).
+- By default the table is bounded to 70% of the screen and scrolls inside its own box,
+  which keeps the header row pinned while a long library scrolls under it. "Unlimited"
+  in the settings grows the card with the page instead.
 - Each row's **SET** button opens a picker listing every filament price entity — the
   default first, then one per configured slot — so a tag's price can be pushed into
   whichever slot has that spool loaded. The list is resolved from the entity registry,
@@ -40,8 +44,12 @@ configurable columns.
   with, so jobs logged while you were editing are never overwritten. The previous file
   is kept as `jobs.csv.bak`.
 - **⚙** opens the table settings: column order and visibility, the default sort column
-  and direction, and the rows per page — all remembered per browser. Display only; a
-  save always writes every field.
+  and direction, the rows per page, and the table height — all remembered per browser.
+  Display only; a save always writes every field.
+- By default the table is bounded to 70% of the screen and scrolls inside its own box:
+  the header row stays pinned while long pages scroll under it, and the horizontal
+  scrollbar sits at the bottom of the box instead of below the last row. "Unlimited"
+  grows the card with the page instead.
 - The **Material** column lists each distinct filament type once, brand prefix dropped —
   `PLA Basic` for a single-material job, `PLA Basic, PETG HF` for a multi-material one.
   Filled in automatically when a job is logged; free text when editing.

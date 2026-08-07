@@ -24,6 +24,10 @@ const BCJT_COLS = [
 ];
 const BCJT_DEFAULT_ORDER = BCJT_COLS.map(c => c.k);
 const BCJT_PAGE_SIZES = [10, 20, 50, 100];
+// Table height as vh; 0 = grow with the page. Bounding the height is what
+// makes the sticky header stick and keeps the horizontal scrollbar on
+// screen — an unbounded table's scrollbar sits below the last row.
+const BCJT_HEIGHTS = [0, 50, 60, 70, 80];
 
 class BambuCostsJobsTable extends HTMLElement {
   setConfig(cfg) {
@@ -38,6 +42,7 @@ class BambuCostsJobsTable extends HTMLElement {
     }, cfg);
     this._sort = { key: "ts", dir: -1 };   // newest first
     this._pageSize = this._cfg.page_size;
+    this._maxH = 70;
     this._page = 0;
     this._filter = "";
     this._rows = [];
@@ -125,6 +130,7 @@ class BambuCostsJobsTable extends HTMLElement {
       if (Array.isArray(s.hidden)) this._hidden = new Set(s.hidden);
       if (s.sortKey) this._sort = { key: s.sortKey, dir: s.sortDir === 1 ? 1 : -1 };
       if (Number(s.pageSize) > 0) this._pageSize = Number(s.pageSize);
+      if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
 
@@ -133,8 +139,26 @@ class BambuCostsJobsTable extends HTMLElement {
       localStorage.setItem(this._settingsKey(), JSON.stringify({
         order: this._order, hidden: [...this._hidden],
         sortKey: this._sort.key, sortDir: this._sort.dir, pageSize: this._pageSize,
+        maxh: this._maxH,
       }));
     } catch (e) { /* private mode — layout just will not persist */ }
+  }
+
+  // Bounded: the table scrolls inside its own box, the header sticks, and
+  // the horizontal scrollbar stays on screen. Unbounded: the wrapper must
+  // not be a vertical scroller at all — overflow-x:auto alone computes
+  // overflow-y to auto, and a fractional-zoom pixel of phantom range is
+  // enough for the browser to latch wheel gestures onto it.
+  _applyScrollMode() {
+    const el = this.querySelector(".bcjt-scroll");
+    if (!el) return;
+    if (this._maxH > 0) {
+      el.style.maxHeight = this._maxH + "vh";
+      el.style.overflowY = "auto";
+    } else {
+      el.style.maxHeight = "";
+      el.style.overflowY = "hidden";
+    }
   }
 
   // ── helpers ──────────────────────────────────────────────
@@ -303,7 +327,13 @@ class BambuCostsJobsTable extends HTMLElement {
           table.bcjt { width:100%; border-collapse:collapse; font-size:12.5px; }
           table.bcjt th { text-align:left; font-weight:500; color:var(--secondary-text-color);
             font-size:11px; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap;
-            padding:6px 4px; border-bottom:1px solid var(--divider-color); user-select:none; }
+            padding:6px 4px; border-bottom:1px solid var(--divider-color); user-select:none;
+            /* Sticks when the wrapper is height-bounded. The shadow redraws
+               the divider: collapsed borders do not travel with sticky cells.
+               Opaque background, or rows show through while scrolled. */
+            position:sticky; top:0; z-index:2;
+            background:var(--ha-card-background, var(--card-background-color));
+            box-shadow:0 1px 0 var(--divider-color); }
           table.bcjt th.stretch { width:99%; }
           table.bcjt th.s { cursor:pointer; }
           table.bcjt th.s:hover { color:var(--primary-text-color); }
@@ -485,6 +515,7 @@ class BambuCostsJobsTable extends HTMLElement {
       inp.parentElement.dataset.v = String(inp.value).slice(0, (col && col.max) || 40);
     });
 
+    this._applyScrollMode();
     this._paint();
   }
 
@@ -633,6 +664,16 @@ class BambuCostsJobsTable extends HTMLElement {
           .map(n => `<option value="${n}"${this._pageSize === n ? " selected" : ""}>${n}</option>`).join("")
         }</select>
       </div>
+      <div class="bcjt-target">
+        <span class="bcjt-target-label">
+          <span class="bcjt-target-name">Table height</span>
+          <span class="bcjt-target-cur">Bounded keeps the header and the bottom scrollbar on screen</span>
+        </span>
+        <select data-maxh>${BCJT_HEIGHTS.map(n =>
+          `<option value="${n}"${this._maxH === n ? " selected" : ""}>${
+            n ? n + "% of screen" : "Unlimited"}</option>`).join("")
+        }</select>
+      </div>
       <div class="bcjt-target"><span class="bcjt-target-label">
         <span class="bcjt-target-name" style="font-weight:600">Columns</span>
         <span class="bcjt-target-cur">Display only — a save always writes every field.</span>
@@ -685,6 +726,10 @@ class BambuCostsJobsTable extends HTMLElement {
         this._page = 0;
         this._saveSettings(); this._paint();
       });
+      body.querySelector("[data-maxh]").addEventListener("change", e => {
+        this._maxH = Number(e.target.value) || 0;
+        this._saveSettings(); this._applyScrollMode();
+      });
       body.querySelectorAll("[data-toggle]").forEach(b => {
         b.addEventListener("click", e => {
           const key = e.currentTarget.dataset.toggle;
@@ -715,8 +760,9 @@ class BambuCostsJobsTable extends HTMLElement {
       this._hidden = new Set();
       this._sort = { key: "ts", dir: -1 };
       this._pageSize = this._cfg.page_size;
+      this._maxH = 70;
       this._page = 0;
-      this._saveSettings(); render(); this._paint();
+      this._saveSettings(); render(); this._paint(); this._applyScrollMode();
     });
     document.addEventListener("keydown", esc);
     this.appendChild(ov);

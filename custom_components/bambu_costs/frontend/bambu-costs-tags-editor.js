@@ -37,6 +37,9 @@ class BambuCostsTagsEditor extends HTMLElement {
     // change what is written.
     this._order = BTE_DEFAULT_ORDER.slice();
     this._hidden = new Set();
+    // Table height as vh; 0 = grow with the page. Bounding it is what makes
+    // the sticky header stick on a long library.
+    this._maxH = 70;
     this._restoreCols();
     this._built = false;
     this._busy = false;
@@ -161,6 +164,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       }
       if (Array.isArray(s.hidden)) this._hidden = new Set(s.hidden);
       if (typeof s.expandDefault === "boolean") this._expandDefault = s.expandDefault;
+      if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
 
@@ -168,8 +172,24 @@ class BambuCostsTagsEditor extends HTMLElement {
     try {
       localStorage.setItem(this._colsKey(),
         JSON.stringify({ order: this._order, hidden: [...this._hidden],
-                         expandDefault: this._expandDefault }));
+                         expandDefault: this._expandDefault, maxh: this._maxH }));
     } catch (e) { /* private mode — layout just will not persist */ }
+  }
+
+  // Bounded: the table scrolls inside its own box and the header sticks.
+  // Unbounded: keep the wrapper from being a vertical scroller at all —
+  // overflow-x:auto alone computes overflow-y to auto, and a phantom pixel
+  // of range is enough for the browser to latch wheel gestures onto it.
+  _applyScrollMode() {
+    const el = this.querySelector(".bte-scroll");
+    if (!el) return;
+    if (this._maxH > 0) {
+      el.style.maxHeight = this._maxH + "vh";
+      el.style.overflowY = "auto";
+    } else {
+      el.style.maxHeight = "";
+      el.style.overflowY = "hidden";
+    }
   }
 
   // ── pair expansion ───────────────────────────────────────────────────────
@@ -323,7 +343,13 @@ class BambuCostsTagsEditor extends HTMLElement {
           table.bte { width:100%; border-collapse:collapse; font-size:13px; }
           table.bte th { text-align:left; font-weight:500; color:var(--secondary-text-color);
             font-size:11px; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap;
-            padding:4px 13px; border-bottom:1px solid var(--divider-color); }
+            padding:4px 13px; border-bottom:1px solid var(--divider-color);
+            /* Sticks when the wrapper is height-bounded. The shadow redraws
+               the divider: collapsed borders do not travel with sticky cells.
+               Opaque background, or rows show through while scrolled. */
+            position:sticky; top:0; z-index:2;
+            background:var(--ha-card-background, var(--card-background-color));
+            box-shadow:0 1px 0 var(--divider-color); }
           table.bte th.tight { padding:4px 6px; }
           .phead { display:inline-block; width:74px; text-align:right; padding-right:7px; }
           table.bte td { padding:4px 6px; border-bottom:1px solid var(--divider-color); }
@@ -377,6 +403,9 @@ class BambuCostsTagsEditor extends HTMLElement {
           .bte-target-cur { font-size:11px; color:var(--secondary-text-color); }
           .bte-sheet-foot { padding:10px 16px; border-top:1px solid var(--divider-color);
             display:flex; justify-content:flex-end; }
+          .bte-sheet select { padding:5px 8px; border-radius:7px; font-size:12.5px;
+            border:1px solid var(--divider-color); background:var(--card-background-color);
+            color:var(--primary-text-color); }
           /* A spool's two rows read as one block. */
           table.bte tr.paired td { border-bottom-color:transparent; }
           /* …unless the pair is collapsed — then the first row is the block. */
@@ -463,6 +492,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     q(".reload").addEventListener("click", () => this._reload());
     q("button.save").addEventListener("click", () => this._save());
 
+    this._applyScrollMode();
     this._paint();
   }
 
@@ -624,6 +654,15 @@ class BambuCostsTagsEditor extends HTMLElement {
           `Expand related by default${pairs ? ` (${pairs} pairs)` : ""}`,
           "A spool's second tag as a child row; ▸ on the row overrides")
         + `<div class="bte-target">
+            <span class="bte-target-label">
+              <span class="bte-target-name">Table height</span>
+              <span class="bte-target-cur">Bounded keeps the header on screen</span>
+            </span>
+            <select data-maxh>${[0, 50, 60, 70, 80].map(n =>
+              `<option value="${n}"${this._maxH === n ? " selected" : ""}>${
+                n ? n + "% of screen" : "Unlimited"}</option>`).join("")}</select>
+          </div>`
+        + `<div class="bte-target">
             <span class="bte-target-label"><span class="bte-target-name">Sort rows</span></span>
             <button class="tbtn" data-sort="type">By type</button>
             <button class="tbtn" data-sort="price">By price</button>
@@ -682,6 +721,11 @@ class BambuCostsTagsEditor extends HTMLElement {
           }
           render();
         });
+      });
+      const maxh = body.querySelector("[data-maxh]");
+      if (maxh) maxh.addEventListener("change", e => {
+        this._maxH = Number(e.target.value) || 0;
+        this._saveCols(); this._applyScrollMode();
       });
       body.querySelectorAll("[data-sort]").forEach(b => {
         b.addEventListener("click", e => {
