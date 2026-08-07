@@ -19,7 +19,7 @@ const BCJT_COLS = [
   { k: "p_cost",      t: "Power",         type: "num",  edit: true, unit: "$",   dp: 2 },
   { k: "cost",        t: "Total",         type: "num",  edit: true, unit: "$",   dp: 2, bold: true },
   { k: "types",       t: "Material",      type: "text", edit: true, min: 6, max: 30 },
-  { k: "cover",       t: "Image",         type: "cover", sortable: false },
+  { k: "cover",       t: "Image",         type: "cover", sortable: false, min: 11 },
   { k: "trays",       t: "Filament used", type: "trays", sortable: false },
 ];
 const BCJT_DEFAULT_ORDER = BCJT_COLS.map(c => c.k);
@@ -536,10 +536,13 @@ class BambuCostsJobsTable extends HTMLElement {
 
   _cell(col, r) {
     if (col.type === "cover") {
+      // min-width on every cell, the empty ones too, so the column does not
+      // pack itself tight against its neighbour or resize between pages.
+      const w = `style="min-width:${col.min || 11}ch"`;
       const f = r.cover;
-      if (!f || f === "—") return `<td><span class="muted">—</span></td>`;
+      if (!f || f === "—") return `<td class="nw" ${w}><span class="muted">—</span></td>`;
       const src = r.cover_url || (this._cfg.image_base + f);
-      return `<td class="nw"><button class="cbtn" data-src="${this._esc(src)}"
+      return `<td class="nw" ${w}><button class="cbtn" data-src="${this._esc(src)}"
         data-cap="${this._esc(r.job || f)}" title="${this._esc(f)}">🖼 View</button></td>`;
     }
     if (col.type === "trays") return `<td class="nw">${this._traysCell(r)}</td>`;
