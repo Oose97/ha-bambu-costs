@@ -252,10 +252,14 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         is read by :meth:`slot_price` as "no price of its own", so costing falls
         back to the default.
 
-        Two cases are deliberately skipped rather than zeroed, because neither
-        means "empty": a slot with no tray sensor configured, and a tray whose
-        own state is unavailable — typically the printer being switched off,
-        which must not look like every spool was unloaded.
+        Three cases are deliberately skipped rather than zeroed, because none
+        of them means "empty": a slot with no tray sensor configured, a tray
+        whose own state is unavailable — typically the printer being switched
+        off, which must not look like every spool was unloaded — and a loaded
+        spool with no readable RFID tag. That last one is a generic spool:
+        there is no tag to price it from, so its slot number is the user's to
+        set by hand, and this runs on every tray update — zeroing there would
+        wipe the manual price moments after it was typed in.
         """
         updated: dict[str, float] = {}
         for slot in self.slots:
@@ -266,7 +270,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not tray.get("available"):
                 continue
 
-            tag = self.tag_for_serial(tray.get("tag_uid"))
+            serial = str(tray.get("tag_uid") or "").strip()
+            if serial.lower() in EMPTY_TAG_UIDS and not tray.get("empty"):
+                continue
+
+            tag = self.tag_for_serial(serial)
             price = float(tag["cost_per_kg"]) if tag and tag.get("cost_per_kg") else 0.0
             if self.value(slot.price_key) != price:
                 self.set_value(slot.price_key, price)
@@ -283,6 +291,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         attrs = state.attributes
         return {
             "available": state.state.lower() not in _BAD_STATES,
+            # True for a slot with nothing in it; False for a loaded spool,
+            # tagged or not. A tray without the attribute reads as None, which
+            # the price sync treats like a loaded spool — the safe direction,
+            # since it never overwrites a price the user set by hand.
+            "empty": attrs.get("empty"),
             "color": normalise_colour(attrs.get("color")) if attrs.get("color") else None,
             # `name` is the full product name ("Bambu PLA Basic"); `type` is
             # just the polymer ("PLA"). The tag library's filament column holds

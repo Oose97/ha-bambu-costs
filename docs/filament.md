@@ -1,5 +1,19 @@
 # How filament is priced
 
+## RFID tags do the heavy lifting
+
+The per-slot costing leans on Bambu Lab's **RFID spool tags**: the tray sensors report
+each tag's serial, which is what scans spools into the library, prices a slot the moment
+its spool is loaded, and keeps following the spool as it moves between slots. Cloned
+RFID tags work exactly like originals — a serial is a serial.
+
+**Generic (untagged) spools still work**, with one difference: there is no tag to price
+them from, so for a per-slot cost you set the slot's own price number by hand — before
+the print, or once it is running. The integration never overwrites that manual price
+while a tagless spool sits in the slot (see below); it is cleared only when the slot is
+actually emptied or a tagged spool takes its place. If you skip the manual step, the
+slot is simply costed at the default filament price.
+
 ## How a slot gets its price
 
 In order of precedence:
@@ -24,9 +38,12 @@ also refreshed when a print **starts** and when it **finishes**, and on demand v
 A slot holding a spool the library does not know also goes to 0. Zero means "no price of
 its own", so costing falls back to the default rather than charging nothing.
 
-Two cases are deliberately skipped instead of zeroed, because neither means empty: a slot
-with no tray sensor configured, and a tray whose own state is `unavailable` — usually the
-printer being switched off, which must not look like every spool was unloaded.
+Three cases are deliberately skipped instead of zeroed, because none of them means
+empty: a slot with no tray sensor configured; a tray whose own state is `unavailable` —
+usually the printer being switched off, which must not look like every spool was
+unloaded; and a **loaded spool with no readable tag** — a generic spool. That last one
+is what makes hand-priced generic spools workable at all: the sync runs on every tray
+update, so zeroing there would wipe the manual price moments after it was typed in.
 
 None of this affects what a print costs. The tag price is resolved live at calculation
 time, so the figures are right even if these entities are stale.

@@ -11,7 +11,9 @@ slots are free-form, so any AMS layout — or none — works.
 ## Highlights
 
 - **Per-slot filament costing** from your own tag library, priced by the RFID tag of the
-  spool actually loaded — a spool's two tags count as one spool.
+  spool actually loaded — a spool's two tags count as one spool. Cloned tags work like
+  originals; generic untagged spools work too, priced by hand per slot or falling back
+  to the default ([details](docs/filament.md)).
 - **Electricity integrated, not estimated**: a variable tariff is charged as it moved
   during the print, standby between prints is counted, and even an aborted print's
   power reaches the total. Cross-checked against the energy counters, so a smart plug
@@ -61,7 +63,7 @@ itself, along with meter snapshots, slot prices, durations and idle tracking.
 | [Setup](docs/setup.md) | The config flow, device discovery, slot syntax, currency, icon. |
 | [Entities & services](docs/entities.md) | Every sensor, number, button, switch and service, plus the job-logging automation. |
 | [Electricity costing](docs/costing.md) | Variable tariffs, integration vs estimation, outage handling, monthly costs via `utility_meter`. |
-| [Filament pricing](docs/filament.md) | How a slot gets its price, tag scanning, spool pairs, restart survival. |
+| [Filament pricing](docs/filament.md) | How a slot gets its price, RFID tags and generic spools, tag scanning, spool pairs, restart survival. |
 | [Cards](docs/cards.md) | The three cards and their options. |
 | [Data on disk](docs/data.md) | Where the CSVs and cover images live, and how they are written. |
 | [Releasing](docs/releasing.md) | How versions and releases are cut. |

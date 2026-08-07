@@ -257,6 +257,44 @@ def test_job_row_names_each_material_once():
     assert forced["filament_type"] == "hand-typed", "the override wins"
 
 
+# ── slot price sync ──────────────────────────────────────────────────────────
+def test_sync_leaves_a_generic_spools_manual_price_alone():
+    """A loaded spool with no RFID tag is priced by hand, not zeroed.
+
+    sync_slot_prices runs on every tray update, so if it zeroed a tagless
+    slot, a manually entered price would be wiped moments after typing it.
+    """
+    from custom_components.bambu_costs.coordinator import SlotDef
+
+    c = make()
+    slot = SlotDef(attribute="AMS 1 Tray 1", label="A1", entity="sensor.tray_1")
+    c.slots = [slot]
+    c.data = {"tags": [{"serial": "AAA", "serial_2": "", "cost_per_kg": 13.22}]}
+    c.set_value(slot.price_key, 18.0)
+
+    trays = {}
+    c.tray_info = lambda s: trays
+
+    # Generic spool: loaded, but the printer read no tag.
+    trays = {"available": True, "empty": False, "tag_uid": "0000000000000000"}
+    assert c.sync_slot_prices() == {}
+    assert c.value(slot.price_key) == 18.0
+
+    # Same for a fork whose tray sensor has no empty attribute at all.
+    trays = {"available": True, "empty": None, "tag_uid": ""}
+    assert c.sync_slot_prices() == {}
+    assert c.value(slot.price_key) == 18.0
+
+    # Actually unloading the slot still clears it.
+    trays = {"available": True, "empty": True, "tag_uid": ""}
+    assert c.sync_slot_prices() == {"A1": 0.0}
+    assert c.value(slot.price_key) == 0.0
+
+    # And a known tag still takes over.
+    trays = {"available": True, "empty": False, "tag_uid": "aaa"}
+    assert c.sync_slot_prices() == {"A1": 13.22}
+
+
 # ── tags ─────────────────────────────────────────────────────────────────────
 def test_tag_for_serial_matches_either_side():
     c = make()
