@@ -19,6 +19,7 @@ from homeassistant.helpers import entity_registry as er
 from .const import (
     CONF_CAMERA,
     CONF_COVER_IMAGE,
+    CONF_END_TIME,
     CONF_LAYERS,
     CONF_LENGTH,
     CONF_NOZZLE_SIZE,
@@ -26,6 +27,7 @@ from .const import (
     CONF_PRINT_STATUS,
     CONF_PRINT_WEIGHT,
     CONF_SLOTS,
+    CONF_START_TIME,
     CONF_TASK_NAME,
 )
 
@@ -45,6 +47,10 @@ ROLE_KEYS: dict[str, tuple[str, ...]] = {
     # The printer integration names its camera "camera" on most models and
     # "p1p_camera" on the ones that stream differently.
     CONF_CAMERA: ("camera", "p1p_camera"),
+    # Duration fallback for jobs whose start was never observed; the printer
+    # exposes no minutes sensor, only these two timestamps.
+    CONF_START_TIME: ("start_time",),
+    CONF_END_TIME: ("end_time",),
 }
 
 TRAY_KEY = "tray"

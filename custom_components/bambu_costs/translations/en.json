@@ -21,12 +21,15 @@
           "nozzle_size": "Nozzle size sensor",
           "nozzle_type": "Nozzle type sensor",
           "cover_image": "Job cover image",
-          "camera_entity": "Printer camera"
+          "camera_entity": "Printer camera",
+          "start_time": "Print start time sensor",
+          "end_time": "Print end time sensor"
         },
         "data_description": {
           "print_weight": "The sensor whose attributes hold the per-slot filament weight for the current job.",
           "cover_image": "Optional. Captured and stored with each logged job.",
-          "camera_entity": "Optional. With the Use-camera-snapshot switch on, each job's picture is a camera frame taken the moment the print finishes, instead of the slicer's render."
+          "camera_entity": "Optional. With the Use-camera-snapshot switch on, each job's picture is a camera frame taken the moment the print finishes, instead of the slicer's render.",
+          "start_time": "Optional. Only used to work out a job's duration when its start was never observed — a restart or an outage; normally the duration is measured live."
         }
       },
       "costs": {
@@ -39,14 +42,16 @@
           "default_filament_price": "Default filament price",
           "electricity_price_entity": "Electricity price sensor",
           "currency": "Currency",
-          "power_sensors": "Power sensors"
+          "power_sensors": "Power sensors",
+          "auto_log": "Log finished jobs automatically"
         },
         "data_description": {
           "energy_sensors": "Summed to work out the energy a print used. Usually the printer and AMS socket meters.",
           "default_filament_price": "Used for a slot with no price set, and for filament from an unconfigured source.",
           "electricity_price_entity": "Optional. Follows a variable tariff — point it at a sensor reporting the price per kWh (e.g. EUR/kWh). When set it overrides the fixed price below, which stays as the fallback for when the sensor is unavailable.",
           "currency": "Shown on the cost entities and in the cards. Any text works — EUR, USD, PLN, £.",
-          "power_sensors": "Summed and multiplied by the price to give a live cost rate, which is integrated over time. This is what makes a variable tariff come out right, and it captures standby between prints. Usually the printer and AMS sockets."
+          "power_sensors": "Summed and multiplied by the price to give a live cost rate, which is integrated over time. This is what makes a variable tariff come out right, and it captures standby between prints. Usually the printer and AMS sockets.",
+          "auto_log": "Each finished print is appended to the job log by the integration itself — no automation needed. Aborted prints are not logged."
         }
       }
     }
@@ -71,11 +76,14 @@
           "nozzle_size": "Nozzle size sensor",
           "nozzle_type": "Nozzle type sensor",
           "cover_image": "Job cover image",
-          "camera_entity": "Printer camera"
+          "camera_entity": "Printer camera",
+          "start_time": "Print start time sensor",
+          "end_time": "Print end time sensor"
         },
         "title": "Printer sensors",
         "data_description": {
-          "camera_entity": "Optional. With the Use-camera-snapshot switch on, each job's picture is a camera frame taken the moment the print finishes, instead of the slicer's render."
+          "camera_entity": "Optional. With the Use-camera-snapshot switch on, each job's picture is a camera frame taken the moment the print finishes, instead of the slicer's render.",
+          "start_time": "Optional. Only used to work out a job's duration when its start was never observed — a restart or an outage; normally the duration is measured live."
         }
       },
       "costs": {
@@ -88,12 +96,14 @@
           "default_filament_price": "Default filament price",
           "electricity_price_entity": "Electricity price sensor",
           "currency": "Currency",
-          "power_sensors": "Power sensors"
+          "power_sensors": "Power sensors",
+          "auto_log": "Log finished jobs automatically"
         },
         "data_description": {
           "electricity_price_entity": "Optional. Follows a variable tariff — point it at a sensor reporting the price per kWh (e.g. EUR/kWh). When set it overrides the fixed price below, which stays as the fallback for when the sensor is unavailable.",
           "currency": "Shown on the cost entities and in the cards. Any text works — EUR, USD, PLN, £.",
-          "power_sensors": "Summed and multiplied by the price to give a live cost rate, which is integrated over time. This is what makes a variable tariff come out right, and it captures standby between prints. Usually the printer and AMS sockets."
+          "power_sensors": "Summed and multiplied by the price to give a live cost rate, which is integrated over time. This is what makes a variable tariff come out right, and it captures standby between prints. Usually the printer and AMS sockets.",
+          "auto_log": "Each finished print is appended to the job log by the integration itself — no automation needed. Aborted prints are not logged."
         }
       }
     }

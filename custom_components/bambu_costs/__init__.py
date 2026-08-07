@@ -29,7 +29,6 @@ from .const import (
     ATTR_PRICE,
     ATTR_SERIAL,
     ATTR_TAGS,
-    CONF_POWER_SENSORS,
     CONF_PRINT_STATUS,
     DISCONNECTED_STATES,
     DOMAIN,
@@ -96,6 +95,9 @@ _LOG_JOB_SCHEMA = vol.Schema(
         vol.Optional("energy_kwh"): vol.Coerce(float),
         vol.Optional("capture_cover", default=True): cv.boolean,
         vol.Optional("update_totals", default=True): cv.boolean,
+        # The integration logs finished jobs itself; a second call for the
+        # same job is skipped unless this is set.
+        vol.Optional("force", default=False): cv.boolean,
     }
 )
 
@@ -209,7 +211,18 @@ def _async_track_print_status(
                 )
         else:
             spent = coordinator.mark_print_end()
-            _LOGGER.info("Print ended; electricity cost %.4f %s", spent, coordinator.currency)
+            if spent is None:
+                _LOGGER.info("Printer reconnected reporting %s; meters resynced", now)
+            else:
+                _LOGGER.info(
+                    "Print ended; electricity cost %.4f %s", spent, coordinator.currency
+                )
+                # Only genuine completions are logged — an abort's weight is
+                # the job's *planned* weight, so logging it would bill a
+                # first-layer failure in full. The charge button stays the
+                # deliberate path for partial jobs.
+                if now in ("finish", "finished") and coordinator.auto_log:
+                    entry.async_create_task(hass, coordinator.async_auto_log())
 
         updated = coordinator.sync_slot_prices()
         if updated:
@@ -346,36 +359,14 @@ def _async_register_services(hass: HomeAssistant) -> None:
         overrides: dict[str, Any] = {
             k: v
             for k, v in call.data.items()
-            if k not in (ATTR_ENTRY_ID, "capture_cover", "update_totals")
+            if k not in (ATTR_ENTRY_ID, "capture_cover", "update_totals", "force")
         }
-        row = coordinator.build_job_row(overrides)
-
-        if call.data.get("capture_cover", True):
-            stamp = str(row["timestamp"]).replace("-", "").replace(":", "").replace(" ", "-")
-            row["cover"] = await coordinator.async_capture_cover(stamp)
-
-        await coordinator.async_append_job(row)
-
-        if call.data.get("update_totals", True):
-            coordinator.set_value("last_print_filament_cost", row["filament_cost"])
-            coordinator.set_value("last_print_power_cost", row["power_cost"])
-            coordinator.set_value("last_print_cost", row["total_cost"])
-            coordinator.set_value(
-                "total_filament_used",
-                coordinator.value("total_filament_used") + row["weight_g"],
-            )
-            # Electricity is banked live by the coordinator whenever power
-            # sensors are configured — the stint landed in the total at the
-            # finish transition, aborted or not, so adding the row's power
-            # here would count it twice. Without power sensors there is no
-            # live banking, and the estimated power cost rides along instead.
-            addition = row["filament_cost"]
-            if not coordinator.options.get(CONF_POWER_SENSORS):
-                addition += row["power_cost"]
-            coordinator.set_value(
-                "total_cost", coordinator.value("total_cost") + addition
-            )
-        return {"logged": True, "total_cost": row["total_cost"], "cover": row["cover"]}
+        return await coordinator.async_log_current_job(
+            overrides,
+            capture_cover=call.data.get("capture_cover", True),
+            update_totals=call.data.get("update_totals", True),
+            force=call.data.get("force", False),
+        )
 
     async def _refresh(call: ServiceCall) -> None:
         coordinator = _resolve(hass, call)

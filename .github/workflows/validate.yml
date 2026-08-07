@@ -2,10 +2,19 @@ name: Validate
 
 on:
   push:
+    # Feature branches are validated by their pull_request runs; validating
+    # the push too ran everything twice per commit.
+    branches: [main]
   pull_request:
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
+
+# A new commit supersedes the previous run of the same PR or branch; queued
+# or running validations of outdated code are cancelled rather than finished.
+concurrency:
+  group: validate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   hacs:
@@ -27,3 +36,49 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: home-assistant/actions/hassfest@master
+
+  # hassfest and HACS validate structure; this job proves the code actually
+  # imports against a real Home Assistant and that the test suite passes.
+  # Release triggers on this workflow succeeding, so a red test blocks a
+  # release the same way a red hassfest does.
+  tests:
+    name: Build & tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Home Assistant and pytest
+        run: pip install --quiet homeassistant pytest
+
+      - name: Byte-compile the integration
+        run: python -m compileall -q custom_components
+
+      - name: Syntax-check the cards
+        run: |
+          for f in custom_components/bambu_costs/frontend/*.js; do
+            node --check "$f"
+          done
+
+      - name: Import the integration against Home Assistant
+        run: |
+          python -c "
+          import custom_components.bambu_costs as pkg
+          import custom_components.bambu_costs.config_flow
+          import custom_components.bambu_costs.coordinator
+          import custom_components.bambu_costs.sensor
+          import custom_components.bambu_costs.number
+          import custom_components.bambu_costs.button
+          import custom_components.bambu_costs.switch
+          import custom_components.bambu_costs.cards
+          import custom_components.bambu_costs.discovery
+          import custom_components.bambu_costs.migrate
+          import custom_components.bambu_costs.recorder
+          print('all modules import cleanly')
+          "
+
+      - name: Run the tests
+        run: pytest tests/ -q

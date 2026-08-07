@@ -19,6 +19,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     DeviceSelector,
     DeviceSelectorConfig,
     EntitySelector,
@@ -32,12 +33,14 @@ from homeassistant.helpers.selector import (
 
 from .discovery import discover
 from .const import (
+    CONF_AUTO_LOG,
     CONF_CAMERA,
     CONF_COVER_IMAGE,
     CONF_CURRENCY,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_ELECTRICITY_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
+    CONF_END_TIME,
     CONF_ENERGY_SENSORS,
     CONF_LAYERS,
     CONF_LENGTH,
@@ -47,6 +50,7 @@ from .const import (
     CONF_PRINT_STATUS,
     CONF_PRINT_WEIGHT,
     CONF_SLOTS,
+    CONF_START_TIME,
     CONF_TASK_NAME,
     DEFAULT_CURRENCY,
     DEFAULT_ELECTRICITY_PRICE,
@@ -91,6 +95,8 @@ ALL_KEYS = (
     CONF_NOZZLE_TYPE,
     CONF_COVER_IMAGE,
     CONF_CAMERA,
+    CONF_START_TIME,
+    CONF_END_TIME,
     CONF_SLOTS,
     CONF_ENERGY_SENSORS,
     CONF_POWER_SENSORS,
@@ -98,6 +104,7 @@ ALL_KEYS = (
     CONF_ELECTRICITY_PRICE,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_CURRENCY,
+    CONF_AUTO_LOG,
     # Kept so reconfiguring can show which printer was chosen. Nothing reads it
     # at runtime — the entities picked from it are what the integration uses.
     CONF_DEVICE,
@@ -138,6 +145,8 @@ def _printer_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Optional(CONF_NOZZLE_TYPE, description=dflt(CONF_NOZZLE_TYPE)): _SENSOR_OPT,
             vol.Optional(CONF_COVER_IMAGE, description=dflt(CONF_COVER_IMAGE)): _IMAGE,
             vol.Optional(CONF_CAMERA, description=dflt(CONF_CAMERA)): _CAMERA,
+            vol.Optional(CONF_START_TIME, description=dflt(CONF_START_TIME)): _SENSOR_OPT,
+            vol.Optional(CONF_END_TIME, description=dflt(CONF_END_TIME)): _SENSOR_OPT,
         }
     )
 
@@ -170,6 +179,9 @@ def _costs_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_CURRENCY, description=dflt(CONF_CURRENCY, DEFAULT_CURRENCY)
             ): str,
+            vol.Required(
+                CONF_AUTO_LOG, description=dflt(CONF_AUTO_LOG, True)
+            ): BooleanSelector(),
         }
     )
 

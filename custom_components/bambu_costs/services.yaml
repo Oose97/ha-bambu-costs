@@ -110,6 +110,11 @@ log_job:
       default: true
       selector:
         boolean:
+    force:
+      required: false
+      default: false
+      selector:
+        boolean:
 
 refresh:
   fields:
