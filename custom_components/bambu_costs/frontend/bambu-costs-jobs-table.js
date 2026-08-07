@@ -1,21 +1,23 @@
 // Every column the table can show. `edit` marks what the user can change from
 // the card; the cover button and the tray breakdown are structured, so they
 // stay read-only. `unit` is shown in the header rather than in every cell, so
-// the cells hold plain editable values.
+// the cells hold plain editable values. Text inputs size themselves to their
+// content between `min` and `max` (in characters), so a nozzle diameter takes
+// a few characters' width while a long job name gets the room it needs.
 const BCJT_COLS = [
-  { k: "ts",          t: "Date",          type: "text", edit: true, nowrap: true },
-  { k: "job",         t: "Job",           type: "text", edit: true },
-  { k: "time",        t: "Print time",    type: "text", edit: true, sortKey: "mins", nowrap: true },
+  { k: "ts",          t: "Date",          type: "text", edit: true, nowrap: true, min: 19, max: 19 },
+  { k: "job",         t: "Job",           type: "text", edit: true, min: 12, max: 42 },
+  { k: "time",        t: "Print time",    type: "text", edit: true, sortKey: "mins", nowrap: true, min: 6, max: 11 },
   { k: "layers",      t: "Layers",        type: "num",  edit: true },
   { k: "weight",      t: "Weight",        type: "num",  edit: true, unit: "g",   dp: 1 },
   { k: "length",      t: "Length",        type: "num",  edit: true, unit: "m",   dp: 2 },
-  { k: "nozzle",      t: "Nozzle",        type: "text", edit: true },
-  { k: "nozzle_type", t: "Nozzle type",   type: "text", edit: true },
+  { k: "nozzle",      t: "Nozzle",        type: "text", edit: true, min: 3, max: 6 },
+  { k: "nozzle_type", t: "Nozzle type",   type: "text", edit: true, min: 8, max: 24 },
   { k: "kwh",         t: "Energy",        type: "num",  edit: true, unit: "kWh", dp: 3 },
   { k: "f_cost",      t: "Filament",      type: "num",  edit: true, unit: "$",   dp: 2 },
   { k: "p_cost",      t: "Power",         type: "num",  edit: true, unit: "$",   dp: 2 },
   { k: "cost",        t: "Total",         type: "num",  edit: true, unit: "$",   dp: 2, bold: true },
-  { k: "types",       t: "Material",      type: "text", edit: true },
+  { k: "types",       t: "Material",      type: "text", edit: true, min: 8, max: 28 },
   { k: "cover",       t: "Image",         type: "cover", sortable: false },
   { k: "trays",       t: "Filament used", type: "trays", sortable: false },
 ];
@@ -187,21 +189,69 @@ class BambuCostsJobsTable extends HTMLElement {
   }
 
   // Trays arrive as structured objects from the integration, so there is no
-  // delimited string left to unpick.
-  _traysCell(trays) {
+  // delimited string left to unpick. The cell is a compact summary — one dot
+  // per slot, the slot count and the summed weight — and the detail lives in
+  // a modal, so a multi-material job does not stretch every row it is in.
+  _traysCell(r) {
+    const trays = r.trays;
     if (!Array.isArray(trays) || !trays.length) return `<span class="muted">—</span>`;
-    return trays.map(t => {
+    const dots = trays.map(t => {
       const rgb = this._parseColor(t.color || "");
-      const dot = rgb ? `<i class="dot" style="background:${this._css(rgb)}"></i>` : "";
-
-      const weight = isNaN(parseFloat(t.weight)) ? "" : `${parseFloat(t.weight).toFixed(2)} g`;
-      const cNum = parseFloat(t.cost);
-      const cost = isNaN(cNum) ? "" : `<span class="tcost"> · ${cNum.toFixed(2)} ${this._esc(this._cfg.currency)}</span>`;
-
-      const price = isNaN(parseFloat(t.price)) ? "" : ` @ ${parseFloat(t.price).toFixed(2)} ${this._cfg.currency}/kg`;
-      const tip = this._esc(`${t.type ? t.type + " — " : ""}${t.name || t.label || ""}${price}`);
-      return `<span class="tray" title="${tip}">${dot}${this._esc(t.label || "?")} ${weight}${cost}</span>`;
+      return rgb ? `<i class="dot" style="background:${this._css(rgb)}"></i>` : "";
     }).join("");
+    const total = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
+    const tip = this._esc(trays.map(t =>
+      `${t.label || "?"}${t.type ? " " + t.type : ""} ${(parseFloat(t.weight) || 0).toFixed(1)} g`
+    ).join("\n"));
+    return `<button class="trbtn" data-k="${r._k}" title="${tip}">${dots}` +
+      `${trays.length} slot${trays.length === 1 ? "" : "s"} · ${total.toFixed(1)} g</button>`;
+  }
+
+  _openTrays(r) {
+    const trays = Array.isArray(r.trays) ? r.trays : [];
+    const totalW = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
+    const totalC = trays.reduce((s, t) => s + (parseFloat(t.cost) || 0), 0);
+    const cur = this._esc(this._cfg.currency);
+
+    const rows = trays.map(t => {
+      const rgb = this._parseColor(t.color || "");
+      const dot = rgb ? `<i class="dot dotb" style="background:${this._css(rgb)}"></i>` : "";
+      const price = isNaN(parseFloat(t.price)) ? "" : `@ ${parseFloat(t.price).toFixed(2)} ${cur}/kg`;
+      const cost = isNaN(parseFloat(t.cost)) ? "" : `${parseFloat(t.cost).toFixed(2)} ${cur}`;
+      const weight = isNaN(parseFloat(t.weight)) ? "" : `${parseFloat(t.weight).toFixed(2)} g`;
+      return `<div class="bcjt-target">
+        ${dot}
+        <span class="bcjt-target-label">
+          <span class="bcjt-target-name">${this._esc(t.label || "?")}${
+            t.type ? ` — ${this._esc(t.type)}` : ""}</span>
+          <span class="bcjt-target-cur">${this._esc(t.name || "")}${
+            t.name && price ? " " : ""}${this._esc(price)}</span>
+        </span>
+        <span class="trnum">${weight}<br><span class="tcost">${cost}</span></span>
+      </div>`;
+    }).join("") || `<div class="bcjt-target"><span class="muted">No per-slot data</span></div>`;
+
+    const ov = document.createElement("div");
+    ov.className = "bcjt-modal";
+    ov.innerHTML = `
+      <div class="bcjt-sheet" role="dialog" aria-modal="true">
+        <div class="bcjt-sheet-head">
+          <div class="bcjt-sheet-title">Filament used</div>
+          <div class="bcjt-target-cur">${this._esc(r.job || "")}${r.ts ? ` · ${this._esc(r.ts)}` : ""}</div>
+        </div>
+        <div class="bcjt-sheet-body">${rows}</div>
+        <div class="bcjt-sheet-foot">
+          <span style="align-self:center">${totalW.toFixed(1)} g · ${totalC.toFixed(2)} ${cur}</span>
+          <button class="tbtn close">Done</button>
+        </div>
+      </div>`;
+
+    const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
+    const esc = e => { if (e.key === "Escape") close(); };
+    ov.addEventListener("click", e => { if (e.target === ov) close(); });
+    ov.querySelector("button.close").addEventListener("click", close);
+    document.addEventListener("keydown", esc);
+    this.appendChild(ov);
   }
 
   // ── image modal ──────────────────────────────────────────
@@ -260,19 +310,23 @@ class BambuCostsJobsTable extends HTMLElement {
           table.bcjt td.num { text-align:right; white-space:nowrap; }
           table.bcjt td.b input.cell { font-weight:600; }
           .muted { opacity:.5; }
-          input.cell { width:100%; min-width:70px; padding:5px 7px; border-radius:7px;
-            border:1px solid transparent; background:transparent; box-sizing:border-box;
+          input.cell { padding:5px 7px; border-radius:7px;
+            border:1px solid transparent; background:transparent; box-sizing:content-box;
             color:var(--primary-text-color); font-size:12.5px; }
           input.cell:hover { border-color:var(--divider-color); }
           input.cell:focus { border-color:var(--primary-color);
             background:var(--card-background-color); outline:none; }
-          input.cell.num { text-align:right; min-width:64px; width:74px; }
-          input.cell.wide { min-width:130px; }
-          .tray { display:inline-flex; align-items:center; white-space:nowrap;
-            margin:1px 6px 1px 0; font-size:11.5px; }
+          input.cell.num { text-align:right; width:64px; }
           .tcost { opacity:.65; }
           .dot { display:inline-block; width:9px; height:9px; border-radius:2px;
             margin-right:4px; box-shadow:0 0 0 1px var(--secondary-text-color); }
+          .dot.dotb { width:14px; height:14px; border-radius:4px; margin:0; flex:none; }
+          button.trbtn { display:inline-flex; align-items:center; background:none;
+            border:1px solid var(--divider-color); color:var(--primary-text-color);
+            border-radius:7px; padding:4px 8px; font-size:11.5px; cursor:pointer;
+            white-space:nowrap; }
+          button.trbtn:hover { border-color:var(--primary-color); }
+          .trnum { text-align:right; font-size:12px; white-space:nowrap; }
           button.cbtn { background:none; border:1px solid var(--divider-color);
             color:var(--primary-color); border-radius:7px; padding:4px 8px;
             font-size:11.5px; cursor:pointer; white-space:nowrap; }
@@ -381,9 +435,13 @@ class BambuCostsJobsTable extends HTMLElement {
     });
 
     this.querySelector("tbody").addEventListener("click", e => {
-      const b = e.target.closest("button.cbtn");
-      if (!b) return;
-      this._openImage(b.dataset.src, b.dataset.cap);
+      const cover = e.target.closest("button.cbtn");
+      if (cover) { this._openImage(cover.dataset.src, cover.dataset.cap); return; }
+      const trays = e.target.closest("button.trbtn");
+      if (trays) {
+        const row = this._row(trays.dataset.k);
+        if (row) this._openTrays(row);
+      }
     });
 
     // One delegated listener instead of one per input: the body repaints on
@@ -391,6 +449,15 @@ class BambuCostsJobsTable extends HTMLElement {
     this.querySelector("tbody").addEventListener("change", e => {
       const inp = e.target.closest("input[data-f]");
       if (inp) this._edit(inp);
+    });
+
+    // Text inputs grow and shrink with what is being typed, within the
+    // column's bounds, so an edit is never blind-typed into a cut-off box.
+    this.querySelector("tbody").addEventListener("input", e => {
+      const inp = e.target.closest("input[data-f]");
+      if (!inp || inp.type !== "text") return;
+      const col = BCJT_COLS.find(c => c.k === inp.dataset.f);
+      if (col) inp.size = this._size(col, inp.value);
     });
 
     this._paint();
@@ -415,7 +482,7 @@ class BambuCostsJobsTable extends HTMLElement {
       return `<td class="nw"><button class="cbtn" data-src="${this._esc(src)}"
         data-cap="${this._esc(r.job || f)}" title="${this._esc(f)}">🖼 View</button></td>`;
     }
-    if (col.type === "trays") return `<td>${this._traysCell(r.trays)}</td>`;
+    if (col.type === "trays") return `<td class="nw">${this._traysCell(r)}</td>`;
 
     const cls = [col.type === "num" ? "num" : "", col.nowrap ? "nw" : "", col.bold ? "b" : ""]
       .filter(Boolean).join(" ");
@@ -427,9 +494,15 @@ class BambuCostsJobsTable extends HTMLElement {
       return `<td class="${cls}"><input class="cell num" type="number" step="any"
         data-k="${r._k}" data-f="${col.k}" value="${v}"></td>`;
     }
-    const wide = col.k === "job" || col.k === "types" ? " wide" : "";
-    return `<td class="${cls}"><input class="cell${wide}" type="text"
-      data-k="${r._k}" data-f="${col.k}" value="${this._esc(r[col.k] ?? "")}"></td>`;
+    const v = String(r[col.k] ?? "");
+    return `<td class="${cls}"><input class="cell" type="text" size="${this._size(col, v)}"
+      data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"></td>`;
+  }
+
+  // Content-aware width in characters, clamped to the column's bounds. The
+  // column ends up as wide as its widest cell — no wider.
+  _size(col, value) {
+    return Math.max(col.min || 4, Math.min(col.max || 40, String(value).length || 1));
   }
 
   _edit(el) {
