@@ -1,23 +1,24 @@
 // Every column the table can show. `edit` marks what the user can change from
 // the card; the cover button and the tray breakdown are structured, so they
-// stay read-only. `unit` is shown in the header rather than in every cell, so
-// the cells hold plain editable values. Text inputs size themselves to their
-// content between `min` and `max` (in characters), so a nozzle diameter takes
-// a few characters' width while a long job name gets the room it needs.
+// stay read-only. `unit` is shown under the header label rather than in every
+// cell, so the cells hold plain editable values and the column can be as
+// narrow as the numbers in it. Inputs are sized by measuring their actual
+// rendered text (see .grow), clamped between `min` and `max` ch; `stretch`
+// marks the one column that absorbs whatever width is left over.
 const BCJT_COLS = [
-  { k: "ts",          t: "Date",          type: "text", edit: true, nowrap: true, min: 19, max: 19 },
-  { k: "job",         t: "Job",           type: "text", edit: true, min: 12, max: 42 },
-  { k: "time",        t: "Print time",    type: "text", edit: true, sortKey: "mins", nowrap: true, min: 6, max: 11 },
+  { k: "ts",          t: "Date",          type: "text", edit: true, nowrap: true, min: 13, max: 21 },
+  { k: "job",         t: "Job",           type: "text", edit: true, min: 10, max: 48, stretch: true },
+  { k: "time",        t: "Print time",    type: "text", edit: true, sortKey: "mins", nowrap: true, min: 5, max: 12 },
   { k: "layers",      t: "Layers",        type: "num",  edit: true },
   { k: "weight",      t: "Weight",        type: "num",  edit: true, unit: "g",   dp: 1 },
   { k: "length",      t: "Length",        type: "num",  edit: true, unit: "m",   dp: 2 },
-  { k: "nozzle",      t: "Nozzle",        type: "text", edit: true, min: 3, max: 6 },
-  { k: "nozzle_type", t: "Nozzle type",   type: "text", edit: true, min: 8, max: 24 },
+  { k: "nozzle",      t: "Nozzle",        type: "text", edit: true, min: 2, max: 6 },
+  { k: "nozzle_type", t: "Nozzle type",   type: "text", edit: true, min: 6, max: 26 },
   { k: "kwh",         t: "Energy",        type: "num",  edit: true, unit: "kWh", dp: 3 },
   { k: "f_cost",      t: "Filament",      type: "num",  edit: true, unit: "$",   dp: 2 },
   { k: "p_cost",      t: "Power",         type: "num",  edit: true, unit: "$",   dp: 2 },
   { k: "cost",        t: "Total",         type: "num",  edit: true, unit: "$",   dp: 2, bold: true },
-  { k: "types",       t: "Material",      type: "text", edit: true, min: 8, max: 28 },
+  { k: "types",       t: "Material",      type: "text", edit: true, min: 6, max: 30 },
   { k: "cover",       t: "Image",         type: "cover", sortable: false },
   { k: "trays",       t: "Filament used", type: "trays", sortable: false },
 ];
@@ -161,11 +162,6 @@ class BambuCostsJobsTable extends HTMLElement {
     return col.unit === "$" ? this._cfg.currency : col.unit;
   }
 
-  _head(col) {
-    const u = this._unit(col);
-    return this._esc(col.t) + (u ? ` (${this._esc(u)})` : "");
-  }
-
   // ── view pipeline ────────────────────────────────────────
   _filtered() {
     const q = this._filter;
@@ -299,24 +295,42 @@ class BambuCostsJobsTable extends HTMLElement {
           .bcjt-scroll { overflow-x:auto; }
           table.bcjt { width:100%; border-collapse:collapse; font-size:12.5px; }
           table.bcjt th { text-align:left; font-weight:500; color:var(--secondary-text-color);
-            font-size:11px; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap;
-            padding:6px; border-bottom:1px solid var(--divider-color); user-select:none; }
+            font-size:11px; text-transform:uppercase; letter-spacing:.4px; white-space:normal;
+            vertical-align:bottom; padding:6px 4px; border-bottom:1px solid var(--divider-color);
+            user-select:none; }
+          table.bcjt th .u { display:block; font-size:9px; letter-spacing:0;
+            text-transform:none; opacity:.75; }
+          table.bcjt th.stretch { width:99%; }
           table.bcjt th.s { cursor:pointer; }
           table.bcjt th.s:hover { color:var(--primary-text-color); }
           table.bcjt th.active { color:var(--primary-color); }
-          table.bcjt td { padding:4px 6px; border-bottom:1px solid var(--divider-color);
+          table.bcjt td { padding:4px 3px; border-bottom:1px solid var(--divider-color);
             vertical-align:middle; }
           table.bcjt td.nw, table.bcjt th.nw { white-space:nowrap; }
           table.bcjt td.num { text-align:right; white-space:nowrap; }
           table.bcjt td.b input.cell { font-weight:600; }
           .muted { opacity:.5; }
-          input.cell { padding:5px 7px; border-radius:7px;
-            border:1px solid transparent; background:transparent; box-sizing:content-box;
-            color:var(--primary-text-color); font-size:12.5px; }
+          /* An input cannot size itself to its text, so a hidden twin does it:
+             the wrapper is a one-cell grid holding the input and a ::after
+             carrying the same text in the same font, and the wider of the two
+             — always the text — sets the width. Pixel-accurate where the
+             size attribute's character estimate kept clipping. */
+          .grow { display:inline-grid; align-items:center; }
+          /* Twin and input must share the exact same font, or their widths
+             drift a few pixels apart and long values clip by a hair. */
+          .grow::after { content:attr(data-v) " "; visibility:hidden; white-space:pre;
+            grid-area:1/1; font:inherit; font-size:12.5px; padding:4px 6px;
+            border:1px solid transparent; }
+          .grow input { grid-area:1/1; width:100%; box-sizing:border-box; min-width:0; }
+          input.cell { padding:4px 6px; border-radius:7px;
+            border:1px solid transparent; background:transparent;
+            color:var(--primary-text-color); font:inherit; font-size:12.5px; }
           input.cell:hover { border-color:var(--divider-color); }
           input.cell:focus { border-color:var(--primary-color);
             background:var(--card-background-color); outline:none; }
-          input.cell.num { text-align:right; width:64px; }
+          input.cell.num { text-align:right; appearance:textfield; -moz-appearance:textfield; }
+          input.cell.num::-webkit-outer-spin-button,
+          input.cell.num::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
           .tcost { opacity:.65; }
           .dot { display:inline-block; width:9px; height:9px; border-radius:2px;
             margin-right:4px; box-shadow:0 0 0 1px var(--secondary-text-color); }
@@ -451,13 +465,13 @@ class BambuCostsJobsTable extends HTMLElement {
       if (inp) this._edit(inp);
     });
 
-    // Text inputs grow and shrink with what is being typed, within the
-    // column's bounds, so an edit is never blind-typed into a cut-off box.
+    // Inputs grow and shrink with what is being typed, within the column's
+    // bounds: the hidden twin (.grow::after) tracks the value live.
     this.querySelector("tbody").addEventListener("input", e => {
-      const inp = e.target.closest("input[data-f]");
-      if (!inp || inp.type !== "text") return;
+      const inp = e.target.closest(".grow input");
+      if (!inp) return;
       const col = BCJT_COLS.find(c => c.k === inp.dataset.f);
-      if (col) inp.size = this._size(col, inp.value);
+      inp.parentElement.dataset.v = String(inp.value).slice(0, (col && col.max) || 40);
     });
 
     this._paint();
@@ -469,8 +483,12 @@ class BambuCostsJobsTable extends HTMLElement {
       const on = c.sortable === false ? "" : "s";
       const active = on && this._sort.key === sk;
       const arrow = active ? (this._sort.dir === 1 ? " ▲" : " ▼") : "";
-      return `<th class="${on} ${c.nowrap ? "nw" : ""} ${active ? "active" : ""}" data-k="${sk}"
-        ${c.type === "num" ? 'style="text-align:right"' : ""}>${this._head(c)}${arrow}</th>`;
+      const u = this._unit(c);
+      // The unit sits under the label instead of beside it, so a column of
+      // short numbers is not held open by a long one-line header.
+      return `<th class="${on} ${active ? "active" : ""} ${c.stretch ? "stretch" : ""}"
+        data-k="${sk}" ${c.type === "num" ? 'style="text-align:right"' : ""}>${
+        this._esc(c.t)}${arrow}${u ? `<span class="u">(${this._esc(u)})</span>` : ""}</th>`;
     }).join("");
   }
 
@@ -491,18 +509,23 @@ class BambuCostsJobsTable extends HTMLElement {
     if (col.type === "num") {
       const n = parseFloat(r[col.k]);
       const v = isNaN(n) ? "" : n.toFixed(col.dp === undefined ? 0 : col.dp);
-      return `<td class="${cls}"><input class="cell num" type="number" step="any"
-        data-k="${r._k}" data-f="${col.k}" value="${v}"></td>`;
+      return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
+        style="min-width:${col.min || 4}ch"><input class="cell num"
+        type="number" step="any" data-k="${r._k}" data-f="${col.k}" value="${v}"></span></td>`;
     }
     const v = String(r[col.k] ?? "");
-    return `<td class="${cls}"><input class="cell" type="text" size="${this._size(col, v)}"
-      data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"></td>`;
+    return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
+      style="min-width:${col.min || 4}ch"><input class="cell"
+      type="text" data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"></span></td>`;
   }
 
-  // Content-aware width in characters, clamped to the column's bounds. The
-  // column ends up as wide as its widest cell — no wider.
-  _size(col, value) {
-    return Math.max(col.min || 4, Math.min(col.max || 40, String(value).length || 1));
+  // What the hidden twin measures. Capped at the column's maximum characters
+  // rather than with max-width: the twin's text is incompressible by design
+  // (that is what stops the table crushing the column), so a CSS clamp on the
+  // box would not hold — a shorter measurement is the only cap that does.
+  // A value past the cap scrolls inside its input instead of widening it.
+  _twin(col, value) {
+    return this._esc(String(value).slice(0, col.max || 40));
   }
 
   _edit(el) {
