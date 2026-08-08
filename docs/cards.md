@@ -52,10 +52,15 @@ configurable columns.
   the header row stays pinned while long pages scroll under it, and the horizontal
   scrollbar sits at the bottom of the box instead of below the last row. "Unlimited"
   grows the card with the page instead.
-- The **Material** column lists each distinct filament type once, brand prefix dropped —
-  `PLA Basic` for a single-material job, `PLA Basic, PETG HF` for a multi-material one.
-  Filled in automatically when a job is logged; free text when editing.
+- The **Material** column lists each distinct filament type once. For display it is
+  shortened to just the type whatever the brand — a stored `SUNLU PETG` reads `PETG`,
+  `Bambu PLA Matte` reads `PLA Matte` — matched against a list of known type names
+  (the Bambu lineup by default, editable in the integration's options); the tooltip
+  keeps the full stored value, which never changes.
 - The image cell is a **View** button opening the job's cover in a modal.
+- **Filament used** is a compact per-row summary; clicking it opens the per-slot
+  breakdown, where every field — label, material, colour, name, weight, price, cost —
+  edits in place, cost following weight and price the way the logger computed it.
 
 ```yaml
 type: custom:bambu-costs-jobs-table

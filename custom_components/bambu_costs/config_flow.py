@@ -36,6 +36,7 @@ from .discovery import discover
 from .const import (
     CONF_AUTO_LOG,
     CONF_CAMERA,
+    CONF_COLOR_NAME_API,
     CONF_COVER_IMAGE,
     CONF_CURRENCY,
     CONF_DEFAULT_FILAMENT_PRICE,
@@ -43,6 +44,7 @@ from .const import (
     CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_END_TIME,
     CONF_ENERGY_SENSORS,
+    CONF_FILAMENT_TYPES,
     CONF_LAYERS,
     CONF_LENGTH,
     CONF_NOZZLE_SIZE,
@@ -56,6 +58,7 @@ from .const import (
     DEFAULT_CURRENCY,
     DEFAULT_ELECTRICITY_PRICE,
     DEFAULT_FILAMENT_PRICE,
+    DEFAULT_FILAMENT_TYPES,
     DEFAULT_NAME,
     DOMAIN,
     PRINTER_MANUFACTURER,
@@ -106,6 +109,8 @@ ALL_KEYS = (
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_CURRENCY,
     CONF_AUTO_LOG,
+    CONF_FILAMENT_TYPES,
+    CONF_COLOR_NAME_API,
     # Kept so reconfiguring can show which printer was chosen. Nothing reads it
     # at runtime — the entities picked from it are what the integration uses.
     CONF_DEVICE,
@@ -201,6 +206,13 @@ def _costs_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_AUTO_LOG, description=dflt(CONF_AUTO_LOG, True)
             ): BooleanSelector(),
+            vol.Required(
+                CONF_COLOR_NAME_API, description=dflt(CONF_COLOR_NAME_API, True)
+            ): BooleanSelector(),
+            vol.Optional(
+                CONF_FILAMENT_TYPES,
+                description=dflt(CONF_FILAMENT_TYPES, list(DEFAULT_FILAMENT_TYPES)),
+            ): _SLOTS,
         }
     )
 

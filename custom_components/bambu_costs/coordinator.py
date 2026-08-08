@@ -19,11 +19,12 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import slugify
 
-from .colors import color_name
+from .colors import UNKNOWN_COLOR, color_name
 from .const import (
     DOMAIN,
     CONF_AUTO_LOG,
     CONF_CAMERA,
+    CONF_COLOR_NAME_API,
     CONF_COVER_IMAGE,
     CONF_END_TIME,
     CONF_START_TIME,
@@ -327,7 +328,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         tag = {
             "filament": tray.get("name") or tray.get("material") or "Unknown",
             "color_code": color_code,
-            "color_name": color_name(color_code),
+            "color_name": await self._async_resolved_color_name(color_code),
             "serial": serial,
             "cost_per_kg": 0.0,
             "disabled": False,
@@ -343,6 +344,43 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         await self.async_request_refresh()
         return tag
+
+    async def _async_resolved_color_name(self, color_code: str) -> str:
+        """Bambu's name for the colour, else the web's, else the placeholder.
+
+        The bundled palette only knows Bambu's own colours. A third-party
+        spool's hex used to land as "Unknown Color"; when the option allows
+        it, the color-names project's API gets one chance to do better.
+        """
+        name = color_name(color_code)
+        if name != UNKNOWN_COLOR or not self.options.get(CONF_COLOR_NAME_API, True):
+            return name
+        return await self._async_lookup_color_name(color_code)
+
+    async def _async_lookup_color_name(self, color_code: str) -> str:
+        """Name an arbitrary hex via api.color.pizza (the color-names project).
+
+        One tiny GET per newly scanned spool the palette does not know — a
+        rare event. Any failure at all (offline instance, timeout, response
+        shape change) falls back to the placeholder, exactly as if the
+        lookup did not exist. It must never break or delay-block a scan.
+        """
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        try:
+            session = async_get_clientsession(self.hass)
+            async with asyncio.timeout(10):
+                response = await session.get(
+                    "https://api.color.pizza/v1/",
+                    params={"values": color_code.lstrip("#")},
+                )
+                data = await response.json()
+            name = str(data["colors"][0]["name"]).strip()
+            if name:
+                return name
+        except Exception:  # noqa: BLE001 — a naming nicety must never fail a scan
+            _LOGGER.debug("Colour name lookup failed for %s", color_code, exc_info=True)
+        return UNKNOWN_COLOR
 
     # ── state helpers ────────────────────────────────────────────────────────
     def _state(self, key: str) -> str | None:

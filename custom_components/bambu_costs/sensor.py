@@ -21,9 +21,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
+    CONF_FILAMENT_TYPES,
     CONF_POWER_SENSORS,
     COST_TICK_SECONDS,
     CONF_PRINT_WEIGHT,
+    DEFAULT_FILAMENT_TYPES,
     DOMAIN,
     URL_COVERS,
 )
@@ -374,4 +376,13 @@ class JobLogSensor(BambuCostsSensor):
                 f"{URL_COVERS}/{entry_id}/covers/{cover}" if cover else ""
             )
             jobs.append(row)
-        return {"data": jobs, "currency": self.coordinator.currency}
+        return {
+            "data": jobs,
+            "currency": self.coordinator.currency,
+            # The jobs card shortens stored filament names against this list —
+            # the configured one, or the shipped Bambu lineup when unset.
+            "type_names": list(
+                self.coordinator.options.get(CONF_FILAMENT_TYPES)
+                or DEFAULT_FILAMENT_TYPES
+            ),
+        }

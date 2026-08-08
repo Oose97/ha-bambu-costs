@@ -257,6 +257,30 @@ def test_job_row_names_each_material_once():
     assert forced["filament_type"] == "hand-typed", "the override wins"
 
 
+def test_color_name_prefers_palette_then_api_then_placeholder():
+    c = make()
+    called = []
+
+    async def fake_lookup(code):
+        called.append(code)
+        return "Jade Dream"
+
+    c._async_lookup_color_name = fake_lookup
+
+    # A Bambu colour never goes online.
+    assert _run(c._async_resolved_color_name("#00AE42")) == "Bambu Green (10501)"
+    assert called == []
+
+    # An unknown hex asks the API when the option allows it (the default).
+    assert _run(c._async_resolved_color_name("#123456")) == "Jade Dream"
+    assert called == ["#123456"]
+
+    # With the option off, the placeholder stands and nothing is called.
+    c.entry.data["color_name_api"] = False
+    assert _run(c._async_resolved_color_name("#123456")) == "Unknown Color"
+    assert called == ["#123456"]
+
+
 def test_generic_spool_scan_never_writes_a_library_row():
     """The tag library only ever holds tagged spools.
 

@@ -46,11 +46,34 @@ CONF_ELECTRICITY_PRICE: Final = "electricity_price"
 CONF_ELECTRICITY_PRICE_ENTITY: Final = "electricity_price_entity"
 CONF_DEFAULT_FILAMENT_PRICE: Final = "default_filament_price"
 CONF_CURRENCY: Final = "currency"
+# Known filament type names, used by the jobs card to shorten what the log
+# shows: a stored value containing one of these — whatever brand precedes
+# it — displays as just the type. Display only; nothing stored changes.
+CONF_FILAMENT_TYPES: Final = "filament_types"
+# Whether a scanned spool whose colour the Bambu palette does not know may
+# be named via the color-names web API (api.color.pizza). One tiny GET per
+# newly scanned unknown spool; off, or offline, the row says Unknown Color.
+CONF_COLOR_NAME_API: Final = "color_name_api"
 
 DEFAULT_NAME: Final = "Bambu Costs"
 DEFAULT_ELECTRICITY_PRICE: Final = 0.25
 DEFAULT_FILAMENT_PRICE: Final = 20.0
 DEFAULT_CURRENCY: Final = "EUR"
+
+# The Bambu lineup as shipped; the options flow lets it be edited, so a new
+# SKU (or a third-party type worth matching) is a settings change, not an
+# update. An empty option falls back to this list.
+DEFAULT_FILAMENT_TYPES: Final = (
+    "Support for PLA/PETG", "Support for ABS", "Support for PA/PET",
+    "PLA Aero", "PLA Basic", "PLA Dynamic", "PLA Galaxy", "PLA Glow", "PLA Lite",
+    "PLA Marble", "PLA Matte", "PLA Metal", "PLA Pure", "PLA Silk+", "PLA Silk",
+    "PLA Sparkle", "PLA Tough+", "PLA Tough", "PLA Translucent", "PLA Wood", "PLA-CF",
+    "PETG Basic", "PETG HF", "PETG Translucent", "PETG-CF",
+    "ABS-GF", "ABS", "ASA Aero", "ASA-CF", "ASA", "PC FR", "PC",
+    "PAHT-CF", "PA6-CF", "PA6-GF", "PA-CF", "PET-CF", "PPA-CF", "PPS-CF",
+    "TPU for AMS", "TPU 95A HF", "TPU 95A", "TPU 90A", "TPU 85A", "TPU",
+    "PVA", "PETG", "PLA",
+)
 
 # Slot definitions are entered as "Attribute", "Attribute|Label" or
 # "Attribute|Label|tray_entity_id".

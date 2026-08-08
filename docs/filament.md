@@ -60,8 +60,11 @@ product name and colour but never a price, so the row starts at **0** — which 
 price of its own" — and an `INFO` line in the log tells you to set it in the tags card.
 
 The colour is named from Bambu's own palette (274 hexes, e.g. `#00AE42` → *Bambu Green
-(10501)*). A third-party hex that isn't one of theirs is not an error; the row is added
-with `Unknown Color` for you to rename.
+(10501)*). A third-party hex that isn't one of theirs is looked up on the
+[color-names](https://github.com/meodai/color-names) web API (`api.color.pizza`) — one
+small request per newly scanned unknown spool, nothing else ever goes online. The
+lookup can be turned off in the options; off, offline, or failing, the row is added
+with `Unknown Color` for you to rename, exactly as before.
 
 Nothing is added for an empty tray — or for a loaded spool with no readable tag. The
 library only ever holds tagged spools: without a serial there is nothing to match a row

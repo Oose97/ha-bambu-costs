@@ -45,8 +45,20 @@ const BCJT_NOZZLE_TYPES = [
 // Known filament type names, for display only: a stored value containing one
 // (whatever brand precedes it — "SUNLU PETG", "Filalab ABS", "Bambu PLA
 // Matte") shows just the type; no match shows the full stored text. Matched
-// longest-first so "PLA Matte" wins over "PLA".
-const BCJT_FILAMENT_TYPES = [
+// longest-first so "PLA Matte" wins over "PLA". The integration publishes a
+// configurable list on the sensor; this built-in one is the fallback.
+const bcjtTypeMatchers = names => names.slice()
+  .sort((a, b) => b.length - a.length)
+  .map(sku => ({
+    sku,
+    // Word-boundary-ish: the char before and after must not be alphanumeric
+    // or "+", so "PLA Tough" does not claim "PLA Tough+" (its own entry wins).
+    rx: new RegExp("(^|[^a-z0-9+])"
+      + sku.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&")
+      + "($|[^a-z0-9+])", "i"),
+  }));
+
+const BCJT_FILAMENT_TYPES = bcjtTypeMatchers([
   "Support for PLA/PETG", "Support for ABS", "Support for PA/PET",
   "PLA Aero", "PLA Basic", "PLA Dynamic", "PLA Galaxy", "PLA Glow", "PLA Lite",
   "PLA Marble", "PLA Matte", "PLA Metal", "PLA Pure", "PLA Silk+", "PLA Silk",
@@ -56,14 +68,7 @@ const BCJT_FILAMENT_TYPES = [
   "PAHT-CF", "PA6-CF", "PA6-GF", "PA-CF", "PET-CF", "PPA-CF", "PPS-CF",
   "TPU for AMS", "TPU 95A HF", "TPU 95A", "TPU 90A", "TPU 85A", "TPU",
   "PVA", "PETG", "PLA",
-].sort((a, b) => b.length - a.length).map(sku => ({
-  sku,
-  // Word-boundary-ish: the char before and after must not be alphanumeric or
-  // "+", so "PLA Tough" does not claim "PLA Tough+" (its own entry wins).
-  rx: new RegExp("(^|[^a-z0-9+])"
-    + sku.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&")
-    + "($|[^a-z0-9+])", "i"),
-}));
+]);
 
 class BambuCostsJobsTable extends HTMLElement {
   setConfig(cfg) {
@@ -98,9 +103,17 @@ class BambuCostsJobsTable extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    const st = hass.states[this._cfg.entity];
     if (!this._cfg.currency) {
-      const st = hass.states[this._cfg.entity];
       this._cfg.currency = (st && st.attributes && st.attributes.currency) || "€";
+    }
+    // The configurable known-types list rides on the sensor; rebuild the
+    // matchers only when it actually changes.
+    const names = (st && st.attributes && st.attributes.type_names) || null;
+    const nsig = Array.isArray(names) ? names.join("|") : "";
+    if (nsig !== this._typeSig) {
+      this._typeSig = nsig;
+      this._typeMatch = Array.isArray(names) && names.length ? bcjtTypeMatchers(names) : null;
     }
     if (!this._built) { this._load(); this._render(); return; }
     if (this._busy) return;
@@ -234,7 +247,7 @@ class BambuCostsJobsTable extends HTMLElement {
   _shortType(part) {
     const t = String(part || "").trim();
     if (!t) return "";
-    const hit = BCJT_FILAMENT_TYPES.find(m => m.rx.test(t));
+    const hit = (this._typeMatch || BCJT_FILAMENT_TYPES).find(m => m.rx.test(t));
     return hit ? hit.sku : t;
   }
 
