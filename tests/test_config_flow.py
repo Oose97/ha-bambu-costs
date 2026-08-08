@@ -19,6 +19,7 @@ from custom_components.bambu_costs.config_flow import (
     ALL_KEYS,
     CONF_DEVICE,
     _device_from_entities,
+    _merge_slots,
 )
 from custom_components.bambu_costs.const import CONF_CAMERA, CONF_PRINT_STATUS
 
@@ -48,6 +49,31 @@ def test_every_key_written_to_flow_state_is_persisted():
 
     missing = written - persisted
     assert not missing, f"written to _data but dropped on save: {missing}"
+
+
+def test_rediscovery_augments_the_slot_list_instead_of_replacing_it():
+    """Discovery mid-print sees only the slots the job is using; a pass
+    through the options must not drop the rest (and their price entities)."""
+    configured = [
+        "AMS 1 Tray 1|A1|sensor.tray_1",
+        "AMS 1 Tray 2|A2|sensor.tray_2",
+        "AMS HT 1|HT1",
+    ]
+    discovered = [
+        "AMS 1 Tray 3|A3|sensor.tray_3",          # new: appended
+        "AMS HT 1|AMS HT 1|sensor.tray_ht",       # known, has the tray: filled in
+        "AMS 1 Tray 1|A1-guess|sensor.tray_1b",   # known and already paired: kept
+    ]
+    merged = _merge_slots(configured, discovered)
+    assert merged == [
+        "AMS 1 Tray 1|A1|sensor.tray_1",
+        "AMS 1 Tray 2|A2|sensor.tray_2",
+        "AMS HT 1|HT1|sensor.tray_ht",
+        "AMS 1 Tray 3|A3|sensor.tray_3",
+    ]
+
+    assert _merge_slots(configured, None) == configured, "idle discovery finds none"
+    assert _merge_slots(None, discovered) == discovered, "fresh setup keeps discovery"
 
 
 def test_device_inferred_from_the_status_sensor(monkeypatch):

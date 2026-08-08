@@ -32,7 +32,9 @@ only when the pairing is unambiguous; anything doubtful is listed for you instea
 The catch: the printer only reports per-slot attributes for slots the *current* job uses,
 so a discovery run while idle finds no slots and one mid-print finds only the slots in
 use. The rest are listed as unpaired trays for you to add. Re-running discovery from the
-options later picks up the rest.
+options later picks up the rest — additively: slots you already have are never dropped
+or relabelled by a re-scan, a discovered tray fills in an entry that lacked one, and new
+attributes are appended. Removing a slot is always a deliberate edit of the list.
 
 **Step 2 — sensors.** Whatever was found, shown so you can correct it before continuing.
 This is also where the optional **printer camera** goes — see

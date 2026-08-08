@@ -62,6 +62,7 @@ from .const import (
     DEFAULT_NAME,
     DOMAIN,
     PRINTER_MANUFACTURER,
+    SLOT_SEPARATOR,
 )
 
 _SENSOR = EntitySelector(EntitySelectorConfig(domain="sensor"))
@@ -115,6 +116,42 @@ ALL_KEYS = (
     # at runtime — the entities picked from it are what the integration uses.
     CONF_DEVICE,
 )
+
+
+def _merge_slots(existing: list[str] | None, discovered: list[str] | None) -> list[str]:
+    """Fold discovered slots into the configured list without losing any.
+
+    The printer only reports per-slot attributes for slots the *current* job
+    uses, so discovery sees a subset — two mid-print, none while idle.
+    Replacing the configured list with that subset silently dropped slots
+    (and their price entities) on every pass through the options once the
+    device box became pre-filled. Configured entries are kept exactly as
+    they are, labels and pairings included; a discovered tray fills in an
+    entry that lacks one; genuinely new attributes are appended. Removing a
+    slot stays a deliberate edit of the list in the form.
+    """
+    kept = list(existing or [])
+    if not discovered:
+        return kept
+
+    def attr_of(line: str) -> str:
+        return str(line).split(SLOT_SEPARATOR)[0].strip()
+
+    by_attr = {attr_of(line): str(line) for line in discovered}
+    merged: list[str] = []
+    for line in kept:
+        parts = [p.strip() for p in str(line).split(SLOT_SEPARATOR)]
+        found = by_attr.pop(parts[0], None)
+        if found and (len(parts) < 3 or not parts[2]):
+            fparts = [p.strip() for p in found.split(SLOT_SEPARATOR)]
+            if len(fparts) > 2 and fparts[2]:
+                label = parts[1] if len(parts) > 1 and parts[1] else \
+                    (fparts[1] if len(fparts) > 1 and fparts[1] else parts[0])
+                merged.append(f"{parts[0]}{SLOT_SEPARATOR}{label}{SLOT_SEPARATOR}{fparts[2]}")
+                continue
+        merged.append(str(line))
+    merged.extend(by_attr.values())
+    return merged
 
 
 def _device_from_entities(hass: HomeAssistant, current: dict[str, Any]) -> str | None:
@@ -309,7 +346,13 @@ class BambuCostsOptionsFlow(OptionsFlow):
             device_id = user_input.get(CONF_DEVICE)
             if device_id:
                 self._found = discover(self.hass, device_id)
-                self._data.update(self._found["config"])
+                config = dict(self._found["config"])
+                # Discovery only sees the slots the current job is using, so
+                # its list augments the configured one — never replaces it.
+                config[CONF_SLOTS] = _merge_slots(
+                    self._current.get(CONF_SLOTS), config.get(CONF_SLOTS)
+                )
+                self._data.update(config)
             # Carried forward even when the box was left alone, because the
             # options are rebuilt from ALL_KEYS and anything absent is dropped.
             # The registry fallback backfills entries set up before the device
