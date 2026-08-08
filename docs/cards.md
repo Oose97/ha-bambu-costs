@@ -23,6 +23,8 @@ startup for you to add by hand.
 - The colour-name cell is a combo over the whole Bambu palette: click it and the full
   list drops down, scrollable; start typing and it filters. The list is a convenience,
   not a constraint — anything you type is accepted as-is.
+
+  ![The colour-name combo: the full palette on focus, filtering as you type](images/filament_color_drop_down.jpg)
 - Pairs share one handle and move as a unit, and reordering works with rows hidden — it
   steps over what is not shown. Filtering finds collapsed second tags and surfaces them
   with their spool.
