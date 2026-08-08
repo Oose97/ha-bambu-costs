@@ -60,15 +60,140 @@ itself, along with meter snapshots, slot prices, durations and idle tracking.
 
 ## Documentation
 
-| | |
-| --- | --- |
-| [Setup](docs/setup.md) | The config flow, device discovery, slot syntax, currency, icon. |
-| [Entities & services](docs/entities.md) | Every sensor, number, button, switch and service, plus the job-logging automation. |
-| [Electricity costing](docs/costing.md) | Variable tariffs, integration vs estimation, outage handling, monthly costs via `utility_meter`. |
-| [Filament pricing](docs/filament.md) | How a slot gets its price, RFID tags and generic spools, tag scanning, spool pairs, restart survival. |
-| [Cards](docs/cards.md) | The three cards and their options. |
-| [Data on disk](docs/data.md) | Where the CSVs and cover images live, and how they are written. |
-| [Releasing](docs/releasing.md) | How versions and releases are cut. |
+### Setup
+
+Go to [Setup](docs/setup.md) for more details.
+
+- Pick the printer device and everything fills itself in — sensors matched by
+  `translation_key`, slots read off the print weight sensor, or derived from the AMS
+  devices when the printer is idle.
+- Slots are free-form lines: `Attribute|Label|tray_sensor`. Re-scans are additive —
+  configured slots are never dropped or relabelled.
+- With an electricity price **sensor** set, it is what every calculation follows, live;
+  the fixed price is only its fallback. Currency is free text and flows everywhere.
+
+### Entities & services
+
+Go to [Entities & services](docs/entities.md) for more details.
+
+- Sensors for the live breakdown, session filament and power cost, cost rate, lifetime
+  totals (including a `utility_meter`-ready one), the tag library and the job log.
+- Writable numbers for every price, marker and total; a charge button for partial
+  prints; a switch choosing camera photos over the slicer's render for job covers.
+- Services to log a job with overrides, edit the log, write the tag library, set a
+  tag's price, sync slot prices, and import legacy CSVs. **No automations required** —
+  finished jobs log themselves.
+
+### Electricity costing
+
+Go to [Electricity costing](docs/costing.md) for more details.
+
+- Power × live price, integrated over time — a variable tariff is charged as it moved,
+  standby between prints counts, and an aborted print's electricity still reaches the
+  total.
+- Cross-checked against the energy counters, so a plug dropping off the network cannot
+  silently under-bill a job; implausible counter jumps are rejected as discontinuities.
+- Monthly figures are one `utility_meter` away, pointed at the total-spend sensor.
+
+### Filament pricing
+
+Go to [Filament pricing](docs/filament.md) for more details.
+
+- Loading an unknown tagged spool adds a library row by itself; rows can also be added
+  by hand — any way of reading the tag UID works, the AMS just makes it automatic.
+- A slot's price: the loaded spool's tag first, the slot's own number second, the
+  default last. A generic untagged spool's hand-set price is never overwritten.
+- Colours are named per material **and product line** (`#FFFFFF` is Jade White as PLA
+  Basic, Ivory White as PLA Matte); unknown hexes get one optional web lookup. The
+  per-slot split survives restarts mid-print.
+
+### Cards
+
+Go to [Cards](docs/cards.md) for more details.
+
+- **Tags editor** — spool pairs as one row, a palette-wide filtering combo for colour
+  names, drag or button reordering, per-browser table settings.
+- **Print history** — fully editable in place, per-slot breakdown modal, nozzle combos,
+  content-sized columns, pinned header, configurable columns/sort/page size/height.
+- **Cost calculator** — quotes from your real spool prices plus runtime, margin and
+  VAT. All three register themselves as Lovelace resources.
+
+### Data on disk
+
+Go to [Data on disk](docs/data.md) for more details.
+
+- Two CSVs and the cover images per entry, under `config/bambu_costs/`; hand-editable,
+  headerless files tolerated, `.bak` written before any whole-file save.
+- Bulky attributes are excluded from the recorder automatically.
+
+### Releasing
+
+Go to [Releasing](docs/releasing.md) for more details.
+
+- The version lives in `manifest.json`; a release is cut automatically once Validate
+  passes on `main`.
+
+## Automations
+
+None are required — logging, snapshots, slot prices and idle tracking are the
+integration's own job. But everything it writes is a clean trigger. The job log and tag
+library sensors hold their **row count** as state, so "the count went up" is the
+signal that a job was logged or a spool was scanned — better than triggering on the
+printer's finish transition, because the row is already written when it fires, aborted
+prints never trigger it, and the once-per-job guard comes free.
+
+**Notify when a job is logged**, with its real figures:
+
+```yaml
+alias: "Printer: notify on logged job"
+triggers:
+  - trigger: state
+    entity_id: sensor.bambu_costs_job_log
+    not_from: ["unknown", "unavailable"]
+    not_to: ["unknown", "unavailable"]
+conditions:
+  - condition: template
+    value_template: "{{ (trigger.to_state.state | int(0)) > (trigger.from_state.state | int(0)) }}"
+actions:
+  - variables:
+      row: "{{ state_attr('sensor.bambu_costs_job_log', 'data') | last }}"
+  - action: notify.notify
+    data:
+      title: Print finished
+      message: >-
+        {{ row.job }} — {{ row.weight }} g of {{ row.types }} for
+        {{ (row.cost | float(0)) | round(2) }}
+        ({{ (row.f_cost | float(0)) | round(2) }} filament,
+        {{ (row.p_cost | float(0)) | round(2) }} power)
+mode: single
+```
+
+**Remind to price a newly scanned spool** — scanned rows start at price 0:
+
+```yaml
+alias: "Printer: new spool scanned"
+triggers:
+  - trigger: state
+    entity_id: sensor.bambu_costs_tag_library
+    not_from: ["unknown", "unavailable"]
+    not_to: ["unknown", "unavailable"]
+conditions:
+  - condition: template
+    value_template: "{{ (trigger.to_state.state | int(0)) > (trigger.from_state.state | int(0)) }}"
+actions:
+  - variables:
+      tag: "{{ state_attr('sensor.bambu_costs_tag_library', 'data') | last }}"
+  - action: notify.notify
+    data:
+      title: New spool scanned
+      message: "{{ tag.filament }} · {{ tag.color_name }} — set its price in the tags card"
+mode: single
+```
+
+Other worthwhile triggers: `numeric_state` on the **cost rate** or **last idle cost**
+(the printer left running expensively), a threshold on a `utility_meter` fed by the
+**total spend** sensor (monthly budget), or calling **`bambu_costs.log_job`** with
+`force: true` from a script to re-log a job with corrected values.
 
 ## Not included yet
 
