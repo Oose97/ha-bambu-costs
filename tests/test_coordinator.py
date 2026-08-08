@@ -278,7 +278,10 @@ def test_job_row_names_each_material_once():
 
     row = c.build_job_row({})
     assert row["filament_type"] == "PLA Basic, PETG HF"
-    assert [t["type"] for t in row["trays"]] == ["PLA Basic", "PLA Basic", "PETG HF"]
+    # The per-tray detail keeps the full product name, brand included; only
+    # the aggregated column and its display are shortened.
+    assert [t["type"] for t in row["trays"]] == [
+        "Bambu PLA Basic", "Bambu PLA Basic", "Bambu PETG HF"]
 
     forced = c.build_job_row({"filament_type": "hand-typed"})
     assert forced["filament_type"] == "hand-typed", "the override wins"

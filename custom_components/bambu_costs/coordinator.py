@@ -54,7 +54,7 @@ from .const import (
     SLOT_PRICE_PREFIX,
     SLOT_SEPARATOR,
 )
-from .storage import BambuCostsStore, as_float, distinct_filaments, minimal_filament, normalise_colour
+from .storage import BambuCostsStore, as_float, distinct_filaments, normalise_colour
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -958,8 +958,10 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 {
                     "label": row["label"],
                     "name": row["name"],
-                    # Product name minus the brand ("PLA Basic"), per slot.
-                    "type": minimal_filament(row.get("filament") or row.get("material")),
+                    # The full product name, brand included — the per-slot
+                    # detail is where the whole story belongs; the Material
+                    # column is the one that shortens.
+                    "type": row.get("filament") or row.get("material") or "",
                     "color": row["color"],
                     "weight": round(row["weight"], 3),
                     "price": row["price"],

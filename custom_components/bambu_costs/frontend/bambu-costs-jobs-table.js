@@ -299,8 +299,10 @@ class BambuCostsJobsTable extends HTMLElement {
       return rgb ? `<i class="dot" style="background:${this._css(rgb)}"></i>` : "";
     }).join("");
     const total = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
+    // Full names here, brand included — the Material column is the one that
+    // shortens; the per-slot detail tells the whole story.
     const tip = this._esc(trays.map(t =>
-      `${t.label || "?"}${t.type ? " " + this._shortType(t.type) : ""} ${(parseFloat(t.weight) || 0).toFixed(1)} g`
+      `${t.label || "?"}${t.type ? " " + t.type : ""} ${(parseFloat(t.weight) || 0).toFixed(1)} g`
     ).join("\n"));
     return `<button class="trbtn" data-k="${r._k}" title="${tip}">${dots}` +
       `${trays.length} slot${trays.length === 1 ? "" : "s"} · ${total.toFixed(1)} g</button>`;
