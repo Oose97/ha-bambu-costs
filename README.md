@@ -8,6 +8,8 @@ AMS slot, electricity, and a per-job history — and ships the Lovelace cards to
 Point it at your printer during setup and the sensors are found for you. The filament
 slots are free-form, so any AMS layout — or none — works.
 
+![The print history card: per-job costs, energy, materials and per-slot filament use](docs/images/print_history_full_table.jpg)
+
 ## Highlights
 
 - **Per-slot filament costing** from your own tag library, priced by the RFID tag of the

@@ -10,8 +10,13 @@ startup for you to add by hand.
 
 `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library.
 
+![The filament tag library: colour swatches, names with Bambu codes, both RFID serials and the price per spool](images/filaments_full_table.jpg)
+
 - A spool's two tags render as one row, the second tag a child row behind a **▸** on the
   spool's handle — collapsed by default, with the default changeable in settings.
+
+  ![A paired spool collapsed to one row](images/filaments_group_collapsed.jpg)
+  ![The same spool expanded, its second tag as a child row](images/filaments_group_expanded.jpg)
 - Editing a pair's filament, colour or price applies to both rows; serials stay per-row,
   since they are what tell the two tags apart. Typing a spool's second serial pairs the
   rows on the spot.
@@ -21,6 +26,8 @@ startup for you to add by hand.
 - **⚙** opens the table settings: show-disabled, expand-by-default, sorting, the table
   height, and the column layout (display only — a save always writes every field in
   canonical order).
+
+  ![The tags editor's settings sheet](images/filaments_table_settings.jpg)
 - By default the table is bounded to 70% of the screen and scrolls inside its own box,
   which keeps the header row pinned while a long library scrolls under it. "Unlimited"
   in the settings grows the card with the page instead.
@@ -37,7 +44,10 @@ entity: sensor.bambu_costs_tag_library
 ## Jobs table
 
 `custom:bambu-costs-jobs-table` — editable print history: sortable, paginated, with
-configurable columns.
+configurable columns. Pictured at the top of the [README](../README.md); the filter
+narrows it to anything — a date, a job name, a material:
+
+![The print history filtered to one day](images/print_history_filtered_results.jpg)
 
 - Every value field edits in place — click a cell, type, and press **Save**. Nozzle
   size and type are dropdowns of what the printer can report (labels prettified, the
@@ -48,6 +58,8 @@ configurable columns.
 - **⚙** opens the table settings: column order and visibility, the default sort column
   and direction, the rows per page, and the table height — all remembered per browser.
   Display only; a save always writes every field.
+
+  ![The jobs table's settings sheet](images/print_history_table_settings.jpg)
 - By default the table is bounded to 70% of the screen and scrolls inside its own box:
   the header row stays pinned while long pages scroll under it, and the horizontal
   scrollbar sits at the bottom of the box instead of below the last row. "Unlimited"
@@ -57,10 +69,16 @@ configurable columns.
   `Bambu PLA Matte` reads `PLA Matte` — matched against a list of known type names
   (the Bambu lineup by default, editable in the integration's options); the tooltip
   keeps the full stored value, which never changes.
-- The image cell is a **View** button opening the job's cover in a modal.
+- The image cell is a **View** button opening the job's cover in a modal — with the
+  camera switch on, that's a photo of what actually came off the plate:
+
+  ![A job's cover image: the camera's photo of the finished plate](images/print_history_image_view.jpg)
+
 - **Filament used** is a compact per-row summary; clicking it opens the per-slot
   breakdown, where every field — label, material, colour, name, weight, price, cost —
   edits in place, cost following weight and price the way the logger computed it.
+
+  ![The per-slot breakdown of a three-colour job](images/print_history_filament_used_multicolor_same_material.jpg)
 
 ```yaml
 type: custom:bambu-costs-jobs-table
@@ -75,6 +93,8 @@ the settings.
 
 `custom:bambu-costs-calculator` — manual quote: filament, runtime, margin, VAT. Paired
 tags collapse to one dropdown entry, and an **Other** option takes a hand-typed price.
+
+![A quote combining a library spool and a hand-priced one](images/print_cost_calculator_card.jpg)
 
 ```yaml
 type: custom:bambu-costs-calculator
