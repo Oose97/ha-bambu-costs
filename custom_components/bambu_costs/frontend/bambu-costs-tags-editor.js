@@ -456,7 +456,10 @@ class BambuCostsTagsEditor extends HTMLElement {
           </div>
           <div class="bte-foot">
             <span class="bte-count"></span>
-            <button class="save" disabled>Save</button>
+            <span>
+              <button class="tbtn discard" style="display:none">Discard</button>
+              <button class="save" disabled>Save</button>
+            </span>
           </div>
         </div>
       </ha-card>`;
@@ -491,6 +494,12 @@ class BambuCostsTagsEditor extends HTMLElement {
 
     q(".reload").addEventListener("click", () => this._reload());
     q("button.save").addEventListener("click", () => this._save());
+    q("button.discard").addEventListener("click", () => {
+      if (!confirm("Discard unsaved changes?")) return;
+      this._load();
+      this._paint();
+      this._msg("Changes discarded.");
+    });
 
     this._applyScrollMode();
     this._paint();
@@ -1115,6 +1124,8 @@ class BambuCostsTagsEditor extends HTMLElement {
 
     const b = this.querySelector("button.save");
     if (b && !this._busy) { b.disabled = !this._dirty; b.textContent = "Save"; }
+    const d = this.querySelector("button.discard");
+    if (d) d.style.display = this._dirty && !this._busy ? "" : "none";
   }
 
   _msg(text, kind) {

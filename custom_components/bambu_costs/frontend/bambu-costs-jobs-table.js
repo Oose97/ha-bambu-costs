@@ -28,9 +28,10 @@ const BCJT_PAGE_SIZES = [10, 20, 50, 100];
 // makes the sticky header stick and keeps the horizontal scrollbar on
 // screen — an unbounded table's scrollbar sits below the last row.
 const BCJT_HEIGHTS = [0, 50, 60, 70, 80];
-// What the printer can actually report, offered as dropdowns. The stored
-// value stays the printer's own spelling; only the label is prettified.
-// "Other…" swaps the cell to free text for anything not listed.
+// What the printer can actually report, offered as dropdown suggestions on a
+// combo field (input + datalist): pick from the list or type anything — no
+// modes, no way to get stuck. The stored value stays the printer's own
+// spelling; only the shown label is prettified.
 const BCJT_NOZZLE_SIZES = ["0.2", "0.4", "0.6", "0.8"];
 const BCJT_NOZZLE_TYPES = [
   "stainless_steel",
@@ -54,6 +55,8 @@ class BambuCostsJobsTable extends HTMLElement {
     this._sort = { key: "ts", dir: -1 };   // newest first
     this._pageSize = this._cfg.page_size;
     this._maxH = 70;
+    // Datalist ids are document-global; two cards on one view must not share.
+    this._dl = "bcjt" + Math.random().toString(36).slice(2, 8);
     this._page = 0;
     this._filter = "";
     this._rows = [];
@@ -387,15 +390,7 @@ class BambuCostsJobsTable extends HTMLElement {
             letter-spacing:inherit; }
           .cu { font-size:11px; color:var(--secondary-text-color); margin-left:1px;
             white-space:nowrap; }
-          select.cell { border:1px solid transparent; background:transparent;
-            color:var(--primary-text-color); font:inherit; font-size:12.5px;
-            padding:3px 2px; border-radius:7px; cursor:pointer; }
-          select.cell:hover { border-color:var(--divider-color); }
-          select.cell:focus { border-color:var(--primary-color);
-            background:var(--card-background-color); outline:none; }
-          select.cell option { background:var(--card-background-color);
-            color:var(--primary-text-color); }
-          table.bcjt td.ctr select.cell { text-align:center; text-align-last:center; }
+          table.bcjt td.cvr { text-align:center; padding:4px 8px; }
           input.cell:hover { border-color:var(--divider-color); }
           input.cell:focus { border-color:var(--primary-color);
             background:var(--card-background-color); outline:none; }
@@ -480,9 +475,16 @@ class BambuCostsJobsTable extends HTMLElement {
               <span class="pg"></span>
               <button class="next">Next ›</button>
             </div>
-            <button class="save" disabled>Save</button>
+            <span class="bcjt-actions">
+              <button class="tbtn discard" style="display:none">Discard</button>
+              <button class="save" disabled>Save</button>
+            </span>
           </div>
         </div>
+        <datalist id="${this._dl}n">${BCJT_NOZZLE_SIZES.map(o =>
+          `<option value="${o.replace(/^0(?=\.)/, "")}"></option>`).join("")}</datalist>
+        <datalist id="${this._dl}t">${BCJT_NOZZLE_TYPES.map(o =>
+          `<option value="${this._esc(this._typeDisp(o))}"></option>`).join("")}</datalist>
       </ha-card>`;
 
     this._built = true;
@@ -496,6 +498,13 @@ class BambuCostsJobsTable extends HTMLElement {
     this.querySelector(".settings").addEventListener("click", () => this._openSettings());
     this.querySelector(".reload").addEventListener("click", () => this._reload());
     this.querySelector("button.save").addEventListener("click", () => this._save());
+    this.querySelector("button.discard").addEventListener("click", () => {
+      const n = this._edited.size;
+      if (!confirm(`Discard ${n} unsaved edit${n === 1 ? "" : "s"}?`)) return;
+      this._load();
+      this._paint();
+      this._msg("Changes discarded.");
+    });
 
     this.querySelector("thead").addEventListener("click", e => {
       // A click that landed on a header sorts; nothing else lives up there.
@@ -567,12 +576,13 @@ class BambuCostsJobsTable extends HTMLElement {
   _cell(col, r) {
     if (col.type === "cover") {
       // min-width on every cell, the empty ones too, so the column does not
-      // pack itself tight against its neighbour or resize between pages.
+      // resize between pages; centred with its own padding so the slack sits
+      // on BOTH sides of the button instead of all after it.
       const w = `style="min-width:${col.min || 11}ch"`;
       const f = r.cover;
-      if (!f || f === "—") return `<td class="nw" ${w}><span class="muted">—</span></td>`;
+      if (!f || f === "—") return `<td class="nw cvr" ${w}><span class="muted">—</span></td>`;
       const src = r.cover_url || (this._cfg.image_base + f);
-      return `<td class="nw" ${w}><button class="cbtn" data-src="${this._esc(src)}"
+      return `<td class="nw cvr" ${w}><button class="cbtn" data-src="${this._esc(src)}"
         data-cap="${this._esc(r.job || f)}" title="${this._esc(f)}">🖼 View</button></td>`;
     }
     if (col.type === "trays") return `<td class="nw">${this._traysCell(r)}</td>`;
@@ -583,15 +593,11 @@ class BambuCostsJobsTable extends HTMLElement {
 
     if (col.k === "nozzle" || col.k === "nozzle_type") {
       const raw = String(r[col.k] ?? "").trim();
-      const opts = (col.k === "nozzle" ? BCJT_NOZZLE_SIZES : BCJT_NOZZLE_TYPES).slice();
-      // A value outside the known set — a legacy row, or something typed via
-      // Other… — still shows as what it is instead of being misrepresented.
-      if (raw && !opts.includes(raw)) opts.unshift(raw);
-      const label = v => col.k === "nozzle" ? v.replace(/^0(?=[.,])/, "") : this._typeDisp(v);
-      return `<td class="${cls}"><select class="cell sel" data-k="${r._k}" data-f="${col.k}">${
-        raw ? "" : `<option value="" selected>—</option>`}${
-        opts.map(o => `<option value="${this._esc(o)}"${o === raw ? " selected" : ""}>${
-          this._esc(label(o))}</option>`).join("")}<option value="__other__">Other…</option></select></td>`;
+      const v = col.k === "nozzle" ? raw.replace(/^0(?=[.,])/, "") : this._typeDisp(raw);
+      return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
+        style="min-width:${col.min || 4}ch"><input class="cell" type="text"
+        list="${this._dl}${col.k === "nozzle" ? "n" : "t"}"
+        data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"></span></td>`;
     }
 
     if (col.type === "num") {
@@ -627,31 +633,21 @@ class BambuCostsJobsTable extends HTMLElement {
     if (!row) return;
     const f = el.dataset.f;
 
-    // "Other…" in a dropdown swaps the cell to free text; nothing is stored
-    // until something is typed. An emptied free-text cell reverts to the
-    // dropdown with the old value rather than blanking the row.
-    if (el.tagName === "SELECT" && el.value === "__other__") {
-      const inp = document.createElement("input");
-      inp.className = "cell";
-      inp.type = "text";
-      inp.dataset.k = el.dataset.k;
-      inp.dataset.f = f;
-      inp.style.width = "12ch";
-      el.replaceWith(inp);
-      inp.focus();
-      return;
-    }
-    if ((f === "nozzle" || f === "nozzle_type") && el.tagName === "INPUT" && !el.value.trim()) {
-      this._paint();
-      return;
-    }
-
     if (BCJT_COLS.find(c => c.k === f && c.type === "num")) {
       row[f] = parseFloat(String(el.value).replace(",", ".")) || 0;
     } else if (f === "nozzle") {
       // The display drops the leading zero; the data never does.
       const t = el.value.trim().replace(",", ".");
       row[f] = t.startsWith(".") ? "0" + t : t;
+    } else if (f === "nozzle_type") {
+      // The combo shows pretty labels; a label (or the raw spelling, any
+      // case) maps back to the printer's own value. Anything else is the
+      // user's free text and is stored as typed.
+      const t = el.value.trim();
+      const hit = BCJT_NOZZLE_TYPES.find(o =>
+        o.toLowerCase() === t.toLowerCase()
+        || this._typeDisp(o).toLowerCase() === t.toLowerCase());
+      row[f] = hit || t;
     } else {
       row[f] = el.value;
       // The minutes behind the print-time text are what sorting and the file
@@ -694,6 +690,8 @@ class BambuCostsJobsTable extends HTMLElement {
       + (this._dirty ? ` · ${this._edited.size} unsaved edit${this._edited.size === 1 ? "" : "s"}` : "");
     const b = this.querySelector("button.save");
     if (b && !this._busy) { b.disabled = !this._dirty; b.textContent = "Save"; }
+    const d = this.querySelector("button.discard");
+    if (d) d.style.display = this._dirty && !this._busy ? "" : "none";
   }
 
   _msg(text, kind) {
