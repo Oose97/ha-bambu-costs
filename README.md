@@ -34,14 +34,14 @@ slots are free-form, so any AMS layout — or none — works.
 
 ## Install
 
-**HACS** → three-dot menu → *Custom repositories* → add
+**HACS** → three-dot menu → _Custom repositories_ → add
 `https://github.com/Oose97/ha-bambu-costs` as an **Integration**, then download it and
 restart Home Assistant.
 
 **Manually**: copy `custom_components/bambu_costs` into your `config/custom_components/`
 and restart.
 
-Then *Settings → Devices & Services → Add Integration → Bambu Print Costs*. Pick your
+Then _Settings → Devices & Services → Add Integration → Bambu Print Costs_. Pick your
 printer and the sensors are filled in for you — see [Setup](docs/setup.md).
 
 Requires Home Assistant 2024.12+ and a printer integration whose sensors this reads —
@@ -196,7 +196,9 @@ Other worthwhile triggers: `numeric_state` on the **cost rate** or **last idle c
   built around. Untagged spools still work, per AMS slot — set the slot's price number
   by hand and it is respected, never overwritten — but that manual path is a
   nice-to-have fallback, and guessing a price from material or colour is not planned.
-  Without a manual price, the slot is costed at the default.
+  Without a manual price, the slot is costed at the default. If you want the automated
+  process and a managed filament library without printing Bambu Lab filament, check out
+  the [Bambu Lab RFID Tag Guide](https://github.com/queengooborg/Bambu-Lab-RFID-Tag-Guide).
 
 ## License
 
