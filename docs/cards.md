@@ -93,6 +93,11 @@ narrows it to anything — a date, a job name, a material:
 
   ![The per-slot breakdown of a three-colour job](images/print_history_filament_used_multicolor_same_material.jpg)
 
+  A multi-material job carries the full product name per slot, while the Material
+  column above shows the shortened pair (`PLA Basic, PETG HF`):
+
+  ![The per-slot breakdown of a multi-material job — PLA and PETG in one print](images/print_history_filament_used_multimaterial.jpg)
+
 ```yaml
 type: custom:bambu-costs-jobs-table
 entity: sensor.bambu_costs_job_log
