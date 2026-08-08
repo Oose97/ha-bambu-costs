@@ -328,7 +328,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         tag = {
             "filament": tray.get("name") or tray.get("material") or "Unknown",
             "color_code": color_code,
-            "color_name": await self._async_resolved_color_name(color_code),
+            "color_name": await self._async_resolved_color_name(
+                color_code, tray.get("material")
+            ),
             "serial": serial,
             "cost_per_kg": 0.0,
             "disabled": False,
@@ -345,14 +347,18 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_request_refresh()
         return tag
 
-    async def _async_resolved_color_name(self, color_code: str) -> str:
+    async def _async_resolved_color_name(
+        self, color_code: str, material: str | None = None
+    ) -> str:
         """Bambu's name for the colour, else the web's, else the placeholder.
 
-        The bundled palette only knows Bambu's own colours. A third-party
-        spool's hex used to land as "Unknown Color"; when the option allows
-        it, the color-names project's API gets one chance to do better.
+        The material narrows the palette to the right filament code — the
+        same hex carries a different code per material. The bundled palette
+        only knows Bambu's own colours; a third-party spool's hex used to
+        land as "Unknown Color", and when the option allows it, the
+        color-names project's API gets one chance to do better.
         """
-        name = color_name(color_code)
+        name = color_name(color_code, material)
         if name != UNKNOWN_COLOR or not self.options.get(CONF_COLOR_NAME_API, True):
             return name
         return await self._async_lookup_color_name(color_code)
