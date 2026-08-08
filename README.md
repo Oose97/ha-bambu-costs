@@ -93,7 +93,9 @@ Go to [Electricity costing](docs/costing.md) for more details.
   total.
 - Cross-checked against the energy counters, so a plug dropping off the network cannot
   silently under-bill a job; implausible counter jumps are rejected as discontinuities.
-- Monthly figures are one `utility_meter` away, pointed at the total-spend sensor.
+- Monthly figures are one `utility_meter` away, pointed at the total-spend sensor —
+  that and more ready-made recipes under
+  [Suggested helpers](docs/costing.md#suggested-helpers).
 
 ### Filament pricing
 
