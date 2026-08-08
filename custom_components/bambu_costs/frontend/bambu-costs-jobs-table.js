@@ -28,10 +28,11 @@ const BCJT_PAGE_SIZES = [10, 20, 50, 100];
 // makes the sticky header stick and keeps the horizontal scrollbar on
 // screen — an unbounded table's scrollbar sits below the last row.
 const BCJT_HEIGHTS = [0, 50, 60, 70, 80];
-// What the printer can actually report, offered as dropdown suggestions on a
-// combo field (input + datalist): pick from the list or type anything — no
-// modes, no way to get stuck. The stored value stays the printer's own
-// spelling; only the shown label is prettified.
+// What the printer can actually report, offered by a combo cell: focusing it
+// opens a popup listing EVERY option (a datalist would filter them against
+// the current text, hiding the alternatives exactly when a value is set),
+// while the field itself stays free text. The stored value keeps the
+// printer's own spelling; only the shown label is prettified.
 const BCJT_NOZZLE_SIZES = ["0.2", "0.4", "0.6", "0.8"];
 const BCJT_NOZZLE_TYPES = [
   "stainless_steel",
@@ -55,8 +56,6 @@ class BambuCostsJobsTable extends HTMLElement {
     this._sort = { key: "ts", dir: -1 };   // newest first
     this._pageSize = this._cfg.page_size;
     this._maxH = 70;
-    // Datalist ids are document-global; two cards on one view must not share.
-    this._dl = "bcjt" + Math.random().toString(36).slice(2, 8);
     this._page = 0;
     this._filter = "";
     this._rows = [];
@@ -391,6 +390,14 @@ class BambuCostsJobsTable extends HTMLElement {
           .cu { font-size:11px; color:var(--secondary-text-color); margin-left:1px;
             white-space:nowrap; }
           table.bcjt td.cvr { text-align:center; padding:4px 8px; }
+          .bcjt-dd { position:fixed; z-index:100000; background:var(--card-background-color);
+            border:1px solid var(--divider-color); border-radius:8px; padding:4px 0;
+            box-shadow:0 6px 20px rgba(0,0,0,.28); font-size:12.5px;
+            max-height:40vh; overflow-y:auto; }
+          .bcjt-dd .opt { padding:5px 12px; cursor:pointer; white-space:nowrap;
+            color:var(--primary-text-color); }
+          .bcjt-dd .opt:hover { background:rgba(var(--rgb-primary-color),.12); }
+          .bcjt-dd .opt.on { color:var(--primary-color); font-weight:600; }
           input.cell:hover { border-color:var(--divider-color); }
           input.cell:focus { border-color:var(--primary-color);
             background:var(--card-background-color); outline:none; }
@@ -481,10 +488,6 @@ class BambuCostsJobsTable extends HTMLElement {
             </span>
           </div>
         </div>
-        <datalist id="${this._dl}n">${BCJT_NOZZLE_SIZES.map(o =>
-          `<option value="${o.replace(/^0(?=\.)/, "")}"></option>`).join("")}</datalist>
-        <datalist id="${this._dl}t">${BCJT_NOZZLE_TYPES.map(o =>
-          `<option value="${this._esc(this._typeDisp(o))}"></option>`).join("")}</datalist>
       </ha-card>`;
 
     this._built = true;
@@ -554,8 +557,60 @@ class BambuCostsJobsTable extends HTMLElement {
       inp.parentElement.dataset.v = String(inp.value).slice(0, (col && col.max) || 40);
     });
 
+    // The option popup for the nozzle combo cells: opens on focus, closes on
+    // blur, Escape, or the table scrolling under it.
+    const tbody = this.querySelector("tbody");
+    tbody.addEventListener("focusin", e => {
+      const inp = e.target.closest("input.combo");
+      if (inp) this._openCombo(inp);
+    });
+    tbody.addEventListener("focusout", () => this._closeCombo());
+    tbody.addEventListener("keydown", e => {
+      if (e.key === "Escape") this._closeCombo();
+    });
+    this.querySelector(".bcjt-scroll").addEventListener("scroll", () => this._closeCombo());
+
     this._applyScrollMode();
     this._paint();
+  }
+
+  _openCombo(inp) {
+    this._closeCombo();
+    const f = inp.dataset.f;
+    const opts = f === "nozzle" ? BCJT_NOZZLE_SIZES : BCJT_NOZZLE_TYPES;
+    const label = v => f === "nozzle" ? v.replace(/^0(?=\.)/, "") : this._typeDisp(v);
+
+    const dd = document.createElement("div");
+    dd.className = "bcjt-dd";
+    dd.innerHTML = opts.map(o => {
+      const l = label(o);
+      return `<div class="opt${l === inp.value ? " on" : ""}" data-v="${this._esc(l)}">${this._esc(l)}</div>`;
+    }).join("");
+
+    // mousedown, not click: click would blur the input first, and the
+    // focusout close would eat the selection.
+    dd.addEventListener("mousedown", e => {
+      e.preventDefault();
+      const opt = e.target.closest(".opt");
+      if (!opt) return;
+      inp.value = opt.dataset.v;
+      this._closeCombo();
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    this.appendChild(dd);
+    const r = inp.getBoundingClientRect();
+    dd.style.left = r.left + "px";
+    dd.style.minWidth = Math.max(r.width, 90) + "px";
+    // Below the cell, unless that would run off the screen.
+    const h = dd.offsetHeight;
+    dd.style.top = (r.bottom + h + 4 > window.innerHeight ? r.top - h - 2 : r.bottom + 2) + "px";
+    this._dd = dd;
+  }
+
+  _closeCombo() {
+    if (this._dd) { this._dd.remove(); this._dd = null; }
   }
 
   _headHtml() {
@@ -595,9 +650,8 @@ class BambuCostsJobsTable extends HTMLElement {
       const raw = String(r[col.k] ?? "").trim();
       const v = col.k === "nozzle" ? raw.replace(/^0(?=[.,])/, "") : this._typeDisp(raw);
       return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
-        style="min-width:${col.min || 4}ch"><input class="cell" type="text"
-        list="${this._dl}${col.k === "nozzle" ? "n" : "t"}"
-        data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"></span></td>`;
+        style="min-width:${col.min || 4}ch"><input class="cell combo" type="text"
+        autocomplete="off" data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"></span></td>`;
     }
 
     if (col.type === "num") {
