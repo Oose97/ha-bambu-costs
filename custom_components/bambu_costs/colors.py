@@ -555,3 +555,16 @@ def color_name(
         if hit:
             return hit
     return LEGACY_COLOR_NAMES.get(code, UNKNOWN_COLOR)
+
+
+# Every distinct colour name in the palette, for the tags card's colour
+# dropdown. Sorted once at import; the palette is fixed per release.
+COLOR_NAME_OPTIONS: tuple[str, ...] = tuple(sorted(
+    {
+        name
+        for lines in COLOR_NAMES_BY_LINE.values()
+        for hexes in lines.values()
+        for name in hexes.values()
+    }
+    | set(LEGACY_COLOR_NAMES.values())
+))

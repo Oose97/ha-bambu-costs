@@ -14,4 +14,4 @@ from homeassistant.core import HomeAssistant, callback
 @callback
 def exclude_attributes(hass: HomeAssistant) -> set[str]:
     """Attributes never worth recording."""
-    return {"data", "slots"}
+    return {"data", "slots", "color_names", "type_names"}

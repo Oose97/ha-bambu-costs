@@ -49,11 +49,15 @@ class BambuCostsTagsEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    const st = hass.states[this._cfg.entity];
     if (!this._cfg.unit) {
-      const st = hass.states[this._cfg.entity];
       const cur = st && st.attributes && st.attributes.currency;
       this._cfg.unit = cur ? `${cur}/kg` : "EUR/kg";
     }
+    // The palette's colour names, published by the integration for the
+    // colour cell's dropdown.
+    const names = st && st.attributes && st.attributes.color_names;
+    if (Array.isArray(names)) this._colorNames = names;
     if (!this._built) { this._load(); this._render(); return; }
     if (this._busy) return;
     const sig = JSON.stringify(this._sensorData());
@@ -406,6 +410,16 @@ class BambuCostsTagsEditor extends HTMLElement {
           .bte-sheet select { padding:5px 8px; border-radius:7px; font-size:12.5px;
             border:1px solid var(--divider-color); background:var(--card-background-color);
             color:var(--primary-text-color); }
+          /* The colour-name dropdown: ~10 rows tall, the rest scrolls. */
+          .bte-dd { position:fixed; z-index:100000; background:var(--card-background-color);
+            border:1px solid var(--divider-color); border-radius:8px; padding:4px 0;
+            box-shadow:0 6px 20px rgba(0,0,0,.28); font-size:12.5px;
+            max-height:290px; overflow-y:auto; }
+          .bte-dd .opt { padding:5px 12px; cursor:pointer; white-space:nowrap;
+            color:var(--primary-text-color); }
+          .bte-dd .opt:hover { background:rgba(var(--rgb-primary-color),.12); }
+          .bte-dd .opt.on { color:var(--primary-color); font-weight:600; }
+          .bte-dd .opt.muted { opacity:.55; cursor:default; }
           /* A spool's two rows read as one block. */
           table.bte tr.paired td { border-bottom-color:transparent; }
           /* …unless the pair is collapsed — then the first row is the block. */
@@ -491,6 +505,24 @@ class BambuCostsTagsEditor extends HTMLElement {
     });
 
     q(".settings").addEventListener("click", () => this._openSettings());
+
+    // The colour-name combo: focusing the cell drops the full palette down,
+    // scrollable; typing switches it to a filter. Anything typed is accepted
+    // as-is — the list is a convenience, not a constraint.
+    const tbody = q("tbody");
+    tbody.addEventListener("focusin", e => {
+      const inp = e.target.closest('input[data-f="color_name"]');
+      if (inp) this._openColorDd(inp);
+    });
+    tbody.addEventListener("focusout", () => this._closeColorDd());
+    tbody.addEventListener("keydown", e => {
+      if (e.key === "Escape") this._closeColorDd();
+    });
+    tbody.addEventListener("input", e => {
+      const inp = e.target.closest('input[data-f="color_name"]');
+      if (inp && this._dd) { this._ddTyped = true; this._fillColorDd(inp); }
+    });
+    q(".bte-scroll").addEventListener("scroll", () => this._closeColorDd());
 
     q(".reload").addEventListener("click", () => this._reload());
     q("button.save").addEventListener("click", () => this._save());
@@ -600,6 +632,52 @@ class BambuCostsTagsEditor extends HTMLElement {
 
     this._applyFilter();
     requestAnimationFrame(() => this._recolor());
+  }
+
+  // ── colour-name dropdown ─────────────────────────────────────────────────
+  _openColorDd(inp) {
+    this._closeColorDd();
+    if (!Array.isArray(this._colorNames) || !this._colorNames.length) return;
+
+    const dd = document.createElement("div");
+    dd.className = "bte-dd";
+    // mousedown, not click: click would blur the input first and the
+    // focusout close would eat the selection.
+    dd.addEventListener("mousedown", e => {
+      e.preventDefault();
+      const opt = e.target.closest(".opt");
+      if (!opt || !opt.dataset.v) return;
+      inp.value = opt.dataset.v;
+      this._closeColorDd();
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    this.appendChild(dd);
+    this._dd = dd;
+    this._ddFor = inp;
+    // The full list first; filtering starts with the first keystroke.
+    this._ddTyped = false;
+    this._fillColorDd(inp);
+
+    const r = inp.getBoundingClientRect();
+    dd.style.left = r.left + "px";
+    dd.style.minWidth = Math.max(r.width, 180) + "px";
+    const h = dd.offsetHeight;
+    dd.style.top = (r.bottom + h + 4 > window.innerHeight ? r.top - h - 2 : r.bottom + 2) + "px";
+  }
+
+  _fillColorDd(inp) {
+    if (!this._dd) return;
+    const q = this._ddTyped ? inp.value.trim().toLowerCase() : "";
+    const names = q
+      ? this._colorNames.filter(n => n.toLowerCase().includes(q))
+      : this._colorNames;
+    this._dd.innerHTML = names.map(n =>
+      `<div class="opt${n === inp.value ? " on" : ""}" data-v="${this._esc(n)}">${this._esc(n)}</div>`
+    ).join("") || `<div class="opt muted">no palette match — keep typing, free text is fine</div>`;
+  }
+
+  _closeColorDd() {
+    if (this._dd) { this._dd.remove(); this._dd = null; this._ddFor = null; }
   }
 
   _toggleDisabled(k) {

@@ -20,6 +20,9 @@ startup for you to add by hand.
 - Editing a pair's filament, colour or price applies to both rows; serials stay per-row,
   since they are what tell the two tags apart. Typing a spool's second serial pairs the
   rows on the spot.
+- The colour-name cell is a combo over the whole Bambu palette: click it and the full
+  list drops down, scrollable; start typing and it filters. The list is a convenience,
+  not a constraint — anything you type is accepted as-is.
 - Pairs share one handle and move as a unit, and reordering works with rows hidden — it
   steps over what is not shown. Filtering finds collapsed second tags and surfaces them
   with their spool.

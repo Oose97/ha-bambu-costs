@@ -18,6 +18,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .colors import COLOR_NAME_OPTIONS
 from .const import (
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
@@ -368,6 +369,8 @@ class TagLibrarySensor(BambuCostsSensor):
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
             "currency": self.coordinator.currency,
             "price_targets": self._price_targets(),
+            # The palette's names, for the card's colour-name dropdown.
+            "color_names": list(COLOR_NAME_OPTIONS),
         }
 
     def _price_targets(self) -> list[dict[str, str]]:
