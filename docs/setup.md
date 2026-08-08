@@ -98,6 +98,14 @@ cards, which pick it up from the integration rather than needing their own setti
 
 ## Icon
 
-Shipped with the integration in `custom_components/bambu_costs/brand/`, so it shows in
-Settings → Devices & Services with no brands-repository submission. Requires Home
-Assistant 2026.3 or newer; on older versions the default placeholder is used instead.
+Shipped with the integration in `custom_components/bambu_costs/brand/` — the official
+mechanism since Home Assistant 2026.3: local brand images are served through the
+brands proxy API and take priority over the CDN, and the central brands repository no
+longer accepts new custom integrations at all. On older Home Assistant versions the
+default placeholder shows instead.
+
+One consequence applies to every custom integration published after that cut-off: the
+HACS **store listing** fetches icons from the CDN, and an integration that is not yet
+installed has no local files to serve — so the store shows a placeholder until the
+integration is installed. Integrations that entered the brands repository before the
+change are grandfathered and keep their store icons.
