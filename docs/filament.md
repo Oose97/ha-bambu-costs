@@ -59,10 +59,12 @@ seen **appends a row for it** instead of leaving you to type it in. The printer 
 product name and colour but never a price, so the row starts at **0** — which reads as "no
 price of its own" — and an `INFO` line in the log tells you to set it in the tags card.
 
-The colour is named from Bambu's own palette, keyed by **material and hex** — the same
-colour carries a different filament code per material, so `#00AE42` scans in as *Bambu
-Green (10501)* on a PLA spool and *Bambu Green (40500)* on an ABS one. Multi-colour
-filaments map every hex of their gradient to the one name. A third-party hex that isn't
+The colour is named from Bambu's own palette, keyed by **material, product line and
+hex** — the same colour carries a different filament code per line, so `#FFFFFF` scans
+in as *Jade White (10100)* on a PLA Basic spool, *Ivory White (11100)* on PLA Matte and
+*Pure White (17100)* on PLA Pure. The line is read from the spool's product name; the
+material alone still narrows to the right family. Multi-colour filaments map every hex
+of their gradient to the one name. A third-party hex that isn't
 Bambu's at all is looked up on the [color-names](https://github.com/meodai/color-names)
 web API (`api.color.pizza`) — one small request per newly scanned unknown spool,
 nothing else ever goes online. The lookup can be turned off in the options; off,
