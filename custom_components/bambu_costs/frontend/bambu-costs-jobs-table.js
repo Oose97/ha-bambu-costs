@@ -42,6 +42,29 @@ const BCJT_NOZZLE_TYPES = [
   "high_flow_tungsten_carbide",
 ];
 
+// Known filament type names, for display only: a stored value containing one
+// (whatever brand precedes it — "SUNLU PETG", "Filalab ABS", "Bambu PLA
+// Matte") shows just the type; no match shows the full stored text. Matched
+// longest-first so "PLA Matte" wins over "PLA".
+const BCJT_FILAMENT_TYPES = [
+  "Support for PLA/PETG", "Support for ABS", "Support for PA/PET",
+  "PLA Aero", "PLA Basic", "PLA Dynamic", "PLA Galaxy", "PLA Glow", "PLA Lite",
+  "PLA Marble", "PLA Matte", "PLA Metal", "PLA Pure", "PLA Silk+", "PLA Silk",
+  "PLA Sparkle", "PLA Tough+", "PLA Tough", "PLA Translucent", "PLA Wood", "PLA-CF",
+  "PETG Basic", "PETG HF", "PETG Translucent", "PETG-CF",
+  "ABS-GF", "ABS", "ASA Aero", "ASA-CF", "ASA", "PC FR", "PC",
+  "PAHT-CF", "PA6-CF", "PA6-GF", "PA-CF", "PET-CF", "PPA-CF", "PPS-CF",
+  "TPU for AMS", "TPU 95A HF", "TPU 95A", "TPU 90A", "TPU 85A", "TPU",
+  "PVA", "PETG", "PLA",
+].sort((a, b) => b.length - a.length).map(sku => ({
+  sku,
+  // Word-boundary-ish: the char before and after must not be alphanumeric or
+  // "+", so "PLA Tough" does not claim "PLA Tough+" (its own entry wins).
+  rx: new RegExp("(^|[^a-z0-9+])"
+    + sku.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&")
+    + "($|[^a-z0-9+])", "i"),
+}));
+
 class BambuCostsJobsTable extends HTMLElement {
   setConfig(cfg) {
     if (!cfg.entity) throw new Error("Define an entity (sensor.bambu_costs_job_log)");
@@ -206,6 +229,19 @@ class BambuCostsJobsTable extends HTMLElement {
     return col.unit === "$" ? this._cur() : col.unit;
   }
 
+  // "SUNLU PETG" → "PETG"; "Bambu PLA Matte" → "PLA Matte"; unmatched text
+  // shows in full. Display only — the stored value is never touched.
+  _shortType(part) {
+    const t = String(part || "").trim();
+    if (!t) return "";
+    const hit = BCJT_FILAMENT_TYPES.find(m => m.rx.test(t));
+    return hit ? hit.sku : t;
+  }
+
+  _typesDisp(v) {
+    return String(v || "").split(",").map(p => this._shortType(p)).filter(Boolean).join(", ");
+  }
+
   // "high_flow_hardened_steel" → "HF Hardened Steel". Generic on purpose: an
   // unlisted value still reads well instead of needing a hand-kept map.
   _typeDisp(v) {
@@ -251,7 +287,7 @@ class BambuCostsJobsTable extends HTMLElement {
     }).join("");
     const total = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
     const tip = this._esc(trays.map(t =>
-      `${t.label || "?"}${t.type ? " " + t.type : ""} ${(parseFloat(t.weight) || 0).toFixed(1)} g`
+      `${t.label || "?"}${t.type ? " " + this._shortType(t.type) : ""} ${(parseFloat(t.weight) || 0).toFixed(1)} g`
     ).join("\n"));
     return `<button class="trbtn" data-k="${r._k}" title="${tip}">${dots}` +
       `${trays.length} slot${trays.length === 1 ? "" : "s"} · ${total.toFixed(1)} g</button>`;
@@ -259,44 +295,89 @@ class BambuCostsJobsTable extends HTMLElement {
 
   _openTrays(r) {
     const trays = Array.isArray(r.trays) ? r.trays : [];
-    const totalW = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
-    const totalC = trays.reduce((s, t) => s + (parseFloat(t.cost) || 0), 0);
     const cur = this._esc(this._cur());
 
-    const rows = trays.map(t => {
-      const rgb = this._parseColor(t.color || "");
-      const dot = rgb ? `<i class="dot dotb" style="background:${this._css(rgb)}"></i>` : "";
-      const price = isNaN(parseFloat(t.price)) ? "" : `@ ${parseFloat(t.price).toFixed(2)} ${cur}/kg`;
-      const cost = isNaN(parseFloat(t.cost)) ? "" : `${parseFloat(t.cost).toFixed(2)} ${cur}`;
-      const weight = isNaN(parseFloat(t.weight)) ? "" : `${parseFloat(t.weight).toFixed(2)} g`;
-      return `<div class="bcjt-target">
-        ${dot}
+    // The modal edits the row's tray objects in place — raw values, no
+    // display shortening, so what is edited is exactly what is stored.
+    const rowHtml = (t, i) => `
+      <div class="bcjt-target trrow">
+        <input type="color" class="tsw" data-i="${i}" data-tf="color"
+          value="${this._esc(/^#[0-9a-f]{6}/i.test(t.color || "") ? t.color.slice(0, 7) : "#808080")}"
+          title="Colour">
         <span class="bcjt-target-label">
-          <span class="bcjt-target-name">${this._esc(t.label || "?")}${
-            t.type ? ` — ${this._esc(t.type)}` : ""}</span>
-          <span class="bcjt-target-cur">${this._esc(t.name || "")}${
-            t.name && price ? " " : ""}${this._esc(price)}</span>
+          <span class="trline">
+            <input class="cell tin" data-i="${i}" data-tf="label" title="Slot"
+              value="${this._esc(t.label || "")}" style="width:6ch">
+            <input class="cell tin" data-i="${i}" data-tf="type" placeholder="material"
+              value="${this._esc(t.type || "")}" style="width:15ch">
+          </span>
+          <span class="trline">
+            <input class="cell tin" data-i="${i}" data-tf="name" placeholder="colour name"
+              value="${this._esc(t.name || "")}" style="width:23ch">
+          </span>
         </span>
-        <span class="trnum">${weight}<br><span class="tcost">${cost}</span></span>
+        <span class="trnum">
+          <span class="trline"><input class="cell tin num" type="number" step="any" data-i="${i}"
+            data-tf="weight" value="${isNaN(parseFloat(t.weight)) ? "" : parseFloat(t.weight)}"
+            style="width:8ch"><span class="cu">g</span></span>
+          <span class="trline"><input class="cell tin num" type="number" step="any" data-i="${i}"
+            data-tf="price" value="${isNaN(parseFloat(t.price)) ? "" : parseFloat(t.price)}"
+            style="width:8ch"><span class="cu">${cur}/kg</span></span>
+          <span class="trline"><input class="cell tin num" type="number" step="any" data-i="${i}"
+            data-tf="cost" value="${isNaN(parseFloat(t.cost)) ? "" : parseFloat(t.cost)}"
+            style="width:8ch"><span class="cu">${cur}</span></span>
+        </span>
       </div>`;
-    }).join("") || `<div class="bcjt-target"><span class="muted">No per-slot data</span></div>`;
 
     const ov = document.createElement("div");
     ov.className = "bcjt-modal";
     ov.innerHTML = `
-      <div class="bcjt-sheet" role="dialog" aria-modal="true">
+      <div class="bcjt-sheet" style="width:min(94vw,520px)" role="dialog" aria-modal="true">
         <div class="bcjt-sheet-head">
           <div class="bcjt-sheet-title">Filament used</div>
           <div class="bcjt-target-cur">${this._esc(r.job || "")}${r.ts ? ` · ${this._esc(r.ts)}` : ""}</div>
         </div>
-        <div class="bcjt-sheet-body">${rows}</div>
+        <div class="bcjt-sheet-body">${trays.map(rowHtml).join("")
+          || `<div class="bcjt-target"><span class="muted">No per-slot data</span></div>`}</div>
         <div class="bcjt-sheet-foot">
-          <span style="align-self:center">${totalW.toFixed(1)} g · ${totalC.toFixed(2)} ${cur}</span>
+          <span class="trtotal" style="align-self:center"></span>
           <button class="tbtn close">Done</button>
         </div>
       </div>`;
 
-    const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
+    const totals = () => {
+      const w = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
+      const c2 = trays.reduce((s, t) => s + (parseFloat(t.cost) || 0), 0);
+      ov.querySelector(".trtotal").textContent = `${w.toFixed(1)} g · ${c2.toFixed(2)} ${this._cur()}`;
+    };
+    totals();
+
+    ov.addEventListener("change", e => {
+      const el = e.target.closest("[data-tf]");
+      if (!el) return;
+      const t = trays[Number(el.dataset.i)];
+      if (!t) return;
+      const f = el.dataset.tf;
+      if (f === "weight" || f === "price" || f === "cost") {
+        t[f] = parseFloat(String(el.value).replace(",", ".")) || 0;
+        // Weight or price moved: the line's cost follows, the same way the
+        // logger computed it. A direct cost edit stands on its own.
+        if (f !== "cost") {
+          t.cost = Math.round((parseFloat(t.weight) || 0) / 1000 * (parseFloat(t.price) || 0) * 1e4) / 1e4;
+          const ci = ov.querySelector(`[data-i="${el.dataset.i}"][data-tf="cost"]`);
+          if (ci) ci.value = t.cost;
+        }
+      } else {
+        t[f] = el.value;
+      }
+      this._edited.add(r._k);
+      this._dirty = true;
+      totals();
+      this._updateFoot();
+    });
+
+    // Repaint on close so the summary button reflects the edits.
+    const close = () => { ov.remove(); document.removeEventListener("keydown", esc); this._paint(); };
     const esc = e => { if (e.key === "Escape") close(); };
     ov.addEventListener("click", e => { if (e.target === ov) close(); });
     ov.querySelector("button.close").addEventListener("click", close);
@@ -407,13 +488,17 @@ class BambuCostsJobsTable extends HTMLElement {
           .tcost { opacity:.65; }
           .dot { display:inline-block; width:9px; height:9px; border-radius:2px;
             margin-right:4px; box-shadow:0 0 0 1px var(--secondary-text-color); }
-          .dot.dotb { width:14px; height:14px; border-radius:4px; margin:0; flex:none; }
+          .trrow .trline { display:flex; gap:4px; align-items:center; margin:1px 0; }
+          .trrow input.tin { padding:3px 6px; }
+          .trrow .tsw { width:26px; height:26px; padding:0; border:none; background:none;
+            border-radius:5px; cursor:pointer; flex:none;
+            box-shadow:0 0 0 1px var(--divider-color); }
+          .trnum { display:flex; flex-direction:column; align-items:flex-end; }
           button.trbtn { display:inline-flex; align-items:center; background:none;
             border:1px solid var(--divider-color); color:var(--primary-text-color);
             border-radius:7px; padding:4px 8px; font-size:11.5px; cursor:pointer;
             white-space:nowrap; }
           button.trbtn:hover { border-color:var(--primary-color); }
-          .trnum { text-align:right; font-size:12px; white-space:nowrap; }
           button.cbtn { background:none; border:1px solid var(--divider-color);
             color:var(--primary-color); border-radius:7px; padding:4px 8px;
             font-size:11.5px; cursor:pointer; white-space:nowrap; }
@@ -664,13 +749,20 @@ class BambuCostsJobsTable extends HTMLElement {
         u ? `<span class="cu">${this._esc(u)}</span>` : ""}</td>`;
     }
     let v = String(r[col.k] ?? "");
+    let title = "";
     // Bambu's nozzles are all sub-millimetre (0.2–0.8), so the leading zero
     // says nothing — ".4" reads cleaner. A 1.0+ value shows as-is, and the
     // stored data keeps the zero either way (the edit path restores it).
     if (col.k === "nozzle") v = v.replace(/^0(?=[.,])/, "");
+    if (col.k === "types") {
+      const short = this._typesDisp(v);
+      if (short !== v) title = v;  // the tooltip keeps the full stored value
+      v = short;
+    }
     return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
       style="min-width:${col.min || 4}ch"><input class="cell"
-      type="text" data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"></span></td>`;
+      type="text" data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"${
+      title ? ` title="${this._esc(title)}"` : ""}></span></td>`;
   }
 
   // What the hidden twin measures. Capped at the column's maximum characters
