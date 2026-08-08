@@ -30,7 +30,11 @@ slots are free-form, so any AMS layout — or none — works.
   idle tracking are the integration's own job. The ones worth adding are notifications,
   and the [Automations](#automations) section has them ready to paste.
 - Survives restarts, reconnects and mid-print dropouts without losing or double-counting
-  a cent.
+  a cent. One example: a Home Assistant restart mid-print loses the printer
+  integration's per-slot weight attributes — this integration keeps its own snapshot of
+  the split and restores it after the restart, so the job is still priced per slot
+  instead of falling back to the default
+  ([details](docs/filament.md#surviving-a-restart-mid-print)).
 
 ## Install
 
