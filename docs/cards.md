@@ -36,6 +36,10 @@ startup for you to add by hand.
 - By default the table is bounded to 70% of the screen and scrolls inside its own box,
   which keeps the header row pinned while a long library scrolls under it. "Unlimited"
   in the settings grows the card with the page instead.
+- The footer counts rows and **spools** — a pair is one spool — with the active count
+  beside it, tracking unsaved edits live. The saved figures are also published as the
+  `spools` and `active_spools` [sensors](entities.md#sensors), ready for a badge or an
+  automation.
 - Each row's **SET** button opens a picker listing every filament price entity — the
   default first, then one per configured slot — so a tag's price can be pushed into
   whichever slot has that spool loaded. The list is resolved from the entity registry,

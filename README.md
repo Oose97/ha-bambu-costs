@@ -72,7 +72,8 @@ Go to [Setup](docs/setup.md) for more details.
 Go to [Entities & services](docs/entities.md) for more details.
 
 - Sensors for the live breakdown, session filament and power cost, cost rate, lifetime
-  totals (including a `utility_meter`-ready one), the tag library and the job log.
+  totals (including a `utility_meter`-ready one), the tag library with its spool
+  counts, and the job log.
 - Writable numbers for every price, marker and total; a charge button for partial
   prints; a switch choosing camera photos over the slicer's render for job covers.
 - Services to log a job with overrides, edit the log, write the tag library, set a
