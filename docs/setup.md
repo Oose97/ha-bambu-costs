@@ -29,12 +29,16 @@ entity is still found — `subtask_name` is displayed as "Task name", which is w
 names are read off the print weight sensor rather than invented, and a tray is attached
 only when the pairing is unambiguous; anything doubtful is listed for you instead.
 
-The catch: the printer only reports per-slot attributes for slots the *current* job uses,
-so a discovery run while idle finds no slots and one mid-print finds only the slots in
-use. The rest are listed as unpaired trays for you to add. Re-running discovery from the
-options later picks up the rest — additively: slots you already have are never dropped
-or relabelled by a re-scan, a discovered tray fills in an entry that lacked one, and new
-attributes are appended. Removing a slot is always a deliberate edit of the list.
+The catch: the printer only reports per-slot attributes for slots the *current* job
+uses. Attribute names visible right now are always matched verbatim; when none are
+visible at all — an idle printer, or one straight after a restart — the slot lines are
+instead **derived from the AMS devices' own names**, which carry the same numbering the
+attributes are built from. Derived lines are a pre-fill like everything else here:
+shown on the form for review, and at runtime a slot only ever matches the sensor's
+attributes verbatim. Re-running discovery from the options later refines things —
+additively: slots you already have are never dropped or relabelled by a re-scan, a
+discovered tray fills in an entry that lacked one, and new attributes are appended.
+Removing a slot is always a deliberate edit of the list.
 
 **Step 2 — sensors.** Whatever was found, shown so you can correct it before continuing.
 This is also where the optional **printer camera** goes — see
@@ -68,6 +72,23 @@ colour-name lookup, and the [known filament types](cards.md#jobs-table) list the
 card shortens material names against:
 
 ![Further down: rates, auto-log, colour naming and the known filament types](images/setup_3_2.jpg)
+
+## Electricity price
+
+Two fields on the slots-and-rates step work as a pair:
+
+- **Electricity price sensor** *(optional)* — point it at a sensor reporting your price
+  per kWh (a Nordpool spot price, a dynamic tariff, a template of your contract). When
+  set, **this is what every calculation uses**, read live — so a tariff that moves
+  mid-print is charged as it actually moved.
+- **Electricity price** — a fixed number per kWh. With a sensor configured it is *only
+  the fallback*, used for the stretches where the sensor is unavailable or reports
+  something that is not a number; the moment the sensor recovers, it takes over again.
+  Without a sensor, this number simply is the price.
+
+The fixed price is also exposed as a `number` entity, so the fallback can be adjusted
+any time without reopening the options. How the price feeds the cost integral is
+covered in [Electricity costing](costing.md).
 
 ## Currency
 
