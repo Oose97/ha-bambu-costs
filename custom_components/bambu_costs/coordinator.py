@@ -668,9 +668,12 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "attribute": slot.attribute,
                     "name": (tag or {}).get("color_name") or tray.get("material") or "",
                     "material": tray.get("material") or "",
-                    # Full product name for the job log. The tray's own report
-                    # wins over the tag library, whose text is hand-edited.
-                    "filament": tray.get("name") or (tag or {}).get("filament") or "",
+                    # Full product name for the job log. The tag library's
+                    # text wins — it is the user's curated name ("SUNLU PETG
+                    # HS Matte"), where the tray just echoes whatever the tag
+                    # encodes. A spool the library does not match falls back
+                    # to the printer's report.
+                    "filament": (tag or {}).get("filament") or tray.get("name") or "",
                     "color": tray.get("color") or (tag or {}).get("color_code") or "",
                     "weight": weight,
                     "price": price,

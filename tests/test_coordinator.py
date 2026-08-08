@@ -229,6 +229,33 @@ def test_next_job_can_log_again():
     assert c.appended == 2
 
 
+def test_breakdown_prefers_the_tag_librarys_filament_name():
+    """The library's curated name beats the printer's echo of the tag.
+
+    A clone-tagged SUNLU spool reads as "Bambu PETG HF" on the tray, but the
+    user has named it properly in the library; the log should carry their
+    name. A spool the library does not know keeps the printer's report.
+    """
+    from custom_components.bambu_costs.coordinator import SlotDef
+
+    c = make()
+    slot = SlotDef(attribute="AMS 1 Tray 1", label="A1", entity="sensor.tray_1")
+    c.slots = [slot]
+    c._attrs = lambda key: {"AMS 1 Tray 1": 10.0}
+    c.data = {"tags": [{"serial": "AAA", "serial_2": "",
+                        "filament": "SUNLU PETG HS Matte",
+                        "color_name": "White", "cost_per_kg": 9.35}]}
+    tray = {"available": True, "name": "Bambu PETG HF", "material": "PETG",
+            "tag_uid": "AAA", "color": "#FFFFFF"}
+    c.tray_info = lambda s: tray
+
+    assert c.breakdown(remember=False)["slots"][0]["filament"] == "SUNLU PETG HS Matte"
+
+    tray = {"available": True, "name": "Bambu PETG HF", "material": "PETG",
+            "tag_uid": "", "color": "#FFFFFF"}
+    assert c.breakdown(remember=False)["slots"][0]["filament"] == "Bambu PETG HF"
+
+
 def test_job_row_names_each_material_once():
     c = make()
     slots = [
