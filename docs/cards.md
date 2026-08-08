@@ -36,6 +36,13 @@ startup for you to add by hand.
   whichever slot has that spool loaded. The list is resolved from the entity registry,
   so it follows the slot configuration on its own.
 
+  ![The SET picker: every price target with its current value](images/filament_set_price_modal.jpg)
+
+- Works on a phone and follows the theme — on touch, reordering switches to ↑/↓
+  buttons on its own:
+
+  ![The tag library on a phone, dark theme, arrow reordering](images/filaments_mobile_dark_mode.jpg)
+
 ```yaml
 type: custom:bambu-costs-tags-editor
 entity: sensor.bambu_costs_tag_library
@@ -50,8 +57,11 @@ narrows it to anything — a date, a job name, a material:
 ![The print history filtered to one day](images/print_history_filtered_results.jpg)
 
 - Every value field edits in place — click a cell, type, and press **Save**. Nozzle
-  size and type are dropdowns of what the printer can report (labels prettified, the
-  printer's own spelling stored), with **Other…** switching to free text. Only the
+  size and type are combo fields: free text, with the printer's own vocabulary offered
+  as a dropdown (labels prettified, the printer's spelling stored). **Discard** appears
+  beside Save while there are unsaved edits.
+
+  ![Editing a row: the nozzle type dropdown open, one unsaved edit, Discard and Save waiting](images/print_history_unsaved_changes.jpg) Only the
   rows you touched are written, matched into the file by the timestamp they were loaded
   with, so jobs logged while you were editing are never overwritten. The previous file
   is kept as `jobs.csv.bak`.

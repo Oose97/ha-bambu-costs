@@ -21,6 +21,8 @@ discovery walks that chain to its root. Everything else is filled in from the de
 sensors, and any AMS slots the printer is currently reporting, each paired with its tray.
 Leave it empty to configure by hand.
 
+![Picking the printer device (shown here from the options flow, which re-runs discovery)](images/setup_1.jpg)
+
 Entities are matched on their `translation_key`, not on entity-id suffixes, so a renamed
 entity is still found — `subtask_name` is displayed as "Task name", which is where
 `sensor.…_task_name` comes from, and matching on the key survives that. Slot attribute
@@ -35,6 +37,8 @@ options later picks up the rest.
 **Step 2 — sensors.** Whatever was found, shown so you can correct it before continuing.
 This is also where the optional **printer camera** goes — see
 [Job pictures](entities.md#job-pictures).
+
+![The sensors step, filled in by discovery](images/setup_2.jpg)
 
 **Step 3 — slots and rates.** Add one entry per filament source, using the attribute name
 exactly as the print weight sensor reports it:
@@ -53,6 +57,15 @@ AMS HT 1|HT|sensor.printer_ams_ht_tray_1
   job log, and its `tag_uid` prices the slot straight from your tag library.
 
 Leave the list empty if you do not use an AMS; everything is then priced at the default.
+
+![The slots and rates step: one line per filament source, the energy and power sensors below](images/setup_3_1.jpg)
+
+The same step carries the rates and the display options — the electricity price sensor
+and its fixed fallback, the default filament price, currency, auto-logging, the online
+colour-name lookup, and the [known filament types](cards.md#jobs-table) list the jobs
+card shortens material names against:
+
+![Further down: rates, auto-log, colour naming and the known filament types](images/setup_3_2.jpg)
 
 ## Currency
 
