@@ -156,6 +156,22 @@ def test_resync_and_real_end_are_distinguishable():
     assert c.mark_print_end() == pytest.approx(0.05), "a real end returns the stint"
 
 
+def test_session_power_cost_follows_the_running_print():
+    """The live session sensor: the integral while running, the last print's
+    figure once it ends — never the idle accruing after the finish."""
+    c = make()
+    assert c.print_running is False
+    c.mark_print_start(new_job=True)
+    assert c.print_running is True
+    c.cost_total = 0.04
+    assert c.spend_since("cost_at_print_start") == pytest.approx(0.04)
+    c.mark_print_end()
+    assert c.print_running is False
+    assert c.value("last_print_power_cost") == pytest.approx(0.04)
+    c.cost_total = 0.09   # idle after the finish must not leak into the figure
+    assert c.value("last_print_power_cost") == pytest.approx(0.04)
+
+
 def test_print_minutes_measured_and_fallback():
     import datetime as dt
 

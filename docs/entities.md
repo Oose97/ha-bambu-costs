@@ -12,6 +12,7 @@ are possible shapes in one install.
 | --- | --- |
 | `sensor.<name>_filament_breakdown` | Cost of the job on the printer now. The `slots` attribute has the unrounded per-slot rows. |
 | `sensor.<name>_session_filament_cost` | The same figure rounded for display. |
+| `sensor.<name>_session_power_cost` | What the print on the printer has cost in electricity so far — live while it runs, the finished print's figure until the next one starts. |
 | `sensor.<name>_tag_library` | Your filament tag library. State is the row count; `data` holds the rows. |
 | `sensor.<name>_cost_rate` | What the machine is costing per hour right now — power × price. |
 | `sensor.<name>_cost_total` | **Electricity only.** Everything it has cost to run, printing or idle. Restored across restarts. |

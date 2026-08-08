@@ -470,6 +470,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Cost accumulated since a stored marker, never negative."""
         return max(0.0, self.cost_total - self.value(key))
 
+    @property
+    def print_running(self) -> bool:
+        """Whether a print's start has been observed and not yet ended."""
+        return self._saw_print_start
+
     @callback
     def _bank_through_now(self, idle: bool) -> float:
         """Bank all electricity accrued since the banked-through marker.
