@@ -28,6 +28,17 @@ const BCJT_PAGE_SIZES = [10, 20, 50, 100];
 // makes the sticky header stick and keeps the horizontal scrollbar on
 // screen — an unbounded table's scrollbar sits below the last row.
 const BCJT_HEIGHTS = [0, 50, 60, 70, 80];
+// What the printer can actually report, offered as dropdowns. The stored
+// value stays the printer's own spelling; only the label is prettified.
+// "Other…" swaps the cell to free text for anything not listed.
+const BCJT_NOZZLE_SIZES = ["0.2", "0.4", "0.6", "0.8"];
+const BCJT_NOZZLE_TYPES = [
+  "stainless_steel",
+  "hardened_steel",
+  "high_flow_hardened_steel",
+  "tungsten_carbide",
+  "high_flow_tungsten_carbide",
+];
 
 class BambuCostsJobsTable extends HTMLElement {
   setConfig(cfg) {
@@ -193,13 +204,23 @@ class BambuCostsJobsTable extends HTMLElement {
     return col.unit === "$" ? this._cur() : col.unit;
   }
 
+  // "high_flow_hardened_steel" → "HF Hardened Steel". Generic on purpose: an
+  // unlisted value still reads well instead of needing a hand-kept map.
+  _typeDisp(v) {
+    return String(v || "")
+      .split("_")
+      .map(w => w ? w[0].toUpperCase() + w.slice(1) : w)
+      .join(" ")
+      .replace(/^High Flow\b/, "HF");
+  }
+
   // ── view pipeline ────────────────────────────────────────
   _filtered() {
     const q = this._filter;
     if (!q) return this._rows;
     return this._rows.filter(r => {
       const trays = (r.trays || []).map(t => `${t.label} ${t.type || ""} ${t.name}`).join(" ");
-      return `${r.ts} ${r.job} ${r.nozzle} ${r.nozzle_type} ${r.types} ${trays}`
+      return `${r.ts} ${r.job} ${r.nozzle} ${r.nozzle_type} ${this._typeDisp(r.nozzle_type)} ${r.types} ${trays}`
         .toLowerCase().includes(q);
     });
   }
@@ -366,6 +387,15 @@ class BambuCostsJobsTable extends HTMLElement {
             letter-spacing:inherit; }
           .cu { font-size:11px; color:var(--secondary-text-color); margin-left:1px;
             white-space:nowrap; }
+          select.cell { border:1px solid transparent; background:transparent;
+            color:var(--primary-text-color); font:inherit; font-size:12.5px;
+            padding:3px 2px; border-radius:7px; cursor:pointer; }
+          select.cell:hover { border-color:var(--divider-color); }
+          select.cell:focus { border-color:var(--primary-color);
+            background:var(--card-background-color); outline:none; }
+          select.cell option { background:var(--card-background-color);
+            color:var(--primary-text-color); }
+          table.bcjt td.ctr select.cell { text-align:center; text-align-last:center; }
           input.cell:hover { border-color:var(--divider-color); }
           input.cell:focus { border-color:var(--primary-color);
             background:var(--card-background-color); outline:none; }
@@ -502,7 +532,7 @@ class BambuCostsJobsTable extends HTMLElement {
     // One delegated listener instead of one per input: the body repaints on
     // every sort, page and filter change.
     this.querySelector("tbody").addEventListener("change", e => {
-      const inp = e.target.closest("input[data-f]");
+      const inp = e.target.closest("input[data-f], select[data-f]");
       if (inp) this._edit(inp);
     });
 
@@ -551,6 +581,19 @@ class BambuCostsJobsTable extends HTMLElement {
       col.nowrap ? "nw" : "", col.bold ? "b" : ""].filter(Boolean).join(" ");
     if (!col.edit) return `<td class="${cls}">${this._esc(r[col.k] ?? "—")}</td>`;
 
+    if (col.k === "nozzle" || col.k === "nozzle_type") {
+      const raw = String(r[col.k] ?? "").trim();
+      const opts = (col.k === "nozzle" ? BCJT_NOZZLE_SIZES : BCJT_NOZZLE_TYPES).slice();
+      // A value outside the known set — a legacy row, or something typed via
+      // Other… — still shows as what it is instead of being misrepresented.
+      if (raw && !opts.includes(raw)) opts.unshift(raw);
+      const label = v => col.k === "nozzle" ? v.replace(/^0(?=[.,])/, "") : this._typeDisp(v);
+      return `<td class="${cls}"><select class="cell sel" data-k="${r._k}" data-f="${col.k}">${
+        raw ? "" : `<option value="" selected>—</option>`}${
+        opts.map(o => `<option value="${this._esc(o)}"${o === raw ? " selected" : ""}>${
+          this._esc(label(o))}</option>`).join("")}<option value="__other__">Other…</option></select></td>`;
+    }
+
     if (col.type === "num") {
       const n = parseFloat(r[col.k]);
       const v = isNaN(n) ? "" : n.toFixed(col.dp === undefined ? 0 : col.dp);
@@ -583,6 +626,26 @@ class BambuCostsJobsTable extends HTMLElement {
     const row = this._row(el.dataset.k);
     if (!row) return;
     const f = el.dataset.f;
+
+    // "Other…" in a dropdown swaps the cell to free text; nothing is stored
+    // until something is typed. An emptied free-text cell reverts to the
+    // dropdown with the old value rather than blanking the row.
+    if (el.tagName === "SELECT" && el.value === "__other__") {
+      const inp = document.createElement("input");
+      inp.className = "cell";
+      inp.type = "text";
+      inp.dataset.k = el.dataset.k;
+      inp.dataset.f = f;
+      inp.style.width = "12ch";
+      el.replaceWith(inp);
+      inp.focus();
+      return;
+    }
+    if ((f === "nozzle" || f === "nozzle_type") && el.tagName === "INPUT" && !el.value.trim()) {
+      this._paint();
+      return;
+    }
+
     if (BCJT_COLS.find(c => c.k === f && c.type === "num")) {
       row[f] = parseFloat(String(el.value).replace(",", ".")) || 0;
     } else if (f === "nozzle") {

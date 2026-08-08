@@ -39,7 +39,9 @@ entity: sensor.bambu_costs_tag_library
 `custom:bambu-costs-jobs-table` — editable print history: sortable, paginated, with
 configurable columns.
 
-- Every value field edits in place — click a cell, type, and press **Save**. Only the
+- Every value field edits in place — click a cell, type, and press **Save**. Nozzle
+  size and type are dropdowns of what the printer can report (labels prettified, the
+  printer's own spelling stored), with **Other…** switching to free text. Only the
   rows you touched are written, matched into the file by the timestamp they were loaded
   with, so jobs logged while you were editing are never overwritten. The previous file
   is kept as `jobs.csv.bak`.
