@@ -99,6 +99,28 @@ def test_reconnect_resync_banks_idle_and_records_no_print():
     assert c.value("cost_at_print_end") == pytest.approx(0.30)
 
 
+def test_idle_window_survives_a_reconnect_resync():
+    """A restart mid-idle must not truncate the idle figure.
+
+    The resync moves the banking marker — that is what stops double
+    counting — but the idle window is measured off its own marker, set only
+    when a print really ends, so the figure spans the whole window.
+    """
+    c = make()
+    c.mark_print_start(new_job=True)
+    c.cost_total = 0.10
+    c.mark_print_end()                # idle window opens at 0.10
+    c.cost_total = 0.20
+    c._saw_print_start = False
+    c.mark_print_end()                # reconnect resync mid-idle
+    c.cost_total = 0.25
+    c.mark_print_start(new_job=True)
+    assert c.value("last_idle_cost") == pytest.approx(0.15), \
+        "the whole window, not just the post-resync segment"
+    assert c.value("total_cost") == pytest.approx(100.25), \
+        "and still every cent banked exactly once"
+
+
 def test_resync_flapping_banks_each_stretch_once():
     c = make()
     for step in (0.10, 0.20, 0.30):

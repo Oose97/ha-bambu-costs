@@ -31,6 +31,8 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 - `number.<name>_total_filament_used`, `_total_cost` — lifetime running totals
 - `number.<name>_energy_at_print_start` — snapshot taken when a print begins
 - `number.<name>_cost_at_print_start`, `_cost_at_print_end` — markers in the running total
+- `number.<name>_cost_at_idle_start` — where the current idle window began; moves only
+  when a print really ends, so a restart mid-idle cannot truncate the idle figure
 - `number.<name>_last_idle_cost` — electricity burnt between the last two prints
 
 ## Buttons

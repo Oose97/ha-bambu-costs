@@ -160,6 +160,11 @@ NUMBER_DEFS: Final = (
     ("energy_at_print_start", "Energy at print start", "kWh", 0, 10000000, 0.0001, 0.0),
     ("cost_at_print_start", "Cost total at print start", "{currency}", 0, 10000000, 0.0001, 0.0),
     ("cost_at_print_end", "Cost total at print end", "{currency}", 0, 10000000, 0.0001, 0.0),
+    # Where the current idle window began. cost_at_print_end cannot serve:
+    # it doubles as the banked-through mark, which moves at every reconnect
+    # resync — this one moves only when a print actually ends, so the idle
+    # figure survives restarts in between.
+    ("cost_at_idle_start", "Cost total at idle start", "{currency}", 0, 10000000, 0.0001, 0.0),
     ("last_idle_cost", "Last idle cost", "{currency}", 0, 100000, 0.0001, 0.0),
 )
 

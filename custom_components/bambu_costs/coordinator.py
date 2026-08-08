@@ -476,7 +476,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self._saw_print_start
 
     @callback
-    def _bank_through_now(self, idle: bool) -> float:
+    def _bank_through_now(self) -> float:
         """Bank all electricity accrued since the banked-through marker.
 
         ``cost_at_print_end`` doubles as the high-water mark of what has been
@@ -485,16 +485,24 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         the total happen together, here and nowhere else — so every accrued
         cent is banked exactly once, whether it was spent idling, printing, or
         in a stint that ended in an abort nothing ever logged.
-
-        Idle windows also land in ``last_idle_cost``; print stints do not.
         """
         amount = self.spend_since("cost_at_print_end")
         if amount > 0:
-            if idle:
-                self.set_value("last_idle_cost", amount)
             self.set_value("total_cost", self.value("total_cost") + amount)
         self.set_value("cost_at_print_end", self.cost_total)
         return amount
+
+    def _idle_window_spend(self) -> float:
+        """Everything the current idle window has cost, restarts included.
+
+        Measured off ``cost_at_idle_start``, which moves only when a print
+        actually ends — a reconnect resync moves the banking marker but not
+        this one, so a restart mid-idle no longer truncates the figure. The
+        fallback covers an entry from before the marker existed: the banking
+        marker gives the old (segment-only) behaviour for that one window.
+        """
+        base = self.value("cost_at_idle_start") or self.value("cost_at_print_end")
+        return max(0.0, self.cost_total - base)
 
     @callback
     def mark_print_start(self, now: datetime | None = None, new_job: bool = True) -> float:
@@ -521,7 +529,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._job_logged = False
         self._print_started_at = now or dt_util.utcnow()
         self._print_ended_at = None
-        idle = self._bank_through_now(idle=True)
+        # The whole window since the last real print end — read before
+        # banking, which moves the marker the fallback leans on.
+        idle = self._idle_window_spend()
+        self.set_value("last_idle_cost", idle)
+        self._bank_through_now()
         self.set_value("cost_at_print_start", self.cost_total)
         # Snapshot the energy meters here rather than from an automation: the
         # print-start transition is already being watched, and the sensors are
@@ -542,10 +554,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self._saw_print_start:
             # Nothing was running, so nothing ended — a printer reconnecting
             # re-reports the state it was already in, and `finish` is a state
-            # it sits in indefinitely. Only the idle window is resynced, and
-            # what accrued in it is banked rather than dropped. No print cost
-            # is recorded, because no print ended.
-            idle = self._bank_through_now(idle=True)
+            # it sits in indefinitely. Only the banked total is resynced, and
+            # what accrued is banked rather than dropped. last_idle_cost is
+            # left alone: the idle window is still open, and it is measured
+            # off cost_at_idle_start when a print actually starts.
+            idle = self._bank_through_now()
             # No job ended, so anything logged off this transition must not
             # claim an observed start it does not have.
             self._ended_had_start = False
@@ -562,7 +575,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # The stint is banked here, not by log_job: an aborted print gets no
         # log call, and its electricity was just as real. log_job adds only
         # the filament, so nothing is counted twice.
-        self._bank_through_now(idle=False)
+        self._bank_through_now()
+        # The idle window opens here, and only here — reconnect resyncs move
+        # the banking marker but not this one, so a restart mid-idle cannot
+        # truncate the next idle figure.
+        self.set_value("cost_at_idle_start", self.cost_total)
         # Recorded before the running flag is cleared: the job is logged by an
         # automation that fires after this listener, and it needs to know the
         # ended job's start was observed even though nothing is running by then.
