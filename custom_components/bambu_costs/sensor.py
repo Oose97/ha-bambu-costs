@@ -31,6 +31,7 @@ from .const import (
     URL_COVERS,
 )
 from .coordinator import BambuCostsCoordinator
+from .storage import count_spools
 
 
 @dataclass
@@ -58,6 +59,8 @@ async def async_setup_entry(
             CostTotalSensor(coordinator),
             SpendTotalSensor(coordinator),
             TagLibrarySensor(coordinator),
+            SpoolCountSensor(coordinator, "spools", "Spools", active_only=False),
+            SpoolCountSensor(coordinator, "active_spools", "Active spools", active_only=True),
             JobLogSensor(coordinator),
         ]
     )
@@ -393,6 +396,38 @@ class TagLibrarySensor(BambuCostsSensor):
             if entity_id:
                 targets.append({"entity_id": entity_id, "label": label})
         return targets
+
+
+class SpoolCountSensor(BambuCostsSensor):
+    """How many physical spools the tag library describes.
+
+    The tag library's state is its row count, but a paired spool is two rows,
+    so the number the eye actually wants — how many spools — needs the
+    pairing collapsed. Two instances: all spools, and only those still
+    enabled. A spool with one side disabled and the other not counts as
+    active — a spool is retired by disabling it whole.
+    """
+
+    # No state_class, for the same reason as the tag library.
+
+    def __init__(
+        self,
+        coordinator: BambuCostsCoordinator,
+        key: str,
+        name: str,
+        *,
+        active_only: bool,
+    ) -> None:
+        super().__init__(coordinator, key, name)
+        self._active_only = active_only
+        self._attr_icon = "mdi:paper-roll" if active_only else "mdi:paper-roll-outline"
+
+    @property
+    def native_value(self) -> int:
+        tags = self.coordinator.data.get("tags", [])
+        if self._active_only:
+            tags = [t for t in tags if not t.get("disabled")]
+        return count_spools(tags)
 
 
 class JobLogSensor(BambuCostsSensor):
