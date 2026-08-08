@@ -8,6 +8,7 @@ from custom_components.bambu_costs.discovery import (
     _parse_attribute,
     _root_device,
     _short_label,
+    _slots_from_devices,
 )
 
 
@@ -51,6 +52,40 @@ def test_walk_survives_the_odd_registry():
 )
 def test_attribute_parsing(attribute, expected):
     assert _parse_attribute(attribute) == expected
+
+
+def test_idle_discovery_derives_slots_from_ams_device_names():
+    """With no per-slot attributes to read, the AMS devices' own names —
+    `…_AMS_{n}`, 1-based regular, 128-based HT — carry the numbering the
+    attributes are built from, so the lines can be derived for review."""
+
+    class Dev2:
+        def __init__(self, id, name):
+            self.id, self.name, self.via_device_id = id, name, None
+
+    class Entry:
+        def __init__(self, entity_id, device_id):
+            self.entity_id, self.device_id = entity_id, device_id
+
+    devices = Reg(
+        Dev2("ams1", "P2S_SERIAL_AMS_1"),
+        Dev2("ht", "P2S_SERIAL_AMS_128"),
+        Dev2("ext", "P2S_SERIAL_ExternalSpool"),
+    )
+    trays = [
+        Entry("sensor.p_ams_2_pro_tray_1", "ams1"),
+        Entry("sensor.p_ams_2_pro_tray_2", "ams1"),
+        Entry("sensor.p_ams_ht_tray_1", "ht"),
+        Entry("sensor.p_external_spool", "ext"),
+    ]
+    lines, unpaired = _slots_from_devices(trays, devices)
+    assert lines == [
+        "AMS 1 Tray 1|A1|sensor.p_ams_2_pro_tray_1",
+        "AMS 1 Tray 2|A2|sensor.p_ams_2_pro_tray_2",
+        "AMS HT 1|HT1|sensor.p_ams_ht_tray_1",
+    ]
+    assert unpaired == ["sensor.p_external_spool"], \
+        "the external spool has no per-slot attribute; it stays a remainder"
 
 
 @pytest.mark.parametrize(

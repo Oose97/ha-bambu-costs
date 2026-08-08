@@ -36,6 +36,7 @@ from .discovery import discover
 from .const import (
     CONF_AUTO_LOG,
     CONF_CAMERA,
+    CONF_COLOR_NAME_API,
     CONF_COVER_IMAGE,
     CONF_CURRENCY,
     CONF_DEFAULT_FILAMENT_PRICE,
@@ -43,6 +44,7 @@ from .const import (
     CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_END_TIME,
     CONF_ENERGY_SENSORS,
+    CONF_FILAMENT_TYPES,
     CONF_LAYERS,
     CONF_LENGTH,
     CONF_NOZZLE_SIZE,
@@ -56,9 +58,11 @@ from .const import (
     DEFAULT_CURRENCY,
     DEFAULT_ELECTRICITY_PRICE,
     DEFAULT_FILAMENT_PRICE,
+    DEFAULT_FILAMENT_TYPES,
     DEFAULT_NAME,
     DOMAIN,
     PRINTER_MANUFACTURER,
+    SLOT_SEPARATOR,
 )
 
 _SENSOR = EntitySelector(EntitySelectorConfig(domain="sensor"))
@@ -106,10 +110,48 @@ ALL_KEYS = (
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_CURRENCY,
     CONF_AUTO_LOG,
+    CONF_FILAMENT_TYPES,
+    CONF_COLOR_NAME_API,
     # Kept so reconfiguring can show which printer was chosen. Nothing reads it
     # at runtime — the entities picked from it are what the integration uses.
     CONF_DEVICE,
 )
+
+
+def _merge_slots(existing: list[str] | None, discovered: list[str] | None) -> list[str]:
+    """Fold discovered slots into the configured list without losing any.
+
+    The printer only reports per-slot attributes for slots the *current* job
+    uses, so discovery sees a subset — two mid-print, none while idle.
+    Replacing the configured list with that subset silently dropped slots
+    (and their price entities) on every pass through the options once the
+    device box became pre-filled. Configured entries are kept exactly as
+    they are, labels and pairings included; a discovered tray fills in an
+    entry that lacks one; genuinely new attributes are appended. Removing a
+    slot stays a deliberate edit of the list in the form.
+    """
+    kept = list(existing or [])
+    if not discovered:
+        return kept
+
+    def attr_of(line: str) -> str:
+        return str(line).split(SLOT_SEPARATOR)[0].strip()
+
+    by_attr = {attr_of(line): str(line) for line in discovered}
+    merged: list[str] = []
+    for line in kept:
+        parts = [p.strip() for p in str(line).split(SLOT_SEPARATOR)]
+        found = by_attr.pop(parts[0], None)
+        if found and (len(parts) < 3 or not parts[2]):
+            fparts = [p.strip() for p in found.split(SLOT_SEPARATOR)]
+            if len(fparts) > 2 and fparts[2]:
+                label = parts[1] if len(parts) > 1 and parts[1] else \
+                    (fparts[1] if len(fparts) > 1 and fparts[1] else parts[0])
+                merged.append(f"{parts[0]}{SLOT_SEPARATOR}{label}{SLOT_SEPARATOR}{fparts[2]}")
+                continue
+        merged.append(str(line))
+    merged.extend(by_attr.values())
+    return merged
 
 
 def _device_from_entities(hass: HomeAssistant, current: dict[str, Any]) -> str | None:
@@ -201,6 +243,13 @@ def _costs_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_AUTO_LOG, description=dflt(CONF_AUTO_LOG, True)
             ): BooleanSelector(),
+            vol.Required(
+                CONF_COLOR_NAME_API, description=dflt(CONF_COLOR_NAME_API, True)
+            ): BooleanSelector(),
+            vol.Optional(
+                CONF_FILAMENT_TYPES,
+                description=dflt(CONF_FILAMENT_TYPES, list(DEFAULT_FILAMENT_TYPES)),
+            ): _SLOTS,
         }
     )
 
@@ -297,7 +346,13 @@ class BambuCostsOptionsFlow(OptionsFlow):
             device_id = user_input.get(CONF_DEVICE)
             if device_id:
                 self._found = discover(self.hass, device_id)
-                self._data.update(self._found["config"])
+                config = dict(self._found["config"])
+                # Discovery only sees the slots the current job is using, so
+                # its list augments the configured one — never replaces it.
+                config[CONF_SLOTS] = _merge_slots(
+                    self._current.get(CONF_SLOTS), config.get(CONF_SLOTS)
+                )
+                self._data.update(config)
             # Carried forward even when the box was left alone, because the
             # options are rebuilt from ALL_KEYS and anything absent is dropped.
             # The registry fallback backfills entries set up before the device

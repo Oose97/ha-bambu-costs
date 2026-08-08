@@ -12,6 +12,7 @@ are possible shapes in one install.
 | --- | --- |
 | `sensor.<name>_filament_breakdown` | Cost of the job on the printer now. The `slots` attribute has the unrounded per-slot rows. |
 | `sensor.<name>_session_filament_cost` | The same figure rounded for display. |
+| `sensor.<name>_session_power_cost` | What the print on the printer has cost in electricity so far — live while it runs, the finished print's figure until the next one starts. |
 | `sensor.<name>_tag_library` | Your filament tag library. State is the row count; `data` holds the rows. |
 | `sensor.<name>_cost_rate` | What the machine is costing per hour right now — power × price. |
 | `sensor.<name>_cost_total` | **Electricity only.** Everything it has cost to run, printing or idle. Restored across restarts. |
@@ -30,6 +31,8 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 - `number.<name>_total_filament_used`, `_total_cost` — lifetime running totals
 - `number.<name>_energy_at_print_start` — snapshot taken when a print begins
 - `number.<name>_cost_at_print_start`, `_cost_at_print_end` — markers in the running total
+- `number.<name>_cost_at_idle_start` — where the current idle window began; moves only
+  when a print really ends, so a restart mid-idle cannot truncate the idle figure
 - `number.<name>_last_idle_cost` — electricity burnt between the last two prints
 
 ## Buttons

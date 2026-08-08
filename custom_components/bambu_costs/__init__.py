@@ -269,6 +269,17 @@ def _async_track_print_status(
         async_track_state_change_event(hass, [status_entity], _status_changed)
     )
 
+    # A print already underway when this runs produces no transition to
+    # observe — the case is a config-entry reload mid-print (an options save,
+    # or the UI's Reload button), where the fresh coordinator would otherwise
+    # treat the eventual finish as a reconnect resync and never log the job.
+    # Resuming keeps the restored markers, so the electricity integral runs
+    # right through the reload.
+    current = hass.states.get(status_entity)
+    if current is not None and current.state.lower() in RUNNING_STATES:
+        coordinator.mark_print_start(new_job=False)
+        _LOGGER.info("A print is already running; resuming its meters")
+
 
 @callback
 def _async_track_trays(

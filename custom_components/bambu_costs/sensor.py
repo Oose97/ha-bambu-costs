@@ -18,12 +18,15 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .colors import COLOR_NAME_OPTIONS
 from .const import (
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
+    CONF_FILAMENT_TYPES,
     CONF_POWER_SENSORS,
     COST_TICK_SECONDS,
     CONF_PRINT_WEIGHT,
+    DEFAULT_FILAMENT_TYPES,
     DOMAIN,
     URL_COVERS,
 )
@@ -50,6 +53,7 @@ async def async_setup_entry(
         [
             FilamentBreakdownSensor(coordinator),
             SessionFilamentCostSensor(coordinator),
+            SessionPowerCostSensor(coordinator),
             CostRateSensor(coordinator),
             CostTotalSensor(coordinator),
             SpendTotalSensor(coordinator),
@@ -175,6 +179,45 @@ class SessionFilamentCostSensor(BambuCostsSensor):
     def native_value(self) -> float:
         # A display read must not be what updates the restart snapshot.
         return round(self.coordinator.breakdown(remember=False)["cost"], 2)
+
+
+class SessionPowerCostSensor(BambuCostsSensor):
+    """What the print on the printer has cost in electricity, so far.
+
+    Live while a print runs — the same integral the finished job will be
+    charged — and the finished print's figure once it ends, until the next
+    one starts. The legacy stacks this replaces kept it in a utility_meter
+    that an automation had to calibrate at every start and finish.
+    """
+
+    _attr_icon = "mdi:flash"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 4
+
+    def __init__(self, coordinator: BambuCostsCoordinator) -> None:
+        super().__init__(coordinator, "session_power_cost", "Session power cost")
+        self._attr_native_unit_of_measurement = coordinator.currency
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # Its own tick, like the cost total's: the value moves with elapsed
+        # time even when no watched entity changes state.
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass, self._tick, timedelta(seconds=COST_TICK_SECONDS)
+            )
+        )
+
+    @callback
+    def _tick(self, _now: Any) -> None:
+        self.coordinator.accrue_cost()
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> float:
+        if self.coordinator.print_running:
+            return round(self.coordinator.spend_since("cost_at_print_start"), 6)
+        return round(self.coordinator.value("last_print_power_cost"), 6)
 
 
 class CostRateSensor(BambuCostsSensor):
@@ -326,6 +369,8 @@ class TagLibrarySensor(BambuCostsSensor):
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
             "currency": self.coordinator.currency,
             "price_targets": self._price_targets(),
+            # The palette's names, for the card's colour-name dropdown.
+            "color_names": list(COLOR_NAME_OPTIONS),
         }
 
     def _price_targets(self) -> list[dict[str, str]]:
@@ -374,4 +419,13 @@ class JobLogSensor(BambuCostsSensor):
                 f"{URL_COVERS}/{entry_id}/covers/{cover}" if cover else ""
             )
             jobs.append(row)
-        return {"data": jobs, "currency": self.coordinator.currency}
+        return {
+            "data": jobs,
+            "currency": self.coordinator.currency,
+            # The jobs card shortens stored filament names against this list —
+            # the configured one, or the shipped Bambu lineup when unset.
+            "type_names": list(
+                self.coordinator.options.get(CONF_FILAMENT_TYPES)
+                or DEFAULT_FILAMENT_TYPES
+            ),
+        }

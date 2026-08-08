@@ -14,6 +14,41 @@ while a tagless spool sits in the slot (see below); it is cleared only when the 
 actually emptied or a tagged spool takes its place. If you skip the manual step, the
 slot is simply costed at the default filament price.
 
+## Scanned spools are added to the library
+
+The tray sensors carry newly read RFID tags, so loading a spool the library has never
+seen **appends a row for it** instead of leaving you to type it in. The printer reports
+the product name and colour but never a price, so the row starts at **0** — which reads
+as "no price of its own" — and an `INFO` line in the log tells you to set it in the tags
+card.
+
+The AMS is what makes this automatic, not what makes it possible: rows can also be added
+by hand with **+ Row** in the tags card. If you can read a tag's UID some other way — a
+phone's NFC reader will do — type it into the serial column and the spool prices itself
+the same way the moment it is loaded.
+
+The colour is named from Bambu's own palette, keyed by **material, product line and
+hex** — the same colour carries a different filament code per line, so `#FFFFFF` scans
+in as *Jade White (10100)* on a PLA Basic spool, *Ivory White (11100)* on PLA Matte and
+*Pure White (17100)* on PLA Pure. The line is read from the spool's product name; the
+material alone still narrows to the right family. Multi-colour filaments map every hex
+of their gradient to the one name. A third-party hex that isn't Bambu's at all is
+looked up on the [color-names](https://github.com/meodai/color-names) web API
+(`api.color.pizza`) — one small request per newly scanned unknown spool, nothing else
+ever goes online. The lookup can be turned off in the options; off, offline, or
+failing, the row is added with `Unknown Color` for you to rename, exactly as before.
+
+Nothing is added for an empty tray — or for a loaded spool with no readable tag. The
+library only ever holds tagged spools: without a serial there is nothing to match a row
+by later, and two generic spools cannot be told apart. (A "no tag" report in any of its
+spellings — blank, `none`, `unknown`, `unavailable`, the all-zero UID — is recognised
+case-insensitively.) Rows without a serial can still be typed into the tags card by
+hand; they are inert for slot pricing but show in the calculator's filament list.
+Re-reading a tag already in the library does nothing. A serial named as some row's
+**`serial_2`** counts as already known — so if you fill in a spool's second tag before
+scanning that side, it will not create a duplicate. Leave `serial_2` blank and the
+second tag becomes its own row, which you can pair up later by hand.
+
 ## How a slot gets its price
 
 In order of precedence:
@@ -51,28 +86,6 @@ time, so the figures are right even if these entities are stale.
 Filament the printer counted that no configured slot claimed — an external spool, or a
 slot whose attribute name drifted — becomes an `External` row priced at the default,
 rather than being dropped. Mixed AMS + external jobs therefore total correctly.
-
-## Scanned spools are added to the library
-
-The same tray sensors carry newly read RFID tags, so loading a spool the library has never
-seen **appends a row for it** instead of leaving you to type it in. The printer reports the
-product name and colour but never a price, so the row starts at **0** — which reads as "no
-price of its own" — and an `INFO` line in the log tells you to set it in the tags card.
-
-The colour is named from Bambu's own palette (274 hexes, e.g. `#00AE42` → *Bambu Green
-(10501)*). A third-party hex that isn't one of theirs is not an error; the row is added
-with `Unknown Color` for you to rename.
-
-Nothing is added for an empty tray — or for a loaded spool with no readable tag. The
-library only ever holds tagged spools: without a serial there is nothing to match a row
-by later, and two generic spools cannot be told apart. (A "no tag" report in any of its
-spellings — blank, `none`, `unknown`, `unavailable`, the all-zero UID — is recognised
-case-insensitively.) Rows without a serial can still be typed into the tags card by
-hand; they are inert for slot pricing but show in the calculator's filament list.
-Re-reading a tag already in the library does nothing. A serial named as some row's **`serial_2`** counts as already known — so if you
-fill in a spool's second tag before scanning that side, it will not create a duplicate.
-Leave `serial_2` blank and the second tag becomes its own row, which you can pair up later
-by hand.
 
 ## Surviving a restart mid-print
 

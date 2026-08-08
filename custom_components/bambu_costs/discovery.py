@@ -122,6 +122,12 @@ def discover(hass: HomeAssistant, device_id: str) -> dict[str, Any]:
         key=lambda e: e.entity_id,
     )
     slots, unpaired = _pair_slots(hass, found.get(CONF_PRINT_WEIGHT), trays, devices)
+    if not slots:
+        # An idle printer (or one straight after a restart) reports no
+        # per-slot attributes at all, which used to leave the slot list
+        # empty until a print ran. The AMS devices themselves know enough
+        # to derive the names instead — only as a pre-fill, shown for review.
+        slots, unpaired = _slots_from_devices(trays, devices)
     if slots:
         found[CONF_SLOTS] = slots
 
@@ -194,6 +200,46 @@ def _pair_slots(
         for a in sorted(attributes)
     ]
     return lines, [eid for eid, _i, _t in candidates if eid not in used]
+
+
+def _slots_from_devices(
+    trays: list[er.RegistryEntry],
+    devices: dr.DeviceRegistry,
+) -> tuple[list[str], list[str]]:
+    """Derive slot lines from the AMS devices when no attributes are visible.
+
+    ha-bambulab names each AMS device ``…_AMS_{n}`` — n 1-based for regular
+    units, 128-based for AMS HT — and builds the print weight sensor's
+    per-slot attribute names from exactly that numbering ("AMS 1 Tray 2",
+    "AMS HT 1"). So with the printer idle and nothing to read verbatim, the
+    names can be *derived* from the registry rather than guessed blind. The
+    original device name is used, not the user's rename.
+
+    Still only ever a pre-fill: the setup form shows every line for review,
+    and at runtime slots match the sensor's attributes verbatim — a drifted
+    derivation prices that slot at the default, same as no line at all.
+    """
+    lines: list[str] = []
+    unpaired: list[str] = []
+    for entry in trays:
+        device = devices.async_get(entry.device_id) if entry.device_id else None
+        unit = re.search(r"_AMS_(\d+)$", device.name or "") if device else None
+        if not unit:
+            # The external spool's device carries no AMS number; it has no
+            # per-slot attribute either, so it stays a remainder.
+            unpaired.append(entry.entity_id)
+            continue
+        n = int(unit.group(1))
+        if n >= 128:
+            attribute = f"AMS HT {n - 127}"
+        else:
+            tray_no = re.search(r"tray[_ ]?(\d+)$", entry.entity_id, re.I)
+            if not tray_no:
+                unpaired.append(entry.entity_id)
+                continue
+            attribute = f"AMS {n} Tray {tray_no.group(1)}"
+        lines.append(f"{attribute}|{_short_label(attribute)}|{entry.entity_id}")
+    return sorted(lines), unpaired
 
 
 def _parse_attribute(attribute: str) -> tuple[str | None, int | None]:

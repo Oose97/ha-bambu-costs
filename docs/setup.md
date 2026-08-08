@@ -21,20 +21,30 @@ discovery walks that chain to its root. Everything else is filled in from the de
 sensors, and any AMS slots the printer is currently reporting, each paired with its tray.
 Leave it empty to configure by hand.
 
+![Picking the printer device (shown here from the options flow, which re-runs discovery)](images/setup_1.jpg)
+
 Entities are matched on their `translation_key`, not on entity-id suffixes, so a renamed
 entity is still found — `subtask_name` is displayed as "Task name", which is where
 `sensor.…_task_name` comes from, and matching on the key survives that. Slot attribute
 names are read off the print weight sensor rather than invented, and a tray is attached
 only when the pairing is unambiguous; anything doubtful is listed for you instead.
 
-The catch: the printer only reports per-slot attributes for slots the *current* job uses,
-so a discovery run while idle finds no slots and one mid-print finds only the slots in
-use. The rest are listed as unpaired trays for you to add. Re-running discovery from the
-options later picks up the rest.
+The catch: the printer only reports per-slot attributes for slots the *current* job
+uses. Attribute names visible right now are always matched verbatim; when none are
+visible at all — an idle printer, or one straight after a restart — the slot lines are
+instead **derived from the AMS devices' own names**, which carry the same numbering the
+attributes are built from. Derived lines are a pre-fill like everything else here:
+shown on the form for review, and at runtime a slot only ever matches the sensor's
+attributes verbatim. Re-running discovery from the options later refines things —
+additively: slots you already have are never dropped or relabelled by a re-scan, a
+discovered tray fills in an entry that lacked one, and new attributes are appended.
+Removing a slot is always a deliberate edit of the list.
 
 **Step 2 — sensors.** Whatever was found, shown so you can correct it before continuing.
 This is also where the optional **printer camera** goes — see
 [Job pictures](entities.md#job-pictures).
+
+![The sensors step, filled in by discovery](images/setup_2.jpg)
 
 **Step 3 — slots and rates.** Add one entry per filament source, using the attribute name
 exactly as the print weight sensor reports it:
@@ -54,6 +64,32 @@ AMS HT 1|HT|sensor.printer_ams_ht_tray_1
 
 Leave the list empty if you do not use an AMS; everything is then priced at the default.
 
+![The slots and rates step: one line per filament source, the energy and power sensors below](images/setup_3_1.jpg)
+
+The same step carries the rates and the display options — the electricity price sensor
+and its fixed fallback, the default filament price, currency, auto-logging, the online
+colour-name lookup, and the [known filament types](cards.md#jobs-table) list the jobs
+card shortens material names against:
+
+![Further down: rates, auto-log, colour naming and the known filament types](images/setup_3_2.jpg)
+
+## Electricity price
+
+Two fields on the slots-and-rates step work as a pair:
+
+- **Electricity price sensor** *(optional)* — point it at a sensor reporting your price
+  per kWh (a Nordpool spot price, a dynamic tariff, a template of your contract). When
+  set, **this is what every calculation uses**, read live — so a tariff that moves
+  mid-print is charged as it actually moved.
+- **Electricity price** — a fixed number per kWh. With a sensor configured it is *only
+  the fallback*, used for the stretches where the sensor is unavailable or reports
+  something that is not a number; the moment the sensor recovers, it takes over again.
+  Without a sensor, this number simply is the price.
+
+The fixed price is also exposed as a `number` entity, so the fallback can be adjusted
+any time without reopening the options. How the price feeds the cost integral is
+covered in [Electricity costing](costing.md).
+
 ## Currency
 
 Set during setup, prefilled with `EUR`, and changeable in the options. It is display-only —
@@ -62,6 +98,14 @@ cards, which pick it up from the integration rather than needing their own setti
 
 ## Icon
 
-Shipped with the integration in `custom_components/bambu_costs/brand/`, so it shows in
-Settings → Devices & Services with no brands-repository submission. Requires Home
-Assistant 2026.3 or newer; on older versions the default placeholder is used instead.
+Shipped with the integration in `custom_components/bambu_costs/brand/` — the official
+mechanism since Home Assistant 2026.3: local brand images are served through the
+brands proxy API and take priority over the CDN, and the central brands repository no
+longer accepts new custom integrations at all. On older Home Assistant versions the
+default placeholder shows instead.
+
+One consequence applies to every custom integration published after that cut-off: the
+HACS **store listing** fetches icons from the CDN, and an integration that is not yet
+installed has no local files to serve — so the store shows a placeholder until the
+integration is installed. Integrations that entered the brands repository before the
+change are grandfathered and keep their store icons.

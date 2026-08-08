@@ -1,26 +1,74 @@
 // Every column the table can show. `edit` marks what the user can change from
 // the card; the cover button and the tray breakdown are structured, so they
-// stay read-only. `unit` is shown in the header rather than in every cell, so
-// the cells hold plain editable values.
+// stay read-only. `unit` is shown under the header label rather than in every
+// cell, so the cells hold plain editable values and the column can be as
+// narrow as the numbers in it. Inputs are sized by measuring their actual
+// rendered text (see .grow), clamped between `min` and `max` ch; `stretch`
+// marks the one column that absorbs whatever width is left over.
 const BCJT_COLS = [
-  { k: "ts",          t: "Date",          type: "text", edit: true, nowrap: true },
-  { k: "job",         t: "Job",           type: "text", edit: true },
-  { k: "time",        t: "Print time",    type: "text", edit: true, sortKey: "mins", nowrap: true },
+  { k: "ts",          t: "Date",          type: "text", edit: true, nowrap: true, min: 13, max: 21 },
+  { k: "job",         t: "Job",           type: "text", edit: true, min: 10, max: 48, stretch: true },
+  { k: "time",        t: "Print time",    type: "text", edit: true, sortKey: "mins", nowrap: true, min: 5, max: 12 },
   { k: "layers",      t: "Layers",        type: "num",  edit: true },
   { k: "weight",      t: "Weight",        type: "num",  edit: true, unit: "g",   dp: 1 },
   { k: "length",      t: "Length",        type: "num",  edit: true, unit: "m",   dp: 2 },
-  { k: "nozzle",      t: "Nozzle",        type: "text", edit: true },
-  { k: "nozzle_type", t: "Nozzle type",   type: "text", edit: true },
+  { k: "nozzle",      t: "Nozzle",        type: "text", edit: true, min: 2, max: 6, center: true },
+  { k: "nozzle_type", t: "Nozzle type",   type: "text", edit: true, min: 6, max: 26 },
   { k: "kwh",         t: "Energy",        type: "num",  edit: true, unit: "kWh", dp: 3 },
   { k: "f_cost",      t: "Filament",      type: "num",  edit: true, unit: "$",   dp: 2 },
   { k: "p_cost",      t: "Power",         type: "num",  edit: true, unit: "$",   dp: 2 },
   { k: "cost",        t: "Total",         type: "num",  edit: true, unit: "$",   dp: 2, bold: true },
-  { k: "types",       t: "Material",      type: "text", edit: true },
-  { k: "cover",       t: "Image",         type: "cover", sortable: false },
+  { k: "types",       t: "Material",      type: "text", edit: true, min: 6, max: 30 },
+  { k: "cover",       t: "Image",         type: "cover", sortable: false, min: 11 },
   { k: "trays",       t: "Filament used", type: "trays", sortable: false },
 ];
 const BCJT_DEFAULT_ORDER = BCJT_COLS.map(c => c.k);
 const BCJT_PAGE_SIZES = [10, 20, 50, 100];
+// Table height as vh; 0 = grow with the page. Bounding the height is what
+// makes the sticky header stick and keeps the horizontal scrollbar on
+// screen — an unbounded table's scrollbar sits below the last row.
+const BCJT_HEIGHTS = [0, 50, 60, 70, 80];
+// What the printer can actually report, offered by a combo cell: focusing it
+// opens a popup listing EVERY option (a datalist would filter them against
+// the current text, hiding the alternatives exactly when a value is set),
+// while the field itself stays free text. The stored value keeps the
+// printer's own spelling; only the shown label is prettified.
+const BCJT_NOZZLE_SIZES = ["0.2", "0.4", "0.6", "0.8"];
+const BCJT_NOZZLE_TYPES = [
+  "stainless_steel",
+  "hardened_steel",
+  "high_flow_hardened_steel",
+  "tungsten_carbide",
+  "high_flow_tungsten_carbide",
+];
+
+// Known filament type names, for display only: a stored value containing one
+// (whatever brand precedes it — "SUNLU PETG", "Filalab ABS", "Bambu PLA
+// Matte") shows just the type; no match shows the full stored text. Matched
+// longest-first so "PLA Matte" wins over "PLA". The integration publishes a
+// configurable list on the sensor; this built-in one is the fallback.
+const bcjtTypeMatchers = names => names.slice()
+  .sort((a, b) => b.length - a.length)
+  .map(sku => ({
+    sku,
+    // Word-boundary-ish: the char before and after must not be alphanumeric
+    // or "+", so "PLA Tough" does not claim "PLA Tough+" (its own entry wins).
+    rx: new RegExp("(^|[^a-z0-9+])"
+      + sku.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&")
+      + "($|[^a-z0-9+])", "i"),
+  }));
+
+const BCJT_FILAMENT_TYPES = bcjtTypeMatchers([
+  "Support for PLA/PETG", "Support for ABS", "Support for PA/PET",
+  "PLA Aero", "PLA Basic", "PLA Dynamic", "PLA Galaxy", "PLA Glow", "PLA Lite",
+  "PLA Marble", "PLA Matte", "PLA Metal", "PLA Pure", "PLA Silk+", "PLA Silk",
+  "PLA Sparkle", "PLA Tough+", "PLA Tough", "PLA Translucent", "PLA Wood", "PLA-CF",
+  "PETG Basic", "PETG HF", "PETG Translucent", "PETG-CF",
+  "ABS-GF", "ABS", "ASA Aero", "ASA-CF", "ASA", "PC FR", "PC",
+  "PAHT-CF", "PA6-CF", "PA6-GF", "PA-CF", "PET-CF", "PPA-CF", "PPS-CF",
+  "TPU for AMS", "TPU 95A HF", "TPU 95A", "TPU 90A", "TPU 85A", "TPU",
+  "PVA", "PETG", "PLA",
+]);
 
 class BambuCostsJobsTable extends HTMLElement {
   setConfig(cfg) {
@@ -35,6 +83,7 @@ class BambuCostsJobsTable extends HTMLElement {
     }, cfg);
     this._sort = { key: "ts", dir: -1 };   // newest first
     this._pageSize = this._cfg.page_size;
+    this._maxH = 70;
     this._page = 0;
     this._filter = "";
     this._rows = [];
@@ -54,9 +103,17 @@ class BambuCostsJobsTable extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    const st = hass.states[this._cfg.entity];
     if (!this._cfg.currency) {
-      const st = hass.states[this._cfg.entity];
       this._cfg.currency = (st && st.attributes && st.attributes.currency) || "€";
+    }
+    // The configurable known-types list rides on the sensor; rebuild the
+    // matchers only when it actually changes.
+    const names = (st && st.attributes && st.attributes.type_names) || null;
+    const nsig = Array.isArray(names) ? names.join("|") : "";
+    if (nsig !== this._typeSig) {
+      this._typeSig = nsig;
+      this._typeMatch = Array.isArray(names) && names.length ? bcjtTypeMatchers(names) : null;
     }
     if (!this._built) { this._load(); this._render(); return; }
     if (this._busy) return;
@@ -122,6 +179,7 @@ class BambuCostsJobsTable extends HTMLElement {
       if (Array.isArray(s.hidden)) this._hidden = new Set(s.hidden);
       if (s.sortKey) this._sort = { key: s.sortKey, dir: s.sortDir === 1 ? 1 : -1 };
       if (Number(s.pageSize) > 0) this._pageSize = Number(s.pageSize);
+      if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
 
@@ -130,8 +188,26 @@ class BambuCostsJobsTable extends HTMLElement {
       localStorage.setItem(this._settingsKey(), JSON.stringify({
         order: this._order, hidden: [...this._hidden],
         sortKey: this._sort.key, sortDir: this._sort.dir, pageSize: this._pageSize,
+        maxh: this._maxH,
       }));
     } catch (e) { /* private mode — layout just will not persist */ }
+  }
+
+  // Bounded: the table scrolls inside its own box, the header sticks, and
+  // the horizontal scrollbar stays on screen. Unbounded: the wrapper must
+  // not be a vertical scroller at all — overflow-x:auto alone computes
+  // overflow-y to auto, and a fractional-zoom pixel of phantom range is
+  // enough for the browser to latch wheel gestures onto it.
+  _applyScrollMode() {
+    const el = this.querySelector(".bcjt-scroll");
+    if (!el) return;
+    if (this._maxH > 0) {
+      el.style.maxHeight = this._maxH + "vh";
+      el.style.overflowY = "auto";
+    } else {
+      el.style.maxHeight = "";
+      el.style.overflowY = "hidden";
+    }
   }
 
   // ── helpers ──────────────────────────────────────────────
@@ -155,13 +231,38 @@ class BambuCostsJobsTable extends HTMLElement {
       .padStart(2, "0")).join("").toUpperCase();
   }
 
-  _unit(col) {
-    return col.unit === "$" ? this._cfg.currency : col.unit;
+  // The configured currency, as its symbol where one is well known — cells
+  // read "0.09 €" rather than "0.09 EUR" three times per row.
+  _cur() {
+    const cur = this._cfg.currency;
+    return { EUR: "€", USD: "$", GBP: "£" }[cur] || cur;
   }
 
-  _head(col) {
-    const u = this._unit(col);
-    return this._esc(col.t) + (u ? ` (${this._esc(u)})` : "");
+  _unit(col) {
+    return col.unit === "$" ? this._cur() : col.unit;
+  }
+
+  // "SUNLU PETG" → "PETG"; "Bambu PLA Matte" → "PLA Matte"; unmatched text
+  // shows in full. Display only — the stored value is never touched.
+  _shortType(part) {
+    const t = String(part || "").trim();
+    if (!t) return "";
+    const hit = (this._typeMatch || BCJT_FILAMENT_TYPES).find(m => m.rx.test(t));
+    return hit ? hit.sku : t;
+  }
+
+  _typesDisp(v) {
+    return String(v || "").split(",").map(p => this._shortType(p)).filter(Boolean).join(", ");
+  }
+
+  // "high_flow_hardened_steel" → "HF Hardened Steel". Generic on purpose: an
+  // unlisted value still reads well instead of needing a hand-kept map.
+  _typeDisp(v) {
+    return String(v || "")
+      .split("_")
+      .map(w => w ? w[0].toUpperCase() + w.slice(1) : w)
+      .join(" ")
+      .replace(/^High Flow\b/, "HF");
   }
 
   // ── view pipeline ────────────────────────────────────────
@@ -170,7 +271,7 @@ class BambuCostsJobsTable extends HTMLElement {
     if (!q) return this._rows;
     return this._rows.filter(r => {
       const trays = (r.trays || []).map(t => `${t.label} ${t.type || ""} ${t.name}`).join(" ");
-      return `${r.ts} ${r.job} ${r.nozzle} ${r.nozzle_type} ${r.types} ${trays}`
+      return `${r.ts} ${r.job} ${r.nozzle} ${r.nozzle_type} ${this._typeDisp(r.nozzle_type)} ${r.types} ${trays}`
         .toLowerCase().includes(q);
     });
   }
@@ -187,21 +288,116 @@ class BambuCostsJobsTable extends HTMLElement {
   }
 
   // Trays arrive as structured objects from the integration, so there is no
-  // delimited string left to unpick.
-  _traysCell(trays) {
+  // delimited string left to unpick. The cell is a compact summary — one dot
+  // per slot, the slot count and the summed weight — and the detail lives in
+  // a modal, so a multi-material job does not stretch every row it is in.
+  _traysCell(r) {
+    const trays = r.trays;
     if (!Array.isArray(trays) || !trays.length) return `<span class="muted">—</span>`;
-    return trays.map(t => {
+    const dots = trays.map(t => {
       const rgb = this._parseColor(t.color || "");
-      const dot = rgb ? `<i class="dot" style="background:${this._css(rgb)}"></i>` : "";
-
-      const weight = isNaN(parseFloat(t.weight)) ? "" : `${parseFloat(t.weight).toFixed(2)} g`;
-      const cNum = parseFloat(t.cost);
-      const cost = isNaN(cNum) ? "" : `<span class="tcost"> · ${cNum.toFixed(2)} ${this._esc(this._cfg.currency)}</span>`;
-
-      const price = isNaN(parseFloat(t.price)) ? "" : ` @ ${parseFloat(t.price).toFixed(2)} ${this._cfg.currency}/kg`;
-      const tip = this._esc(`${t.type ? t.type + " — " : ""}${t.name || t.label || ""}${price}`);
-      return `<span class="tray" title="${tip}">${dot}${this._esc(t.label || "?")} ${weight}${cost}</span>`;
+      return rgb ? `<i class="dot" style="background:${this._css(rgb)}"></i>` : "";
     }).join("");
+    const total = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
+    // Full names here, brand included — the Material column is the one that
+    // shortens; the per-slot detail tells the whole story.
+    const tip = this._esc(trays.map(t =>
+      `${t.label || "?"}${t.type ? " " + t.type : ""} ${(parseFloat(t.weight) || 0).toFixed(1)} g`
+    ).join("\n"));
+    return `<button class="trbtn" data-k="${r._k}" title="${tip}">${dots}` +
+      `${trays.length} slot${trays.length === 1 ? "" : "s"} · ${total.toFixed(1)} g</button>`;
+  }
+
+  _openTrays(r) {
+    const trays = Array.isArray(r.trays) ? r.trays : [];
+    const cur = this._esc(this._cur());
+
+    // The modal edits the row's tray objects in place — raw values, no
+    // display shortening, so what is edited is exactly what is stored.
+    const rowHtml = (t, i) => `
+      <div class="bcjt-target trrow">
+        <input type="color" class="tsw" data-i="${i}" data-tf="color"
+          value="${this._esc(/^#[0-9a-f]{6}/i.test(t.color || "") ? t.color.slice(0, 7) : "#808080")}"
+          title="Colour">
+        <span class="bcjt-target-label">
+          <span class="trline">
+            <input class="cell tin" data-i="${i}" data-tf="label" title="Slot"
+              value="${this._esc(t.label || "")}" style="width:6ch">
+            <input class="cell tin" data-i="${i}" data-tf="type" placeholder="material"
+              value="${this._esc(t.type || "")}" style="width:15ch">
+          </span>
+          <span class="trline">
+            <input class="cell tin" data-i="${i}" data-tf="name" placeholder="colour name"
+              value="${this._esc(t.name || "")}" style="width:23ch">
+          </span>
+        </span>
+        <span class="trnum">
+          <span class="trline"><input class="cell tin num" type="number" step="any" data-i="${i}"
+            data-tf="weight" value="${isNaN(parseFloat(t.weight)) ? "" : parseFloat(t.weight)}"
+            style="width:8ch"><span class="cu">g</span></span>
+          <span class="trline"><input class="cell tin num" type="number" step="any" data-i="${i}"
+            data-tf="price" value="${isNaN(parseFloat(t.price)) ? "" : parseFloat(t.price)}"
+            style="width:8ch"><span class="cu">${cur}/kg</span></span>
+          <span class="trline"><input class="cell tin num" type="number" step="any" data-i="${i}"
+            data-tf="cost" value="${isNaN(parseFloat(t.cost)) ? "" : parseFloat(t.cost)}"
+            style="width:8ch"><span class="cu">${cur}</span></span>
+        </span>
+      </div>`;
+
+    const ov = document.createElement("div");
+    ov.className = "bcjt-modal";
+    ov.innerHTML = `
+      <div class="bcjt-sheet" style="width:min(94vw,520px)" role="dialog" aria-modal="true">
+        <div class="bcjt-sheet-head">
+          <div class="bcjt-sheet-title">Filament used</div>
+          <div class="bcjt-target-cur">${this._esc(r.job || "")}${r.ts ? ` · ${this._esc(r.ts)}` : ""}</div>
+        </div>
+        <div class="bcjt-sheet-body">${trays.map(rowHtml).join("")
+          || `<div class="bcjt-target"><span class="muted">No per-slot data</span></div>`}</div>
+        <div class="bcjt-sheet-foot">
+          <span class="trtotal" style="align-self:center"></span>
+          <button class="tbtn close">Done</button>
+        </div>
+      </div>`;
+
+    const totals = () => {
+      const w = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
+      const c2 = trays.reduce((s, t) => s + (parseFloat(t.cost) || 0), 0);
+      ov.querySelector(".trtotal").textContent = `${w.toFixed(1)} g · ${c2.toFixed(2)} ${this._cur()}`;
+    };
+    totals();
+
+    ov.addEventListener("change", e => {
+      const el = e.target.closest("[data-tf]");
+      if (!el) return;
+      const t = trays[Number(el.dataset.i)];
+      if (!t) return;
+      const f = el.dataset.tf;
+      if (f === "weight" || f === "price" || f === "cost") {
+        t[f] = parseFloat(String(el.value).replace(",", ".")) || 0;
+        // Weight or price moved: the line's cost follows, the same way the
+        // logger computed it. A direct cost edit stands on its own.
+        if (f !== "cost") {
+          t.cost = Math.round((parseFloat(t.weight) || 0) / 1000 * (parseFloat(t.price) || 0) * 1e4) / 1e4;
+          const ci = ov.querySelector(`[data-i="${el.dataset.i}"][data-tf="cost"]`);
+          if (ci) ci.value = t.cost;
+        }
+      } else {
+        t[f] = el.value;
+      }
+      this._edited.add(r._k);
+      this._dirty = true;
+      totals();
+      this._updateFoot();
+    });
+
+    // Repaint on close so the summary button reflects the edits.
+    const close = () => { ov.remove(); document.removeEventListener("keydown", esc); this._paint(); };
+    const esc = e => { if (e.key === "Escape") close(); };
+    ov.addEventListener("click", e => { if (e.target === ov) close(); });
+    ov.querySelector("button.close").addEventListener("click", close);
+    document.addEventListener("keydown", esc);
+    this.appendChild(ov);
   }
 
   // ── image modal ──────────────────────────────────────────
@@ -250,29 +446,74 @@ class BambuCostsJobsTable extends HTMLElement {
           table.bcjt { width:100%; border-collapse:collapse; font-size:12.5px; }
           table.bcjt th { text-align:left; font-weight:500; color:var(--secondary-text-color);
             font-size:11px; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap;
-            padding:6px; border-bottom:1px solid var(--divider-color); user-select:none; }
+            padding:6px 4px; border-bottom:1px solid var(--divider-color); user-select:none;
+            /* Sticks when the wrapper is height-bounded. The shadow redraws
+               the divider: collapsed borders do not travel with sticky cells.
+               Opaque background, or rows show through while scrolled. */
+            position:sticky; top:0; z-index:2;
+            background:var(--ha-card-background, var(--card-background-color));
+            box-shadow:0 1px 0 var(--divider-color); }
+          table.bcjt th.stretch { width:99%; }
           table.bcjt th.s { cursor:pointer; }
           table.bcjt th.s:hover { color:var(--primary-text-color); }
           table.bcjt th.active { color:var(--primary-color); }
-          table.bcjt td { padding:4px 6px; border-bottom:1px solid var(--divider-color);
+          table.bcjt td { padding:4px 3px; border-bottom:1px solid var(--divider-color);
             vertical-align:middle; }
           table.bcjt td.nw, table.bcjt th.nw { white-space:nowrap; }
           table.bcjt td.num { text-align:right; white-space:nowrap; }
+          table.bcjt td.ctr { text-align:center; }
+          table.bcjt td.ctr input.cell { text-align:center; }
           table.bcjt td.b input.cell { font-weight:600; }
           .muted { opacity:.5; }
-          input.cell { width:100%; min-width:70px; padding:5px 7px; border-radius:7px;
-            border:1px solid transparent; background:transparent; box-sizing:border-box;
-            color:var(--primary-text-color); font-size:12.5px; }
+          /* An input cannot size itself to its text, so a hidden twin does it:
+             the wrapper is a one-cell grid holding the input and a ::after
+             carrying the same text in the same font, and the wider of the two
+             — always the text — sets the width. Pixel-accurate where the
+             size attribute's character estimate kept clipping. */
+          .grow { display:inline-grid; align-items:center; vertical-align:middle; }
+          /* Twin and input must share the same font metrics or their widths
+             drift and long values clip. font and letter-spacing are pinned on
+             both, and the twin carries two trailing spaces plus wider right
+             padding as slack for the drift a themed frontend still causes. */
+          .grow::after { content:attr(data-v) " "; visibility:hidden; white-space:pre;
+            grid-area:1/1; font:inherit; font-size:12.5px; letter-spacing:inherit;
+            padding:4px 9px 4px 6px; border:1px solid transparent; }
+          .grow input { grid-area:1/1; width:100%; box-sizing:border-box; min-width:0; }
+          input.cell { padding:4px 6px; border-radius:7px;
+            border:1px solid transparent; background:transparent;
+            color:var(--primary-text-color); font:inherit; font-size:12.5px;
+            letter-spacing:inherit; }
+          .cu { font-size:11px; color:var(--secondary-text-color); margin-left:1px;
+            white-space:nowrap; }
+          table.bcjt td.cvr { text-align:center; padding:4px 8px; }
+          .bcjt-dd { position:fixed; z-index:100000; background:var(--card-background-color);
+            border:1px solid var(--divider-color); border-radius:8px; padding:4px 0;
+            box-shadow:0 6px 20px rgba(0,0,0,.28); font-size:12.5px;
+            max-height:40vh; overflow-y:auto; }
+          .bcjt-dd .opt { padding:5px 12px; cursor:pointer; white-space:nowrap;
+            color:var(--primary-text-color); }
+          .bcjt-dd .opt:hover { background:rgba(var(--rgb-primary-color),.12); }
+          .bcjt-dd .opt.on { color:var(--primary-color); font-weight:600; }
           input.cell:hover { border-color:var(--divider-color); }
           input.cell:focus { border-color:var(--primary-color);
             background:var(--card-background-color); outline:none; }
-          input.cell.num { text-align:right; min-width:64px; width:74px; }
-          input.cell.wide { min-width:130px; }
-          .tray { display:inline-flex; align-items:center; white-space:nowrap;
-            margin:1px 6px 1px 0; font-size:11.5px; }
+          input.cell.num { text-align:right; appearance:textfield; -moz-appearance:textfield; }
+          input.cell.num::-webkit-outer-spin-button,
+          input.cell.num::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
           .tcost { opacity:.65; }
           .dot { display:inline-block; width:9px; height:9px; border-radius:2px;
             margin-right:4px; box-shadow:0 0 0 1px var(--secondary-text-color); }
+          .trrow .trline { display:flex; gap:4px; align-items:center; margin:1px 0; }
+          .trrow input.tin { padding:3px 6px; }
+          .trrow .tsw { width:26px; height:26px; padding:0; border:none; background:none;
+            border-radius:5px; cursor:pointer; flex:none;
+            box-shadow:0 0 0 1px var(--divider-color); }
+          .trnum { display:flex; flex-direction:column; align-items:flex-end; }
+          button.trbtn { display:inline-flex; align-items:center; background:none;
+            border:1px solid var(--divider-color); color:var(--primary-text-color);
+            border-radius:7px; padding:4px 8px; font-size:11.5px; cursor:pointer;
+            white-space:nowrap; }
+          button.trbtn:hover { border-color:var(--primary-color); }
           button.cbtn { background:none; border:1px solid var(--divider-color);
             color:var(--primary-color); border-radius:7px; padding:4px 8px;
             font-size:11.5px; cursor:pointer; white-space:nowrap; }
@@ -341,7 +582,10 @@ class BambuCostsJobsTable extends HTMLElement {
               <span class="pg"></span>
               <button class="next">Next ›</button>
             </div>
-            <button class="save" disabled>Save</button>
+            <span class="bcjt-actions">
+              <button class="tbtn discard" style="display:none">Discard</button>
+              <button class="save" disabled>Save</button>
+            </span>
           </div>
         </div>
       </ha-card>`;
@@ -357,6 +601,13 @@ class BambuCostsJobsTable extends HTMLElement {
     this.querySelector(".settings").addEventListener("click", () => this._openSettings());
     this.querySelector(".reload").addEventListener("click", () => this._reload());
     this.querySelector("button.save").addEventListener("click", () => this._save());
+    this.querySelector("button.discard").addEventListener("click", () => {
+      const n = this._edited.size;
+      if (!confirm(`Discard ${n} unsaved edit${n === 1 ? "" : "s"}?`)) return;
+      this._load();
+      this._paint();
+      this._msg("Changes discarded.");
+    });
 
     this.querySelector("thead").addEventListener("click", e => {
       // A click that landed on a header sorts; nothing else lives up there.
@@ -381,19 +632,85 @@ class BambuCostsJobsTable extends HTMLElement {
     });
 
     this.querySelector("tbody").addEventListener("click", e => {
-      const b = e.target.closest("button.cbtn");
-      if (!b) return;
-      this._openImage(b.dataset.src, b.dataset.cap);
+      const cover = e.target.closest("button.cbtn");
+      if (cover) { this._openImage(cover.dataset.src, cover.dataset.cap); return; }
+      const trays = e.target.closest("button.trbtn");
+      if (trays) {
+        const row = this._row(trays.dataset.k);
+        if (row) this._openTrays(row);
+      }
     });
 
     // One delegated listener instead of one per input: the body repaints on
     // every sort, page and filter change.
     this.querySelector("tbody").addEventListener("change", e => {
-      const inp = e.target.closest("input[data-f]");
+      const inp = e.target.closest("input[data-f], select[data-f]");
       if (inp) this._edit(inp);
     });
 
+    // Inputs grow and shrink with what is being typed, within the column's
+    // bounds: the hidden twin (.grow::after) tracks the value live.
+    this.querySelector("tbody").addEventListener("input", e => {
+      const inp = e.target.closest(".grow input");
+      if (!inp) return;
+      const col = BCJT_COLS.find(c => c.k === inp.dataset.f);
+      inp.parentElement.dataset.v = String(inp.value).slice(0, (col && col.max) || 40);
+    });
+
+    // The option popup for the nozzle combo cells: opens on focus, closes on
+    // blur, Escape, or the table scrolling under it.
+    const tbody = this.querySelector("tbody");
+    tbody.addEventListener("focusin", e => {
+      const inp = e.target.closest("input.combo");
+      if (inp) this._openCombo(inp);
+    });
+    tbody.addEventListener("focusout", () => this._closeCombo());
+    tbody.addEventListener("keydown", e => {
+      if (e.key === "Escape") this._closeCombo();
+    });
+    this.querySelector(".bcjt-scroll").addEventListener("scroll", () => this._closeCombo());
+
+    this._applyScrollMode();
     this._paint();
+  }
+
+  _openCombo(inp) {
+    this._closeCombo();
+    const f = inp.dataset.f;
+    const opts = f === "nozzle" ? BCJT_NOZZLE_SIZES : BCJT_NOZZLE_TYPES;
+    const label = v => f === "nozzle" ? v.replace(/^0(?=\.)/, "") : this._typeDisp(v);
+
+    const dd = document.createElement("div");
+    dd.className = "bcjt-dd";
+    dd.innerHTML = opts.map(o => {
+      const l = label(o);
+      return `<div class="opt${l === inp.value ? " on" : ""}" data-v="${this._esc(l)}">${this._esc(l)}</div>`;
+    }).join("");
+
+    // mousedown, not click: click would blur the input first, and the
+    // focusout close would eat the selection.
+    dd.addEventListener("mousedown", e => {
+      e.preventDefault();
+      const opt = e.target.closest(".opt");
+      if (!opt) return;
+      inp.value = opt.dataset.v;
+      this._closeCombo();
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    this.appendChild(dd);
+    const r = inp.getBoundingClientRect();
+    dd.style.left = r.left + "px";
+    dd.style.minWidth = Math.max(r.width, 90) + "px";
+    // Below the cell, unless that would run off the screen.
+    const h = dd.offsetHeight;
+    dd.style.top = (r.bottom + h + 4 > window.innerHeight ? r.top - h - 2 : r.bottom + 2) + "px";
+    this._dd = dd;
+  }
+
+  _closeCombo() {
+    if (this._dd) { this._dd.remove(); this._dd = null; }
   }
 
   _headHtml() {
@@ -402,42 +719,96 @@ class BambuCostsJobsTable extends HTMLElement {
       const on = c.sortable === false ? "" : "s";
       const active = on && this._sort.key === sk;
       const arrow = active ? (this._sort.dir === 1 ? " ▲" : " ▼") : "";
-      return `<th class="${on} ${c.nowrap ? "nw" : ""} ${active ? "active" : ""}" data-k="${sk}"
-        ${c.type === "num" ? 'style="text-align:right"' : ""}>${this._head(c)}${arrow}</th>`;
+      // Units live in the cells, next to their values; the header is just
+      // the label, on one line.
+      const align = c.type === "num" ? "right" : c.center ? "center" : "";
+      return `<th class="${on} ${active ? "active" : ""} ${c.stretch ? "stretch" : ""}"
+        data-k="${sk}" ${align ? `style="text-align:${align}"` : ""}>${
+        this._esc(c.t)}${arrow}</th>`;
     }).join("");
   }
 
   _cell(col, r) {
     if (col.type === "cover") {
+      // min-width on every cell, the empty ones too, so the column does not
+      // resize between pages; centred with its own padding so the slack sits
+      // on BOTH sides of the button instead of all after it.
+      const w = `style="min-width:${col.min || 11}ch"`;
       const f = r.cover;
-      if (!f || f === "—") return `<td><span class="muted">—</span></td>`;
+      if (!f || f === "—") return `<td class="nw cvr" ${w}><span class="muted">—</span></td>`;
       const src = r.cover_url || (this._cfg.image_base + f);
-      return `<td class="nw"><button class="cbtn" data-src="${this._esc(src)}"
+      return `<td class="nw cvr" ${w}><button class="cbtn" data-src="${this._esc(src)}"
         data-cap="${this._esc(r.job || f)}" title="${this._esc(f)}">🖼 View</button></td>`;
     }
-    if (col.type === "trays") return `<td>${this._traysCell(r.trays)}</td>`;
+    if (col.type === "trays") return `<td class="nw">${this._traysCell(r)}</td>`;
 
-    const cls = [col.type === "num" ? "num" : "", col.nowrap ? "nw" : "", col.bold ? "b" : ""]
-      .filter(Boolean).join(" ");
+    const cls = [col.type === "num" ? "num" : "", col.center ? "ctr" : "",
+      col.nowrap ? "nw" : "", col.bold ? "b" : ""].filter(Boolean).join(" ");
     if (!col.edit) return `<td class="${cls}">${this._esc(r[col.k] ?? "—")}</td>`;
+
+    if (col.k === "nozzle" || col.k === "nozzle_type") {
+      const raw = String(r[col.k] ?? "").trim();
+      const v = col.k === "nozzle" ? raw.replace(/^0(?=[.,])/, "") : this._typeDisp(raw);
+      return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
+        style="min-width:${col.min || 4}ch"><input class="cell combo" type="text"
+        autocomplete="off" data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"></span></td>`;
+    }
 
     if (col.type === "num") {
       const n = parseFloat(r[col.k]);
       const v = isNaN(n) ? "" : n.toFixed(col.dp === undefined ? 0 : col.dp);
-      return `<td class="${cls}"><input class="cell num" type="number" step="any"
-        data-k="${r._k}" data-f="${col.k}" value="${v}"></td>`;
+      const u = this._unit(col);
+      return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
+        style="min-width:${col.min || 4}ch"><input class="cell num"
+        type="number" step="any" data-k="${r._k}" data-f="${col.k}" value="${v}"></span>${
+        u ? `<span class="cu">${this._esc(u)}</span>` : ""}</td>`;
     }
-    const wide = col.k === "job" || col.k === "types" ? " wide" : "";
-    return `<td class="${cls}"><input class="cell${wide}" type="text"
-      data-k="${r._k}" data-f="${col.k}" value="${this._esc(r[col.k] ?? "")}"></td>`;
+    let v = String(r[col.k] ?? "");
+    let title = "";
+    // Bambu's nozzles are all sub-millimetre (0.2–0.8), so the leading zero
+    // says nothing — ".4" reads cleaner. A 1.0+ value shows as-is, and the
+    // stored data keeps the zero either way (the edit path restores it).
+    if (col.k === "nozzle") v = v.replace(/^0(?=[.,])/, "");
+    if (col.k === "types") {
+      const short = this._typesDisp(v);
+      if (short !== v) title = v;  // the tooltip keeps the full stored value
+      v = short;
+    }
+    return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
+      style="min-width:${col.min || 4}ch"><input class="cell"
+      type="text" data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"${
+      title ? ` title="${this._esc(title)}"` : ""}></span></td>`;
+  }
+
+  // What the hidden twin measures. Capped at the column's maximum characters
+  // rather than with max-width: the twin's text is incompressible by design
+  // (that is what stops the table crushing the column), so a CSS clamp on the
+  // box would not hold — a shorter measurement is the only cap that does.
+  // A value past the cap scrolls inside its input instead of widening it.
+  _twin(col, value) {
+    return this._esc(String(value).slice(0, col.max || 40));
   }
 
   _edit(el) {
     const row = this._row(el.dataset.k);
     if (!row) return;
     const f = el.dataset.f;
+
     if (BCJT_COLS.find(c => c.k === f && c.type === "num")) {
       row[f] = parseFloat(String(el.value).replace(",", ".")) || 0;
+    } else if (f === "nozzle") {
+      // The display drops the leading zero; the data never does.
+      const t = el.value.trim().replace(",", ".");
+      row[f] = t.startsWith(".") ? "0" + t : t;
+    } else if (f === "nozzle_type") {
+      // The combo shows pretty labels; a label (or the raw spelling, any
+      // case) maps back to the printer's own value. Anything else is the
+      // user's free text and is stored as typed.
+      const t = el.value.trim();
+      const hit = BCJT_NOZZLE_TYPES.find(o =>
+        o.toLowerCase() === t.toLowerCase()
+        || this._typeDisp(o).toLowerCase() === t.toLowerCase());
+      row[f] = hit || t;
     } else {
       row[f] = el.value;
       // The minutes behind the print-time text are what sorting and the file
@@ -480,6 +851,8 @@ class BambuCostsJobsTable extends HTMLElement {
       + (this._dirty ? ` · ${this._edited.size} unsaved edit${this._edited.size === 1 ? "" : "s"}` : "");
     const b = this.querySelector("button.save");
     if (b && !this._busy) { b.disabled = !this._dirty; b.textContent = "Save"; }
+    const d = this.querySelector("button.discard");
+    if (d) d.style.display = this._dirty && !this._busy ? "" : "none";
   }
 
   _msg(text, kind) {
@@ -514,6 +887,16 @@ class BambuCostsJobsTable extends HTMLElement {
           (BCJT_PAGE_SIZES.includes(this._pageSize) ? BCJT_PAGE_SIZES
             : BCJT_PAGE_SIZES.concat(this._pageSize).sort((a, b) => a - b))
           .map(n => `<option value="${n}"${this._pageSize === n ? " selected" : ""}>${n}</option>`).join("")
+        }</select>
+      </div>
+      <div class="bcjt-target">
+        <span class="bcjt-target-label">
+          <span class="bcjt-target-name">Table height</span>
+          <span class="bcjt-target-cur">Bounded keeps the header and the bottom scrollbar on screen</span>
+        </span>
+        <select data-maxh>${BCJT_HEIGHTS.map(n =>
+          `<option value="${n}"${this._maxH === n ? " selected" : ""}>${
+            n ? n + "% of screen" : "Unlimited"}</option>`).join("")
         }</select>
       </div>
       <div class="bcjt-target"><span class="bcjt-target-label">
@@ -568,6 +951,10 @@ class BambuCostsJobsTable extends HTMLElement {
         this._page = 0;
         this._saveSettings(); this._paint();
       });
+      body.querySelector("[data-maxh]").addEventListener("change", e => {
+        this._maxH = Number(e.target.value) || 0;
+        this._saveSettings(); this._applyScrollMode();
+      });
       body.querySelectorAll("[data-toggle]").forEach(b => {
         b.addEventListener("click", e => {
           const key = e.currentTarget.dataset.toggle;
@@ -598,8 +985,9 @@ class BambuCostsJobsTable extends HTMLElement {
       this._hidden = new Set();
       this._sort = { key: "ts", dir: -1 };
       this._pageSize = this._cfg.page_size;
+      this._maxH = 70;
       this._page = 0;
-      this._saveSettings(); render(); this._paint();
+      this._saveSettings(); render(); this._paint(); this._applyScrollMode();
     });
     document.addEventListener("keydown", esc);
     this.appendChild(ov);

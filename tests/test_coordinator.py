@@ -99,6 +99,28 @@ def test_reconnect_resync_banks_idle_and_records_no_print():
     assert c.value("cost_at_print_end") == pytest.approx(0.30)
 
 
+def test_idle_window_survives_a_reconnect_resync():
+    """A restart mid-idle must not truncate the idle figure.
+
+    The resync moves the banking marker — that is what stops double
+    counting — but the idle window is measured off its own marker, set only
+    when a print really ends, so the figure spans the whole window.
+    """
+    c = make()
+    c.mark_print_start(new_job=True)
+    c.cost_total = 0.10
+    c.mark_print_end()                # idle window opens at 0.10
+    c.cost_total = 0.20
+    c._saw_print_start = False
+    c.mark_print_end()                # reconnect resync mid-idle
+    c.cost_total = 0.25
+    c.mark_print_start(new_job=True)
+    assert c.value("last_idle_cost") == pytest.approx(0.15), \
+        "the whole window, not just the post-resync segment"
+    assert c.value("total_cost") == pytest.approx(100.25), \
+        "and still every cent banked exactly once"
+
+
 def test_resync_flapping_banks_each_stretch_once():
     c = make()
     for step in (0.10, 0.20, 0.30):
@@ -154,6 +176,22 @@ def test_resync_and_real_end_are_distinguishable():
     c.mark_print_start(new_job=True)
     c.cost_total = 0.35
     assert c.mark_print_end() == pytest.approx(0.05), "a real end returns the stint"
+
+
+def test_session_power_cost_follows_the_running_print():
+    """The live session sensor: the integral while running, the last print's
+    figure once it ends — never the idle accruing after the finish."""
+    c = make()
+    assert c.print_running is False
+    c.mark_print_start(new_job=True)
+    assert c.print_running is True
+    c.cost_total = 0.04
+    assert c.spend_since("cost_at_print_start") == pytest.approx(0.04)
+    c.mark_print_end()
+    assert c.print_running is False
+    assert c.value("last_print_power_cost") == pytest.approx(0.04)
+    c.cost_total = 0.09   # idle after the finish must not leak into the figure
+    assert c.value("last_print_power_cost") == pytest.approx(0.04)
 
 
 def test_print_minutes_measured_and_fallback():
@@ -229,6 +267,33 @@ def test_next_job_can_log_again():
     assert c.appended == 2
 
 
+def test_breakdown_prefers_the_tag_librarys_filament_name():
+    """The library's curated name beats the printer's echo of the tag.
+
+    A clone-tagged SUNLU spool reads as "Bambu PETG HF" on the tray, but the
+    user has named it properly in the library; the log should carry their
+    name. A spool the library does not know keeps the printer's report.
+    """
+    from custom_components.bambu_costs.coordinator import SlotDef
+
+    c = make()
+    slot = SlotDef(attribute="AMS 1 Tray 1", label="A1", entity="sensor.tray_1")
+    c.slots = [slot]
+    c._attrs = lambda key: {"AMS 1 Tray 1": 10.0}
+    c.data = {"tags": [{"serial": "AAA", "serial_2": "",
+                        "filament": "SUNLU PETG HS Matte",
+                        "color_name": "White", "cost_per_kg": 9.35}]}
+    tray = {"available": True, "name": "Bambu PETG HF", "material": "PETG",
+            "tag_uid": "AAA", "color": "#FFFFFF"}
+    c.tray_info = lambda s: tray
+
+    assert c.breakdown(remember=False)["slots"][0]["filament"] == "SUNLU PETG HS Matte"
+
+    tray = {"available": True, "name": "Bambu PETG HF", "material": "PETG",
+            "tag_uid": "", "color": "#FFFFFF"}
+    assert c.breakdown(remember=False)["slots"][0]["filament"] == "Bambu PETG HF"
+
+
 def test_job_row_names_each_material_once():
     c = make()
     slots = [
@@ -251,10 +316,37 @@ def test_job_row_names_each_material_once():
 
     row = c.build_job_row({})
     assert row["filament_type"] == "PLA Basic, PETG HF"
-    assert [t["type"] for t in row["trays"]] == ["PLA Basic", "PLA Basic", "PETG HF"]
+    # The per-tray detail keeps the full product name, brand included; only
+    # the aggregated column and its display are shortened.
+    assert [t["type"] for t in row["trays"]] == [
+        "Bambu PLA Basic", "Bambu PLA Basic", "Bambu PETG HF"]
 
     forced = c.build_job_row({"filament_type": "hand-typed"})
     assert forced["filament_type"] == "hand-typed", "the override wins"
+
+
+def test_color_name_prefers_palette_then_api_then_placeholder():
+    c = make()
+    called = []
+
+    async def fake_lookup(code):
+        called.append(code)
+        return "Jade Dream"
+
+    c._async_lookup_color_name = fake_lookup
+
+    # A Bambu colour never goes online.
+    assert _run(c._async_resolved_color_name("#00AE42")) == "Bambu Green (10501)"
+    assert called == []
+
+    # An unknown hex asks the API when the option allows it (the default).
+    assert _run(c._async_resolved_color_name("#123456")) == "Jade Dream"
+    assert called == ["#123456"]
+
+    # With the option off, the placeholder stands and nothing is called.
+    c.entry.data["color_name_api"] = False
+    assert _run(c._async_resolved_color_name("#123456")) == "Unknown Color"
+    assert called == ["#123456"]
 
 
 def test_generic_spool_scan_never_writes_a_library_row():

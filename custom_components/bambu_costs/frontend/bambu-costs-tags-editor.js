@@ -37,6 +37,9 @@ class BambuCostsTagsEditor extends HTMLElement {
     // change what is written.
     this._order = BTE_DEFAULT_ORDER.slice();
     this._hidden = new Set();
+    // Table height as vh; 0 = grow with the page. Bounding it is what makes
+    // the sticky header stick on a long library.
+    this._maxH = 70;
     this._restoreCols();
     this._built = false;
     this._busy = false;
@@ -46,11 +49,15 @@ class BambuCostsTagsEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    const st = hass.states[this._cfg.entity];
     if (!this._cfg.unit) {
-      const st = hass.states[this._cfg.entity];
       const cur = st && st.attributes && st.attributes.currency;
       this._cfg.unit = cur ? `${cur}/kg` : "EUR/kg";
     }
+    // The palette's colour names, published by the integration for the
+    // colour cell's dropdown.
+    const names = st && st.attributes && st.attributes.color_names;
+    if (Array.isArray(names)) this._colorNames = names;
     if (!this._built) { this._load(); this._render(); return; }
     if (this._busy) return;
     const sig = JSON.stringify(this._sensorData());
@@ -161,6 +168,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       }
       if (Array.isArray(s.hidden)) this._hidden = new Set(s.hidden);
       if (typeof s.expandDefault === "boolean") this._expandDefault = s.expandDefault;
+      if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
 
@@ -168,8 +176,24 @@ class BambuCostsTagsEditor extends HTMLElement {
     try {
       localStorage.setItem(this._colsKey(),
         JSON.stringify({ order: this._order, hidden: [...this._hidden],
-                         expandDefault: this._expandDefault }));
+                         expandDefault: this._expandDefault, maxh: this._maxH }));
     } catch (e) { /* private mode — layout just will not persist */ }
+  }
+
+  // Bounded: the table scrolls inside its own box and the header sticks.
+  // Unbounded: keep the wrapper from being a vertical scroller at all —
+  // overflow-x:auto alone computes overflow-y to auto, and a phantom pixel
+  // of range is enough for the browser to latch wheel gestures onto it.
+  _applyScrollMode() {
+    const el = this.querySelector(".bte-scroll");
+    if (!el) return;
+    if (this._maxH > 0) {
+      el.style.maxHeight = this._maxH + "vh";
+      el.style.overflowY = "auto";
+    } else {
+      el.style.maxHeight = "";
+      el.style.overflowY = "hidden";
+    }
   }
 
   // ── pair expansion ───────────────────────────────────────────────────────
@@ -323,7 +347,13 @@ class BambuCostsTagsEditor extends HTMLElement {
           table.bte { width:100%; border-collapse:collapse; font-size:13px; }
           table.bte th { text-align:left; font-weight:500; color:var(--secondary-text-color);
             font-size:11px; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap;
-            padding:4px 13px; border-bottom:1px solid var(--divider-color); }
+            padding:4px 13px; border-bottom:1px solid var(--divider-color);
+            /* Sticks when the wrapper is height-bounded. The shadow redraws
+               the divider: collapsed borders do not travel with sticky cells.
+               Opaque background, or rows show through while scrolled. */
+            position:sticky; top:0; z-index:2;
+            background:var(--ha-card-background, var(--card-background-color));
+            box-shadow:0 1px 0 var(--divider-color); }
           table.bte th.tight { padding:4px 6px; }
           .phead { display:inline-block; width:74px; text-align:right; padding-right:7px; }
           table.bte td { padding:4px 6px; border-bottom:1px solid var(--divider-color); }
@@ -377,6 +407,19 @@ class BambuCostsTagsEditor extends HTMLElement {
           .bte-target-cur { font-size:11px; color:var(--secondary-text-color); }
           .bte-sheet-foot { padding:10px 16px; border-top:1px solid var(--divider-color);
             display:flex; justify-content:flex-end; }
+          .bte-sheet select { padding:5px 8px; border-radius:7px; font-size:12.5px;
+            border:1px solid var(--divider-color); background:var(--card-background-color);
+            color:var(--primary-text-color); }
+          /* The colour-name dropdown: ~10 rows tall, the rest scrolls. */
+          .bte-dd { position:fixed; z-index:100000; background:var(--card-background-color);
+            border:1px solid var(--divider-color); border-radius:8px; padding:4px 0;
+            box-shadow:0 6px 20px rgba(0,0,0,.28); font-size:12.5px;
+            max-height:290px; overflow-y:auto; }
+          .bte-dd .opt { padding:5px 12px; cursor:pointer; white-space:nowrap;
+            color:var(--primary-text-color); }
+          .bte-dd .opt:hover { background:rgba(var(--rgb-primary-color),.12); }
+          .bte-dd .opt.on { color:var(--primary-color); font-weight:600; }
+          .bte-dd .opt.muted { opacity:.55; cursor:default; }
           /* A spool's two rows read as one block. */
           table.bte tr.paired td { border-bottom-color:transparent; }
           /* …unless the pair is collapsed — then the first row is the block. */
@@ -427,7 +470,10 @@ class BambuCostsTagsEditor extends HTMLElement {
           </div>
           <div class="bte-foot">
             <span class="bte-count"></span>
-            <button class="save" disabled>Save</button>
+            <span>
+              <button class="tbtn discard" style="display:none">Discard</button>
+              <button class="save" disabled>Save</button>
+            </span>
           </div>
         </div>
       </ha-card>`;
@@ -460,9 +506,34 @@ class BambuCostsTagsEditor extends HTMLElement {
 
     q(".settings").addEventListener("click", () => this._openSettings());
 
+    // The colour-name combo: focusing the cell drops the full palette down,
+    // scrollable; typing switches it to a filter. Anything typed is accepted
+    // as-is — the list is a convenience, not a constraint.
+    const tbody = q("tbody");
+    tbody.addEventListener("focusin", e => {
+      const inp = e.target.closest('input[data-f="color_name"]');
+      if (inp) this._openColorDd(inp);
+    });
+    tbody.addEventListener("focusout", () => this._closeColorDd());
+    tbody.addEventListener("keydown", e => {
+      if (e.key === "Escape") this._closeColorDd();
+    });
+    tbody.addEventListener("input", e => {
+      const inp = e.target.closest('input[data-f="color_name"]');
+      if (inp && this._dd) { this._ddTyped = true; this._fillColorDd(inp); }
+    });
+    q(".bte-scroll").addEventListener("scroll", () => this._closeColorDd());
+
     q(".reload").addEventListener("click", () => this._reload());
     q("button.save").addEventListener("click", () => this._save());
+    q("button.discard").addEventListener("click", () => {
+      if (!confirm("Discard unsaved changes?")) return;
+      this._load();
+      this._paint();
+      this._msg("Changes discarded.");
+    });
 
+    this._applyScrollMode();
     this._paint();
   }
 
@@ -563,6 +634,52 @@ class BambuCostsTagsEditor extends HTMLElement {
     requestAnimationFrame(() => this._recolor());
   }
 
+  // ── colour-name dropdown ─────────────────────────────────────────────────
+  _openColorDd(inp) {
+    this._closeColorDd();
+    if (!Array.isArray(this._colorNames) || !this._colorNames.length) return;
+
+    const dd = document.createElement("div");
+    dd.className = "bte-dd";
+    // mousedown, not click: click would blur the input first and the
+    // focusout close would eat the selection.
+    dd.addEventListener("mousedown", e => {
+      e.preventDefault();
+      const opt = e.target.closest(".opt");
+      if (!opt || !opt.dataset.v) return;
+      inp.value = opt.dataset.v;
+      this._closeColorDd();
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    this.appendChild(dd);
+    this._dd = dd;
+    this._ddFor = inp;
+    // The full list first; filtering starts with the first keystroke.
+    this._ddTyped = false;
+    this._fillColorDd(inp);
+
+    const r = inp.getBoundingClientRect();
+    dd.style.left = r.left + "px";
+    dd.style.minWidth = Math.max(r.width, 180) + "px";
+    const h = dd.offsetHeight;
+    dd.style.top = (r.bottom + h + 4 > window.innerHeight ? r.top - h - 2 : r.bottom + 2) + "px";
+  }
+
+  _fillColorDd(inp) {
+    if (!this._dd) return;
+    const q = this._ddTyped ? inp.value.trim().toLowerCase() : "";
+    const names = q
+      ? this._colorNames.filter(n => n.toLowerCase().includes(q))
+      : this._colorNames;
+    this._dd.innerHTML = names.map(n =>
+      `<div class="opt${n === inp.value ? " on" : ""}" data-v="${this._esc(n)}">${this._esc(n)}</div>`
+    ).join("") || `<div class="opt muted">no palette match — keep typing, free text is fine</div>`;
+  }
+
+  _closeColorDd() {
+    if (this._dd) { this._dd.remove(); this._dd = null; this._ddFor = null; }
+  }
+
   _toggleDisabled(k) {
     const row = this._row(k);
     if (!row) return;
@@ -624,6 +741,15 @@ class BambuCostsTagsEditor extends HTMLElement {
           `Expand related by default${pairs ? ` (${pairs} pairs)` : ""}`,
           "A spool's second tag as a child row; ▸ on the row overrides")
         + `<div class="bte-target">
+            <span class="bte-target-label">
+              <span class="bte-target-name">Table height</span>
+              <span class="bte-target-cur">Bounded keeps the header on screen</span>
+            </span>
+            <select data-maxh>${[0, 50, 60, 70, 80].map(n =>
+              `<option value="${n}"${this._maxH === n ? " selected" : ""}>${
+                n ? n + "% of screen" : "Unlimited"}</option>`).join("")}</select>
+          </div>`
+        + `<div class="bte-target">
             <span class="bte-target-label"><span class="bte-target-name">Sort rows</span></span>
             <button class="tbtn" data-sort="type">By type</button>
             <button class="tbtn" data-sort="price">By price</button>
@@ -682,6 +808,11 @@ class BambuCostsTagsEditor extends HTMLElement {
           }
           render();
         });
+      });
+      const maxh = body.querySelector("[data-maxh]");
+      if (maxh) maxh.addEventListener("change", e => {
+        this._maxH = Number(e.target.value) || 0;
+        this._saveCols(); this._applyScrollMode();
       });
       body.querySelectorAll("[data-sort]").forEach(b => {
         b.addEventListener("click", e => {
@@ -1071,6 +1202,8 @@ class BambuCostsTagsEditor extends HTMLElement {
 
     const b = this.querySelector("button.save");
     if (b && !this._busy) { b.disabled = !this._dirty; b.textContent = "Save"; }
+    const d = this.querySelector("button.discard");
+    if (d) d.style.display = this._dirty && !this._busy ? "" : "none";
   }
 
   _msg(text, kind) {

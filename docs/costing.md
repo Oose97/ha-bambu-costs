@@ -143,3 +143,39 @@ target:
 data:
   value: 0  # the printer's spend to date, if you know it
 ```
+
+## Suggested helpers
+
+The integration ships sources; core's helpers turn them into the views you actually
+want. All of these are created in *Settings → Devices & Services → Helpers* (or the
+YAML shown) — none are required.
+
+- **Monthly / daily / yearly spend** — a `utility_meter` per cycle on
+  `sensor.<name>_total_spend`, as above. The whole bill: filament, electricity,
+  standby.
+- **Electricity-only periods** — the same, pointed at `sensor.<name>_cost_total`
+  instead. Useful when the filament share would drown the power figure, or to compare
+  against a smart plug's own energy dashboard entry:
+
+  ```yaml
+  utility_meter:
+    bambu_costs_power_monthly:
+      source: sensor.bambu_costs_cost_total
+      cycle: monthly
+  ```
+
+- **A "printing is expensive right now" flag** — a *Threshold* helper on
+  `sensor.<name>_cost_rate` with a little hysteresis. Gives you a binary sensor to
+  badge a dashboard with, or to gate charging-hour automations on a spot tariff.
+- **Cost per gram, lifetime** — a *Template* helper dividing the two totals:
+
+  ```yaml
+  {{ (states('number.bambu_costs_total_cost') | float(0)
+      / states('number.bambu_costs_total_filament_used') | float(1)) | round(4) }}
+  ```
+
+  A slowly settling figure of what your printing actually costs per gram, margins and
+  failures included — a more honest number for quotes than any spool price.
+
+The same entity-ID caveat as above applies to every example: check whether your
+install's entities carry an area prefix.
