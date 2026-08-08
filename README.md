@@ -26,6 +26,9 @@ slots are free-form, so any AMS layout — or none — works.
   from Bambu's colour palette, ready for you to price.
 - **Three cards** — tag library editor, print history, quote calculator — registered
   automatically, no resource wrangling.
+- **No automations required** — logging, meter snapshots, slot prices, durations and
+  idle tracking are the integration's own job. The ones worth adding are notifications,
+  and the [Automations](#automations) section has them ready to paste.
 - Survives restarts, reconnects and mid-print dropouts without losing or double-counting
   a cent.
 
@@ -45,18 +48,6 @@ Requires Home Assistant 2024.12+ and a printer integration whose sensors this re
 in practice [ha-bambulab](https://github.com/greghesp/ha-bambulab). Every sensor is
 picked during setup rather than wired to ha-bambulab's internals, so a fork or another
 printer integration works too, as long as it exposes per-slot print weights.
-
-## Quick start
-
-Add the cards to a dashboard:
-
-```yaml
-type: custom:bambu-costs-tags-editor
-entity: sensor.bambu_costs_tag_library
-```
-
-That is all. No automations are needed: finished jobs are logged by the integration
-itself, along with meter snapshots, slot prices, durations and idle tracking.
 
 ## Documentation
 
