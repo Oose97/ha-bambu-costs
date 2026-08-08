@@ -188,11 +188,15 @@ Other worthwhile triggers: `numeric_state` on the **cost rate** or **last idle c
 **total spend** sensor (monthly budget), or calling **`bambu_costs.log_job`** with
 `force: true` from a script to re-log a job with corrected values.
 
-## Not included yet
+## Not part of the integration
 
-- No dashboard is created for you; the cards are yours to place.
-- Pricing fallbacks by material or colour when a spool carries no known tag; every
-  unknown spool falls back to the one default price.
+- **A dashboard.** The three cards are provided — where they go is yours to decide.
+- **Automatic pricing for untagged spools.** RFID tags are the primary data source: a
+  tagged spool prices its slot by itself, and that is the workflow this integration is
+  built around. Untagged spools still work, per AMS slot — set the slot's price number
+  by hand and it is respected, never overwritten — but that manual path is a
+  nice-to-have fallback, and guessing a price from material or colour is not planned.
+  Without a manual price, the slot is costed at the default.
 
 ## License
 
