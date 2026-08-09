@@ -6,6 +6,7 @@ from custom_components.bambu_costs.storage import (
     JOB_FIELDS,
     BambuCostsStore,
     as_float,
+    count_spools,
     distinct_filaments,
     is_disabled,
     job_status,
@@ -61,6 +62,34 @@ def test_rescan_is_a_no_op(store):
     assert store.add_tag_if_new(tag("AAA")) is True
     assert store.add_tag_if_new(tag("AAA")) is False
     assert len(store.read_tags()) == 1
+
+
+def test_a_paired_spool_counts_once():
+    tags = [tag("AAA", serial_2="BBB"), tag("BBB", serial_2="AAA"), tag("CCC")]
+    assert count_spools(tags) == 2
+
+
+def test_a_one_sided_pairing_still_counts_once():
+    # A hand-edited file may carry the reference on only one of the rows.
+    assert count_spools([tag("BBB"), tag("AAA", serial_2="BBB")]) == 1
+
+
+def test_spool_serials_match_case_insensitively():
+    assert count_spools([tag("aaa"), tag("BBB", serial_2="AAA")]) == 1
+
+
+def test_a_row_with_no_serial_is_its_own_spool():
+    assert count_spools([tag(""), tag("")]) == 2
+
+
+def test_filtering_out_disabled_rows_keeps_the_half_enabled_pair():
+    tags = [
+        tag("AAA", serial_2="BBB"),
+        tag("BBB", serial_2="AAA", disabled=True),
+        tag("CCC", disabled=True),
+    ]
+    assert count_spools(tags) == 2
+    assert count_spools([t for t in tags if not t["disabled"]]) == 1
 
 
 def test_write_keeps_a_backup(store, tmp_path):

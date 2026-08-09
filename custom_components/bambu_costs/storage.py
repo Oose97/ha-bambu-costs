@@ -115,6 +115,47 @@ def distinct_filaments(slots: list[dict[str, Any]]) -> str:
     return ", ".join(seen)
 
 
+def count_spools(tags: list[dict[str, Any]]) -> int:
+    """Distinct physical spools behind a list of tag rows.
+
+    A paired spool is two rows naming each other in ``serial_2``, and both
+    collapse onto one spool. The reference is followed through either side —
+    a hand-edited file where only one row carries the pairing still counts
+    the two rows as one spool. A row with no serial at all is a spool whose
+    tag was never recorded, and counts by itself.
+    """
+    # Union-find over serials: every serial a row carries belongs to the same
+    # spool, so overlapping serial sets merge into one identity.
+    parent: dict[str, str] = {}
+
+    def find(serial: str) -> str:
+        while parent[serial] != serial:
+            parent[serial] = parent[parent[serial]]
+            serial = parent[serial]
+        return serial
+
+    bare = 0
+    for tag in tags:
+        serials = [
+            s
+            for s in (
+                str(tag.get(k) or "").strip().lower() for k in ("serial", "serial_2")
+            )
+            if s
+        ]
+        if not serials:
+            bare += 1
+            continue
+        for s in serials:
+            parent.setdefault(s, s)
+        for s in serials[1:]:
+            root, other = find(serials[0]), find(s)
+            if root != other:
+                parent[other] = root
+
+    return len({find(s) for s in parent}) + bare
+
+
 def normalise_colour(value: Any) -> str:
     """Return #RRGGBB, dropping any alpha the integration reports."""
     text = str(value or "").strip().lstrip("#")

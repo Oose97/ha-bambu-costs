@@ -1194,7 +1194,13 @@ class BambuCostsTagsEditor extends HTMLElement {
     const c = this.querySelector(".bte-count");
     if (c) {
       const shown = this._shown === undefined ? this._rows.length : this._shown;
+      // Counted from the rows as edited, so the figures track unsaved changes
+      // the same way the table does. A pair is one spool; a spool is active
+      // while any of its rows is still enabled.
+      const groups = this._groups();
+      const active = groups.filter(g => g.some(r => !r.disabled)).length;
       c.textContent = `${shown} of ${this._rows.length} rows`
+        + ` · ${groups.length} spools (${active} active)`
         + (this._hiddenDis ? ` · ${this._hiddenDis} disabled hidden` : "")
         + (this._hiddenRel ? ` · ${this._hiddenRel} second tags collapsed` : "")
         + (this._dirty ? " · unsaved changes" : "");

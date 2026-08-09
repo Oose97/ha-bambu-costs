@@ -14,6 +14,8 @@ are possible shapes in one install.
 | `sensor.<name>_session_filament_cost` | The same figure rounded for display. |
 | `sensor.<name>_session_power_cost` | What the print on the printer has cost in electricity so far — live while it runs, the finished print's figure until the next one starts. |
 | `sensor.<name>_tag_library` | Your filament tag library. State is the row count; `data` holds the rows. |
+| `sensor.<name>_spools` | Distinct spools in the library — a paired spool's two rows count as one, however the pairing is recorded. |
+| `sensor.<name>_active_spools` | The same count without the disabled spools. A pair with one side still enabled counts as active. |
 | `sensor.<name>_cost_rate` | What the machine is costing per hour right now — power × price. |
 | `sensor.<name>_cost_total` | **Electricity only.** Everything it has cost to run, printing or idle. Restored across restarts. |
 | `sensor.<name>_total_spend` | **The whole bill** — filament, electricity and standby. Metering source; see [Costs per month](costing.md#costs-per-month). |
