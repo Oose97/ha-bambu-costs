@@ -19,6 +19,7 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import EventStateChangedData, async_track_state_change_event
 
 from .cards import async_register as async_register_cards
@@ -41,7 +42,7 @@ from .const import (
     RUNNING_STATES,
     SERVICE_ADD_JOB,
     SERVICE_CAPTURE_COVER,
-    SERVICE_DRAFT_FAILED_JOB,
+    SERVICE_DRAFT_JOB,
     SERVICE_IMPORT_LEGACY,
     SERVICE_LOG_JOB,
     SERVICE_REFRESH,
@@ -237,6 +238,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
+    # The charge button is gone — the jobs card's failed/finished print forms
+    # bank a partial job's filament with edited figures instead of the full
+    # plan. An install from before would keep the orphan forever otherwise.
+    registry = er.async_get(hass)
+    stale = registry.async_get_entity_id(
+        "button", DOMAIN, f"{entry.entry_id}_charge_filament"
+    )
+    if stale:
+        registry.async_remove(stale)
+
     await async_register_cards(hass)
     _async_register_services(hass)
 
@@ -308,8 +319,8 @@ def _async_track_print_status(
                 )
                 # Only genuine completions are logged — an abort's weight is
                 # the job's *planned* weight, so logging it would bill a
-                # first-layer failure in full. The charge button stays the
-                # deliberate path for partial jobs.
+                # first-layer failure in full. The jobs card's failed-print
+                # form stays the deliberate path for partial jobs.
                 if now in ("finish", "finished") and coordinator.auto_log:
                     entry.async_create_task(hass, coordinator.async_auto_log())
 
@@ -486,9 +497,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
             update_totals=call.data.get("update_totals", False),
         )
 
-    async def _draft_failed_job(call: ServiceCall) -> ServiceResponse:
+    async def _draft_job(call: ServiceCall) -> ServiceResponse:
         coordinator = _resolve(hass, call)
-        return coordinator.draft_failed_job()
+        return coordinator.draft_job()
 
     async def _capture_cover(call: ServiceCall) -> ServiceResponse:
         """Shoot the camera now — the failed-print form's deliberate capture."""
@@ -569,8 +580,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN,
-        SERVICE_DRAFT_FAILED_JOB,
-        _draft_failed_job,
+        SERVICE_DRAFT_JOB,
+        _draft_job,
         schema=_REFRESH_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )

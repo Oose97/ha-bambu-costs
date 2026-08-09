@@ -245,13 +245,13 @@
         },
         "update_totals": {
           "name": "Update totals",
-          "description": "Add the row's filament weight and cost to the lifetime totals — what the charge button does, but with these figures."
+          "description": "Add the row's filament weight and cost to the lifetime totals, exactly as the row carries them."
         }
       }
     },
-    "draft_failed_job": {
-      "name": "Draft failed job",
-      "description": "Returns a pre-filled failed-print row for the current print, or the last one when the printer is idle. Read-only.",
+    "draft_job": {
+      "name": "Draft job",
+      "description": "Returns a pre-filled row for logging a print by hand — the current print, or the last one when the printer is idle. Backs both the failed-print and add-finished-print forms. Read-only.",
       "fields": {
         "entry_id": {
           "name": "Entry ID",

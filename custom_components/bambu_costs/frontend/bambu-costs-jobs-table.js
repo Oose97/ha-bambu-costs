@@ -410,25 +410,28 @@ class BambuCostsJobsTable extends HTMLElement {
     this.appendChild(ov);
   }
 
-  // ── the failed-print form ────────────────────────────────
-  // Pre-filled by the integration from the print on the printer (or the last
-  // one, once it is idle): the plan's filament figures scaled by how many
-  // layers actually finished, the stint's measured time, energy and
-  // electricity as they are. Everything is editable; Save appends the row.
-  async _openFailed() {
+  // ── the manual print forms ───────────────────────────────
+  // One form, two doors: a print that failed part-way, and a finished one
+  // the integration missed. Pre-filled by the integration from the print on
+  // the printer (or the last one, once it is idle): the plan's filament
+  // figures — scaled by how many layers actually finished when logging a
+  // failure — and the stint's measured time, energy and electricity as they
+  // are. Everything is editable; Save appends the row.
+  async _openAdd(failed) {
     let draft;
     try {
       draft = (await this._hass.callWS({
-        type: "call_service", domain: "bambu_costs", service: "draft_failed_job",
+        type: "call_service", domain: "bambu_costs", service: "draft_job",
         service_data: {}, return_response: true,
       })).response;
     } catch (err) {
-      this._msg("Could not pre-fill the failed print: " + err.message, "err");
+      this._msg("Could not pre-fill the job: " + err.message, "err");
       return;
     }
 
     const row = draft.row || {};
-    row.status = "failed";
+    row.status = failed ? "failed" : "success";
+    if (!failed) row.layers_done = 0;
     // The untouched plan, kept aside so the layer ratio always scales from
     // the full job rather than compounding on its own output.
     const plan = JSON.parse(JSON.stringify(row));
@@ -481,7 +484,7 @@ class BambuCostsJobsTable extends HTMLElement {
     ov.innerHTML = `
       <div class="bcjt-sheet" style="width:min(94vw,560px)" role="dialog" aria-modal="true">
         <div class="bcjt-sheet-head">
-          <div class="bcjt-sheet-title">Log failed print</div>
+          <div class="bcjt-sheet-title">${failed ? "Log failed print" : "Log finished print"}</div>
           <div class="bcjt-target-cur">${draft.running
             ? "Pre-filled from the print running now."
             : "Pre-filled from the last print."} Everything is editable.</div>
@@ -489,13 +492,14 @@ class BambuCostsJobsTable extends HTMLElement {
         <div class="bcjt-sheet-body">
           ${field("Date", text("ts", 21))}
           ${field("Job", text("job", 26))}
-          ${field("Layers completed",
+          ${failed ? field("Layers completed",
             `<span class="lsplit"><input class="cell tin num" type="number" step="any"
               data-ff="layers_done" value="${isNaN(parseFloat(row.layers_done)) ? "" : parseFloat(row.layers_done)}"
               style="width:6ch"><span class="sep"> / </span><input class="cell tin num" type="number" step="any"
               data-ff="layers" value="${isNaN(parseFloat(row.layers)) ? "" : parseFloat(row.layers)}"
               style="width:6ch"></span>`,
-            "Editing these rescales the filament figures from the plan")}
+            "Editing these rescales the filament figures from the plan")
+          : field("Layers", num("layers", "", 6))}
           ${field("Print time", text("time", 12), draft.mins_planned > 0
             ? `Ran so far, of the planned ${hmin(draft.mins_planned)}`
             : "How long it actually ran")}
@@ -585,7 +589,7 @@ class BambuCostsJobsTable extends HTMLElement {
             if (h || m) row.mins = (h ? +h[1] * 60 : 0) + (m ? +m[1] : 0);
           }
         }
-        if (k === "layers" || k === "layers_done") rescale();
+        if (failed && (k === "layers" || k === "layers_done")) rescale();
         else if (k === "f_cost" || k === "p_cost") {
           row.cost = Math.round(((parseFloat(row.f_cost) || 0)
             + (parseFloat(row.p_cost) || 0)) * 1e4) / 1e4;
@@ -661,7 +665,7 @@ class BambuCostsJobsTable extends HTMLElement {
             p_cost: Number(row.p_cost) || 0, cost: Number(row.cost) || 0,
             cover: String(row.cover || ""), types: String(row.types || ""),
             trays: Array.isArray(row.trays) ? row.trays : [],
-            status: "failed",
+            status: row.status,
           },
           capture_cover: true,
           update_totals: q(".ftot").checked,
@@ -673,8 +677,10 @@ class BambuCostsJobsTable extends HTMLElement {
         return;
       }
       close();
-      this._msg("Failed print logged."
-        + (this._hideFailed ? " It is hidden by default — see ⚙ → Hide failed prints." : ""));
+      this._msg(failed
+        ? "Failed print logged."
+          + (this._hideFailed ? " It is hidden by default — see ⚙ → Hide failed prints." : "")
+        : "Job logged.");
       if (!this._dirty) {
         try {
           await this._hass.callService("homeassistant", "update_entity",
@@ -687,7 +693,9 @@ class BambuCostsJobsTable extends HTMLElement {
     });
 
     this.appendChild(ov);
-    rescale();
+    // A failure opens pre-scaled to the layers that finished; a finished
+    // print is the plan as reported, so only the totals line needs drawing.
+    if (failed) rescale(); else totals();
   }
 
   // ── image modal ──────────────────────────────────────────
@@ -871,6 +879,7 @@ class BambuCostsJobsTable extends HTMLElement {
         <div class="bcjt-wrap">
           <div class="bcjt-tools">
             <input class="f" type="text" placeholder="Filter jobs…">
+            <button class="tbtn addjob" title="Log a finished print the integration missed">+ Finished print</button>
             <button class="tbtn addfail" title="Log a print that failed part-way">+ Failed print</button>
             <button class="tbtn settings" title="Table settings">⚙</button>
             <button class="tbtn reload" title="Reload from file">↻</button>
@@ -905,7 +914,8 @@ class BambuCostsJobsTable extends HTMLElement {
       this._paint();
     });
 
-    this.querySelector(".addfail").addEventListener("click", () => this._openFailed());
+    this.querySelector(".addjob").addEventListener("click", () => this._openAdd(false));
+    this.querySelector(".addfail").addEventListener("click", () => this._openAdd(true));
     this.querySelector(".settings").addEventListener("click", () => this._openSettings());
     this.querySelector(".reload").addEventListener("click", () => this._reload());
     this.querySelector("button.save").addEventListener("click", () => this._save());

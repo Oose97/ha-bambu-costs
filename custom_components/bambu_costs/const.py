@@ -11,7 +11,7 @@ from typing import Final
 
 DOMAIN: Final = "bambu_costs"
 
-PLATFORMS: Final = ["button", "number", "sensor", "switch"]
+PLATFORMS: Final = ["number", "sensor", "switch"]
 
 # URLs the integration serves.
 URL_CARDS: Final = "/bambu-costs-cards"
@@ -92,7 +92,7 @@ SERVICE_WRITE_JOBS: Final = "write_jobs"
 SERVICE_SET_TAG_PRICE: Final = "set_tag_price"
 SERVICE_LOG_JOB: Final = "log_job"
 SERVICE_ADD_JOB: Final = "add_job"
-SERVICE_DRAFT_FAILED_JOB: Final = "draft_failed_job"
+SERVICE_DRAFT_JOB: Final = "draft_job"
 SERVICE_CAPTURE_COVER: Final = "capture_cover"
 SERVICE_REFRESH: Final = "refresh"
 SERVICE_IMPORT_LEGACY: Final = "import_legacy"

@@ -152,7 +152,7 @@ add_job:
       selector:
         boolean:
 
-draft_failed_job:
+draft_job:
   fields:
     entry_id:
       required: false

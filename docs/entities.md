@@ -39,14 +39,6 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
   when a print really ends, so a restart mid-idle cannot truncate the idle figure
 - `number.<name>_last_idle_cost` — electricity burnt between the last two prints
 
-## Buttons
-
-- `button.<name>_charge_filament_to_totals` — adds the current job's filament cost and
-  weight to the lifetime totals. For a print that failed part-way. Deliberately manual:
-  the printer reports the job's *planned* weight, so charging a failure automatically
-  would bill a first-layer failure in full. The last press is recorded in the button's
-  attributes so a mis-press is visible.
-
 ## Switches
 
 - `switch.<name>_use_camera_snapshot` — created when a printer camera is configured.
@@ -60,8 +52,8 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 | Service | Does |
 | --- | --- |
 | `bambu_costs.log_job` | Appends the finished job, captures the cover image, advances the totals. Anything you do not pass is read from the configured sensors. |
-| `bambu_costs.add_job` | Appends one fully explicit row — the failed-print form's save path. Reads no live state, so it can never swallow a running job's own auto-log. `update_totals` banks the row's filament. |
-| `bambu_costs.draft_failed_job` | Returns a pre-filled failed-print row — the current print, or the last one once the printer is idle. Read-only. |
+| `bambu_costs.add_job` | Appends one fully explicit row — the save path of both manual forms. Reads no live state, so it can never swallow a running job's own auto-log. `update_totals` banks the row's filament. |
+| `bambu_costs.draft_job` | Returns a pre-filled row for logging a print by hand — the current print, or the last one once the printer is idle. Backs the failed-print and finished-print forms. Read-only. |
 | `bambu_costs.capture_cover` | Takes a camera photo now and stores it as a job cover; returns the filename and URL. The failed-print form's capture button. |
 | `bambu_costs.write_jobs` | Applies edited log rows, matched into the file by the timestamp they were loaded with; a row carrying `delete: true` is removed instead. Previous file kept as `jobs.csv.bak`. |
 | `bambu_costs.write_tags` | Replaces the tag library. Previous file kept as `tags.csv.bak`. |
@@ -94,8 +86,9 @@ Their electricity still reaches the total either way (see [costing](costing.md))
 judgement call — how far did it actually get — is the jobs card's
 [failed-print form](cards.md#jobs-table): pre-filled from the printer, scaled by the
 layers that finished, and able to bank the scaled filament to the totals as it saves.
-The charge button remains the one-click alternative when the full planned amount is
-close enough.
+Its twin, the finished-print form, covers the opposite gap — a completed job the
+integration never saw finish (Home Assistant down at the time, say) — with the same
+pre-fill and the same totals checkbox.
 
 The `bambu_costs.log_job` service stays for passing overrides — a corrected duration, an
 explicit cost. A call for a job that is already logged is skipped, so a service call on

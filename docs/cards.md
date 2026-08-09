@@ -87,9 +87,13 @@ narrows it to anything — a date, a job name, a material:
   layers pair reads done against total. Everything is
   editable, per AMS slot included. The picture is a deliberate choice: press
   **📷 Capture photo** for a camera shot of the failed plate, or Save stores the
-  slicer's render. A checkbox (on by default) banks the row's filament to the lifetime
-  totals on save — the scaled figures, where the charge button would have banked the
-  full plan.
+  slicer's render. A checkbox (on by default) banks the row's filament — the scaled
+  figures, not the full plan — to the lifetime totals on save.
+- **+ Finished print** is its twin, for a completed job the integration never saw
+  finish — Home Assistant down at the moment the printer reported it, or a job worth
+  logging after the fact. Same pre-filled form, minus the layer scaling: the plan
+  stands as reported, a single Layers field, and the same capture button and totals
+  checkbox.
 - A failed print's row wears the faintest red wash, and its **Layers** cell shows
   `finished/total` — both halves editable. **Hide failed prints** in the settings is on
   by default; the footer counts what is hidden.

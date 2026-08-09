@@ -328,7 +328,7 @@ def test_draft_prefills_from_the_running_print():
         "end_time": estimate.isoformat(),
     }.get(key) or base(key)
 
-    d = c.draft_failed_job()
+    d = c.draft_job()
     assert d["running"] is True and d["has_camera"] is True
     assert d["mins_planned"] == pytest.approx(210.0, abs=0.1), \
         "start to estimated finish — the plan the form shows the ran-time against"
@@ -353,7 +353,7 @@ def test_draft_for_the_idle_printer_uses_the_closed_markers():
     })
     c.energy_now = lambda: 6.0  # standby kept counting after the failure
 
-    d = c.draft_failed_job()
+    d = c.draft_job()
     assert d["running"] is False
     assert d["row"]["p_cost"] == pytest.approx(0.25)
     assert d["row"]["kwh"] == pytest.approx(0.4), "post-failure standby stays out"
@@ -361,7 +361,7 @@ def test_draft_for_the_idle_printer_uses_the_closed_markers():
     # An entry from before the closing marker existed falls back to the
     # counter, standby included — a prefill beats a zero.
     c.values["energy_at_print_end"] = 0.0
-    assert c.draft_failed_job()["row"]["kwh"] == pytest.approx(1.2)
+    assert c.draft_job()["row"]["kwh"] == pytest.approx(1.2)
 
 
 def test_add_job_appends_verbatim_and_leaves_the_guard_alone():

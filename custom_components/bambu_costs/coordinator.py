@@ -1015,15 +1015,17 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for row in breakdown["slots"]
         ]
 
-    def draft_failed_job(self) -> dict[str, Any]:
-        """A pre-filled row for the failed-print form, in the sensor's shape.
+    def draft_job(self) -> dict[str, Any]:
+        """A pre-filled row for logging a print by hand, in the sensor's shape.
 
-        Prefers the print on the printer now; with nothing running it
-        describes the last one, whose sensors and markers all survive the
-        failure. Filament figures are the job's *plan* — the printer reports
-        planned weights, not progress — so the card scales them by how many
-        layers actually finished. Duration, energy and electricity are the
-        measured reality of the stint and are not scaled.
+        Backs both of the jobs card's manual forms: a print that failed
+        part-way, and a finished one the integration missed. Prefers the
+        print on the printer now; with nothing running it describes the last
+        one, whose sensors and markers all survive its end. Filament figures
+        are the job's *plan* — the printer reports planned weights, not
+        progress — so the failed form scales them by how many layers actually
+        finished. Duration, energy and electricity are the measured reality
+        of the stint and are not scaled.
         """
         breakdown = self.breakdown(remember=False)
         minutes = self.print_minutes()
@@ -1087,7 +1089,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         capture_cover: bool = True,
         update_totals: bool = False,
     ) -> dict[str, Any]:
-        """Append one fully explicit row — the failed-print form's save path.
+        """Append one fully explicit row — the manual forms' save path.
 
         Unlike ``log_job`` this reads no live state and never touches the
         logged-once guard, so saving a failed print while the next job is
@@ -1095,11 +1097,12 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         of its own the row gets the slicer's render — the camera shot is the
         form's deliberate capture button, never an automatic side effect.
 
-        ``update_totals`` banks the row's filament (weight and cost) the way
-        the charge button would, but with the row's edited figures instead of
-        the full plan. Electricity is never added here: the coordinator banks
-        it live, aborted stints included. The last-print markers are left
-        alone — this row is history, not necessarily the latest print.
+        ``update_totals`` banks the row's filament (weight and cost) as the
+        form shows them — for a failure that is the plan scaled by the layers
+        that finished, not the full plan. Electricity is never added here:
+        the coordinator banks it live, aborted stints included. The
+        last-print markers are left alone — this row is history, not
+        necessarily the latest print.
         """
         data = dict(row)
         data["ts"] = str(data.get("ts") or "").strip() or datetime.now().strftime(
