@@ -489,6 +489,11 @@ class BambuCostsJobsTable extends HTMLElement {
     const row = draft.row || {};
     row.status = failed ? "failed" : "success";
     if (!failed) row.layers_done = 0;
+    // A failure announces itself in the log's Job column. Prefilled, not
+    // enforced — the field is right there to edit the tag away.
+    if (failed && !/\[FAILED\]/i.test(row.job || "")) {
+      row.job = ("[FAILED] " + (row.job || "")).trim();
+    }
     // The untouched plan, kept aside so the layer ratio always scales from
     // the full job rather than compounding on its own output.
     const plan = JSON.parse(JSON.stringify(row));

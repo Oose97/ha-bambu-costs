@@ -8,7 +8,7 @@ AMS slot, electricity, and a per-job history — and ships the Lovelace cards to
 Point it at your printer during setup and the sensors are found for you. The filament
 slots are free-form, so any AMS layout — or none — works.
 
-![The print history card: per-job costs, energy, materials and per-slot filament use](docs/images/print_history_full_table.jpg)
+![The print history card: per-job costs, energy, materials, per-slot filament use — and a failed print's red-washed row with its layers reading finished/total](docs/images/print_history_full_table.jpg)
 
 ## Highlights
 
@@ -21,7 +21,10 @@ slots are free-form, so any AMS layout — or none — works.
   power reaches the total. Cross-checked against the energy counters, so a smart plug
   dropping off the network cannot silently under-bill a job.
 - **A job log with pictures** — the slicer's render, or a camera photo of what actually
-  came off the plate.
+  came off the plate. Failed prints are never logged blind — the printer only reports
+  *planned* weights, so that would bill a first-layer crash in full — but the jobs card
+  logs them by hand: pre-filled, scaled to the layers that finished, and marked
+  `[FAILED]` ([details](docs/entities.md#logging-a-finished-job)).
 - **Spools scan themselves in**: loading an unknown tag appends a library row, named
   from Bambu's colour palette, ready for you to price.
 - **Three cards** — tag library editor, print history, quote calculator — registered

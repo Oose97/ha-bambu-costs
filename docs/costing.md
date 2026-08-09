@@ -30,7 +30,9 @@ Two consequences fall out of the accumulator running continuously:
 - **Every stretch is banked into `total_cost` exactly once.** `cost_at_print_end` doubles
   as a banked-through mark: idle windows are added when the next print starts (or on a
   reconnect resync), and a print's own stint is added when it ends — **aborted or not**,
-  so a stopped print's electricity is not lost just because nothing logged it. `log_job`
+  so a stopped print's electricity is not lost just because nothing logged it. The
+  print itself can still be logged by hand, filament and all, from the jobs card's
+  failed-print form ([details](entities.md#logging-a-finished-job)). `log_job`
   therefore adds only the filament to the total; with no power sensors configured there
   is no live banking, and the row's estimated power cost rides along instead. A resume
   banks nothing, so a recovered job cannot be charged twice.

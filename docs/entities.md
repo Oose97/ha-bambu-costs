@@ -87,7 +87,8 @@ Aborted prints are deliberately not logged automatically — the printer reports
 Their electricity still reaches the total either way (see [costing](costing.md)). The
 judgement call — how far did it actually get — is the jobs card's
 [failed-print form](cards.md#jobs-table): pre-filled from the printer, scaled by the
-layers that finished, and able to bank the scaled filament to the totals as it saves.
+layers that finished, the job name marked `[FAILED]` (edit it away if unwanted), and
+able to bank the scaled filament to the totals as it saves.
 Its twin, the finished-print form, covers the opposite gap — a completed job the
 integration never saw finish (Home Assistant down at the time, say) — with the same
 pre-fill and the same totals checkbox.

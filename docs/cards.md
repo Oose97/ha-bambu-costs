@@ -78,24 +78,38 @@ narrows it to anything — a date, a job name, a material:
 - Every row carries a **🗑** button. A deletion is staged like any other edit — the row
   is struck through, the button flips to ↩ to take it back, and only **Save** actually
   removes it from the file (with the previous version in `jobs.csv.bak` as the net).
-- **+ Print** in the toolbar expands to the two manual forms: *Add failed print* and
-  *Add finished print*. The failed one logs a print that died part-way. The form is
+- **+ Print** in the toolbar expands to the two manual forms:
+
+  ![+ Print expands to Add finished print and Add failed print](images/print_history_add_print.jpg)
+
+  ***Add failed print*** logs a print that died part-way. The form is
   pre-filled by the integration — from the print running now, or the last one once the
   printer is idle — with one extra field: **how many layers finished**. The filament
   figures start as the job's plan scaled by that ratio (the printer only ever reports
   planned weights), and editing the layer count rescales them; duration, energy and
   electricity are the stint's measured reality and are not scaled — for a print still
   running, the Print time field notes the planned duration alongside, the way the
-  layers pair reads done against total. Everything is
-  editable, per AMS slot included. The picture is a deliberate choice: press
-  **📷 Capture photo** for a camera shot of the failed plate, or Save stores the
-  slicer's render. A checkbox (on by default) banks the row's filament — the scaled
-  figures, not the full plan — to the lifetime totals on save.
+  layers pair reads done against total. Everything is editable, per AMS slot included,
+  and the job name arrives prefixed with `[FAILED]` so the log reads at a glance —
+  edit the tag away in the form if you'd rather not have it.
+
+  ![The failed-print form: layers completed over total, the plan scaled to match, everything editable](images/print_history_add_failed_print_modal.jpg)
+
+  The picture is a deliberate choice: press **📷 Capture photo** for a camera shot of
+  the failed plate, or Save stores the slicer's render. A checkbox (on by default)
+  banks the row's filament — the scaled figures, not the full plan — to the lifetime
+  totals on save.
+
+  ![The Picture row before capturing: one button, and Save would keep the render](images/print_history_add_print_capture_before_click.jpg)
+  ![After capturing: the camera's shot of the plate, with a retake one click away](images/print_history_add_print_capture_after_click.jpg)
+
 - ***Add finished print*** is its twin, for a completed job the integration never saw
   finish — Home Assistant down at the moment the printer reported it, or a job worth
   logging after the fact. Same pre-filled form, minus the layer scaling: the plan
   stands as reported, a single Layers field, and the same capture button and totals
   checkbox.
+
+  ![The finished-print form: the plan as reported, no scaling, ready to save](images/print_history_add_finished_print.jpg)
 - A failed print's row wears the faintest red wash, and its **Layers** cell shows
   `finished/total` — both halves editable. **Hide failed prints** in the settings is on
   by default; the footer counts what is hidden.
