@@ -61,8 +61,11 @@ entity: sensor.bambu_costs_tag_library
 ## Jobs table
 
 `custom:bambu-costs-jobs-table` — editable print history: sortable, paginated, with
-configurable columns. Pictured at the top of the [README](../README.md); the filter
-narrows it to anything — a date, a job name, a material:
+configurable columns:
+
+![The print history card: per-job costs, energy, materials, per-slot filament use — and a failed print's red-washed row with its layers reading finished/total](images/print_history_full_table.jpg)
+
+The filter narrows it to anything — a date, a job name, a material:
 
 ![The print history filtered to one day](images/print_history_filtered_results.jpg)
 
