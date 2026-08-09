@@ -410,6 +410,47 @@ class BambuCostsJobsTable extends HTMLElement {
     this.appendChild(ov);
   }
 
+  // The + Print button expands to the two manual forms. Same popup dress as
+  // the combo cells, but its own lifecycle: closed by picking an option,
+  // clicking anywhere else, Escape, or pressing the button again.
+  _toggleAddMenu(btn) {
+    if (this._addMenu) { this._closeAddMenu(); return; }
+    const dd = document.createElement("div");
+    dd.className = "bcjt-dd";
+    dd.innerHTML = `
+      <div class="opt" data-add="finished">Add finished print</div>
+      <div class="opt" data-add="failed">Add failed print</div>`;
+    dd.addEventListener("click", e => {
+      const opt = e.target.closest(".opt");
+      if (!opt) return;
+      const failed = opt.dataset.add === "failed";
+      this._closeAddMenu();
+      this._openAdd(failed);
+    });
+    this.appendChild(dd);
+    const r = btn.getBoundingClientRect();
+    dd.style.left = r.left + "px";
+    dd.style.top = (r.bottom + 2) + "px";
+    dd.style.minWidth = Math.max(r.width, 160) + "px";
+    this._addMenu = dd;
+    // mousedown, so picking an option (a click) is never pre-empted; the
+    // button itself is left to its own click handler, which toggles.
+    this._addMenuOff = e => {
+      if (!dd.contains(e.target) && e.target !== btn) this._closeAddMenu();
+    };
+    this._addMenuEsc = e => { if (e.key === "Escape") this._closeAddMenu(); };
+    document.addEventListener("mousedown", this._addMenuOff);
+    document.addEventListener("keydown", this._addMenuEsc);
+  }
+
+  _closeAddMenu() {
+    if (!this._addMenu) return;
+    this._addMenu.remove();
+    this._addMenu = null;
+    document.removeEventListener("mousedown", this._addMenuOff);
+    document.removeEventListener("keydown", this._addMenuEsc);
+  }
+
   // ── the manual print forms ───────────────────────────────
   // One form, two doors: a print that failed part-way, and a finished one
   // the integration missed. Pre-filled by the integration from the print on
@@ -879,8 +920,7 @@ class BambuCostsJobsTable extends HTMLElement {
         <div class="bcjt-wrap">
           <div class="bcjt-tools">
             <input class="f" type="text" placeholder="Filter jobs…">
-            <button class="tbtn addjob" title="Log a finished print the integration missed">+ Finished print</button>
-            <button class="tbtn addfail" title="Log a print that failed part-way">+ Failed print</button>
+            <button class="tbtn addprint" title="Log a print by hand">+ Print</button>
             <button class="tbtn settings" title="Table settings">⚙</button>
             <button class="tbtn reload" title="Reload from file">↻</button>
           </div>
@@ -914,8 +954,8 @@ class BambuCostsJobsTable extends HTMLElement {
       this._paint();
     });
 
-    this.querySelector(".addjob").addEventListener("click", () => this._openAdd(false));
-    this.querySelector(".addfail").addEventListener("click", () => this._openAdd(true));
+    this.querySelector(".addprint").addEventListener("click", e =>
+      this._toggleAddMenu(e.currentTarget));
     this.querySelector(".settings").addEventListener("click", () => this._openSettings());
     this.querySelector(".reload").addEventListener("click", () => this._reload());
     this.querySelector("button.save").addEventListener("click", () => this._save());

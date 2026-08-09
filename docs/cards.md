@@ -77,7 +77,8 @@ narrows it to anything — a date, a job name, a material:
 - Every row carries a **🗑** button. A deletion is staged like any other edit — the row
   is struck through, the button flips to ↩ to take it back, and only **Save** actually
   removes it from the file (with the previous version in `jobs.csv.bak` as the net).
-- **+ Failed print** in the toolbar logs a print that died part-way. The form is
+- **+ Print** in the toolbar expands to the two manual forms: *Add failed print* and
+  *Add finished print*. The failed one logs a print that died part-way. The form is
   pre-filled by the integration — from the print running now, or the last one once the
   printer is idle — with one extra field: **how many layers finished**. The filament
   figures start as the job's plan scaled by that ratio (the printer only ever reports
@@ -89,7 +90,7 @@ narrows it to anything — a date, a job name, a material:
   **📷 Capture photo** for a camera shot of the failed plate, or Save stores the
   slicer's render. A checkbox (on by default) banks the row's filament — the scaled
   figures, not the full plan — to the lifetime totals on save.
-- **+ Finished print** is its twin, for a completed job the integration never saw
+- ***Add finished print*** is its twin, for a completed job the integration never saw
   finish — Home Assistant down at the moment the printer reported it, or a job worth
   logging after the fact. Same pre-filled form, minus the layer scaling: the plan
   stands as reported, a single Layers field, and the same capture button and totals
