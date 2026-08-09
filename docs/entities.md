@@ -61,7 +61,9 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 | `bambu_costs.refresh` | Re-reads the CSVs from disk. |
 | `bambu_costs.sync_slot_prices` | Copies the loaded spool's tag price into each slot's price number. |
 
-Pass `entry_id` only if you have set up more than one printer.
+Pass `entry_id` only if you have set up more than one printer — and even then only
+when calling by hand: the cards pass it by themselves, from the `entry_id` attribute
+their sensor publishes, so several entries can be loaded side by side.
 
 ### Job pictures
 

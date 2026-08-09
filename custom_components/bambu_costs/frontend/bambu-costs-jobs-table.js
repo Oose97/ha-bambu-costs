@@ -213,6 +213,16 @@ class BambuCostsJobsTable extends HTMLElement {
   }
 
   // ── helpers ──────────────────────────────────────────────
+  // Every bambu_costs service call names the entity's own config entry, so
+  // a second loaded entry — another printer, a test setup — never makes the
+  // call ambiguous, for this card or for that one. An older backend without
+  // the attribute just resolves its single entry, as before.
+  _withEntry(data) {
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    const id = st && st.attributes && st.attributes.entry_id;
+    return id ? Object.assign({ entry_id: id }, data) : data;
+  }
+
   _esc(s) {
     return String(s ?? "").replace(/[&<>"']/g, c =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -469,7 +479,7 @@ class BambuCostsJobsTable extends HTMLElement {
     try {
       draft = (await this._hass.callWS({
         type: "call_service", domain: "bambu_costs", service: "draft_job",
-        service_data: {}, return_response: true,
+        service_data: this._withEntry({}), return_response: true,
       })).response;
     } catch (err) {
       this._msg("Could not pre-fill the job: " + err.message, "err");
@@ -675,7 +685,8 @@ class BambuCostsJobsTable extends HTMLElement {
       try {
         const resp = (await this._hass.callWS({
           type: "call_service", domain: "bambu_costs", service: "capture_cover",
-          service_data: { timestamp: String(row.ts || "") }, return_response: true,
+          service_data: this._withEntry({ timestamp: String(row.ts || "") }),
+          return_response: true,
         })).response;
         row.cover = resp.cover;
         const img = q(".fcover img");
@@ -701,7 +712,7 @@ class BambuCostsJobsTable extends HTMLElement {
       btn.disabled = true;
       btn.textContent = "Saving…";
       try {
-        await this._hass.callService("bambu_costs", "add_job", {
+        await this._hass.callService("bambu_costs", "add_job", this._withEntry({
           row: {
             ts: String(row.ts || ""), job: String(row.job || ""),
             time: String(row.time || ""), mins: Number(row.mins) || 0,
@@ -716,7 +727,7 @@ class BambuCostsJobsTable extends HTMLElement {
           },
           capture_cover: true,
           update_totals: q(".ftot").checked,
-        });
+        }));
       } catch (err) {
         btn.disabled = false;
         btn.textContent = "Save";
@@ -1482,7 +1493,7 @@ class BambuCostsJobsTable extends HTMLElement {
       btn.textContent = "Saving…";
       this._msg("Writing the job log…");
       const [domain, service] = this._cfg.save_service.split(".");
-      await this._hass.callService(domain, service, { rows: this._payload() });
+      await this._hass.callService(domain, service, this._withEntry({ rows: this._payload() }));
     } catch (err) {
       this._msg("Save failed: " + err, "err");
       this._busy = false;

@@ -134,6 +134,16 @@ class BambuCostsTagsEditor extends HTMLElement {
 
   _grouped() { return this._groups().flat(); }
 
+  // Every bambu_costs service call names the entity's own config entry, so
+  // a second loaded entry — another printer, a test setup — never makes the
+  // call ambiguous. An older backend without the attribute just resolves its
+  // single entry, as before.
+  _withEntry(data) {
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    const id = st && st.attributes && st.attributes.entry_id;
+    return id ? Object.assign({ entry_id: id }, data) : data;
+  }
+
   _groupOf(k) {
     return this._groups().find(g => g.some(r => r._k === Number(k))) || [];
   }
@@ -1264,7 +1274,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       btn.textContent = "Saving…";
       this._msg("Writing the tag library…");
       const [domain, service] = this._cfg.save_service.split(".");
-      await this._hass.callService(domain, service, { tags: this._payload() });
+      await this._hass.callService(domain, service, this._withEntry({ tags: this._payload() }));
     } catch (err) {
       this._msg("Save failed: " + err, "err");
       this._busy = false;
