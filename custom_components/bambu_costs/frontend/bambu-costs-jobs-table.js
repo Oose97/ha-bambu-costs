@@ -420,9 +420,12 @@ class BambuCostsJobsTable extends HTMLElement {
     dd.innerHTML = `
       <div class="opt" data-add="finished">Add finished print</div>
       <div class="opt" data-add="failed">Add failed print</div>`;
-    dd.addEventListener("click", e => {
+    // mousedown, like the combo popups: activation must not lose a race
+    // against anything that closes the menu on the same gesture.
+    dd.addEventListener("mousedown", e => {
       const opt = e.target.closest(".opt");
       if (!opt) return;
+      e.preventDefault();
       const failed = opt.dataset.add === "failed";
       this._closeAddMenu();
       this._openAdd(failed);
@@ -433,10 +436,13 @@ class BambuCostsJobsTable extends HTMLElement {
     dd.style.top = (r.bottom + 2) + "px";
     dd.style.minWidth = Math.max(r.width, 160) + "px";
     this._addMenu = dd;
-    // mousedown, so picking an option (a click) is never pre-empted; the
-    // button itself is left to its own click handler, which toggles.
+    // The dashboard renders cards inside shadow roots, and a document-level
+    // listener sees events RETARGETED to the shadow host — e.target is never
+    // the menu, and testing it would close the menu on the very mousedown
+    // that was picking an option. composedPath crosses the boundary.
     this._addMenuOff = e => {
-      if (!dd.contains(e.target) && e.target !== btn) this._closeAddMenu();
+      const path = e.composedPath ? e.composedPath() : [e.target];
+      if (!path.includes(dd) && !path.includes(btn)) this._closeAddMenu();
     };
     this._addMenuEsc = e => { if (e.key === "Escape") this._closeAddMenu(); };
     document.addEventListener("mousedown", this._addMenuOff);
