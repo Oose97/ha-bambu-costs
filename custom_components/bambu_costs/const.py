@@ -36,6 +36,8 @@ CONF_AUTO_LOG: Final = "auto_log"
 CONF_COVER_IMAGE: Final = "cover_image"
 CONF_CAMERA: Final = "camera_entity"
 CONF_LAYERS: Final = "layers"
+# Where the print is right now, used to pre-fill how far a failed print got.
+CONF_CURRENT_LAYER: Final = "current_layer"
 CONF_LENGTH: Final = "print_length"
 CONF_NOZZLE_SIZE: Final = "nozzle_size"
 CONF_NOZZLE_TYPE: Final = "nozzle_type"
@@ -89,6 +91,9 @@ SERVICE_WRITE_TAGS: Final = "write_tags"
 SERVICE_WRITE_JOBS: Final = "write_jobs"
 SERVICE_SET_TAG_PRICE: Final = "set_tag_price"
 SERVICE_LOG_JOB: Final = "log_job"
+SERVICE_ADD_JOB: Final = "add_job"
+SERVICE_DRAFT_FAILED_JOB: Final = "draft_failed_job"
+SERVICE_CAPTURE_COVER: Final = "capture_cover"
 SERVICE_REFRESH: Final = "refresh"
 SERVICE_IMPORT_LEGACY: Final = "import_legacy"
 SERVICE_SYNC_SLOT_PRICES: Final = "sync_slot_prices"
@@ -158,6 +163,9 @@ NUMBER_DEFS: Final = (
     ("total_filament_used", "Total filament used", "g", 0, 100000000, 0.01, 0.0),
     ("total_cost", "Total cost", "{currency}", 0, 10000000, 0.01, 0.0),
     ("energy_at_print_start", "Energy at print start", "kWh", 0, 10000000, 0.0001, 0.0),
+    # Its closing twin, so a failed print logged later can still say what the
+    # job's own energy was, without the standby since then riding along.
+    ("energy_at_print_end", "Energy at print end", "kWh", 0, 10000000, 0.0001, 0.0),
     ("cost_at_print_start", "Cost total at print start", "{currency}", 0, 10000000, 0.0001, 0.0),
     ("cost_at_print_end", "Cost total at print end", "{currency}", 0, 10000000, 0.0001, 0.0),
     # Where the current idle window began. cost_at_print_end cannot serve:

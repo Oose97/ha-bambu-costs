@@ -267,6 +267,115 @@ def test_next_job_can_log_again():
     assert c.appended == 2
 
 
+def test_print_end_snapshots_the_energy_counter():
+    c = make()
+    c.energy_now = lambda: 5.2
+    c.mark_print_start(new_job=True)
+    c.energy_now = lambda: 5.9
+    c.mark_print_end()
+    assert c.value("energy_at_print_start") == pytest.approx(5.2)
+    assert c.value("energy_at_print_end") == pytest.approx(5.9)
+
+
+def _draftable(c):
+    """Pin the live reads the failed-print draft leans on."""
+    c.breakdown = lambda remember=True: {
+        "slots": [{"id": "a1", "label": "Tray 1", "name": "Green", "material": "PLA",
+                   "filament": "Bambu PLA Basic", "color": "#00AE42",
+                   "weight": 40.0, "price": 20.0, "cost": 0.8}],
+        "cost": 0.8, "weight": 40.0, "weight_total": 40.0,
+        "source": "slots", "restored": False,
+    }
+    c.print_minutes = lambda: 90.0
+    c._state = lambda key: {
+        "task_name": "Benchy", "layers": "70", "current_layer": "30",
+        "print_length": "14.2", "nozzle_size": "0.4", "nozzle_type": "hardened_steel",
+    }.get(key)
+    c.entity_of = lambda key: "camera.printer" if key == "camera_entity" else None
+    return c
+
+
+def test_draft_prefills_from_the_running_print():
+    c = _draftable(make())
+    c._saw_print_start = True
+    c.cost_total = 0.30
+    c.values.update({"cost_at_print_start": 0.10, "energy_at_print_start": 4.5})
+    c.energy_now = lambda: 5.0
+
+    d = c.draft_failed_job()
+    assert d["running"] is True and d["has_camera"] is True
+    row = d["row"]
+    assert row["status"] == "failed"
+    assert row["layers"] == 70.0 and row["layers_done"] == 30.0
+    assert row["kwh"] == pytest.approx(0.5)
+    assert row["p_cost"] == pytest.approx(0.20), "the stint's own integral"
+    assert row["f_cost"] == pytest.approx(0.8), "the plan — the card scales it"
+    assert row["cost"] == pytest.approx(1.0)
+    assert row["mins"] == pytest.approx(90.0) and row["time"] == "1h 30min"
+    assert row["trays"][0]["type"] == "Bambu PLA Basic"
+    assert row["types"] == "PLA Basic"
+
+
+def test_draft_for_the_idle_printer_uses_the_closed_markers():
+    c = _draftable(make())
+    c.values.update({
+        "last_print_power_cost": 0.25,
+        "energy_at_print_start": 4.8,
+        "energy_at_print_end": 5.2,
+    })
+    c.energy_now = lambda: 6.0  # standby kept counting after the failure
+
+    d = c.draft_failed_job()
+    assert d["running"] is False
+    assert d["row"]["p_cost"] == pytest.approx(0.25)
+    assert d["row"]["kwh"] == pytest.approx(0.4), "post-failure standby stays out"
+
+    # An entry from before the closing marker existed falls back to the
+    # counter, standby included — a prefill beats a zero.
+    c.values["energy_at_print_end"] = 0.0
+    assert c.draft_failed_job()["row"]["kwh"] == pytest.approx(1.2)
+
+
+def test_add_job_appends_verbatim_and_leaves_the_guard_alone():
+    c = make()
+    captured = []
+
+    async def _append(row):
+        captured.append(row)
+
+    c.async_append_job = _append
+    c.entity_of = lambda key: None
+
+    out = _run(c.async_add_job(
+        {"ts": "2026-08-07 14:00:00", "job": "Died at 30", "weight": 12.5,
+         "f_cost": 0.25, "p_cost": 0.05, "cost": 0.3, "layers": 70,
+         "layers_done": 30, "status": "failed", "trays": []},
+        capture_cover=True, update_totals=True,
+    ))
+
+    assert out["logged"] is True
+    assert captured[0]["status"] == "failed"
+    assert captured[0]["layers_done"] == 30.0
+    assert c._job_logged is False, "the running job's own auto-log must survive"
+    assert c.value("total_cost") == pytest.approx(100.25), \
+        "filament only — electricity is banked live, aborts included"
+    assert c.value("total_filament_used") == pytest.approx(12.5)
+
+
+def test_add_job_stamps_a_blank_timestamp():
+    c = make()
+    captured = []
+
+    async def _append(row):
+        captured.append(row)
+
+    c.async_append_job = _append
+    c.entity_of = lambda key: None
+
+    _run(c.async_add_job({"job": "No ts"}, capture_cover=False))
+    assert captured[0]["timestamp"], "a blank timestamp would make the row invisible"
+
+
 def test_breakdown_prefers_the_tag_librarys_filament_name():
     """The library's curated name beats the printer's echo of the tag.
 

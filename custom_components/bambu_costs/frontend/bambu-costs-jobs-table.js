@@ -84,6 +84,7 @@ class BambuCostsJobsTable extends HTMLElement {
     this._sort = { key: "ts", dir: -1 };   // newest first
     this._pageSize = this._cfg.page_size;
     this._maxH = 70;
+    this._hideFailed = true;
     this._page = 0;
     this._filter = "";
     this._rows = [];
@@ -180,6 +181,7 @@ class BambuCostsJobsTable extends HTMLElement {
       if (s.sortKey) this._sort = { key: s.sortKey, dir: s.sortDir === 1 ? 1 : -1 };
       if (Number(s.pageSize) > 0) this._pageSize = Number(s.pageSize);
       if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
+      if (typeof s.hideFailed === "boolean") this._hideFailed = s.hideFailed;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
 
@@ -188,7 +190,7 @@ class BambuCostsJobsTable extends HTMLElement {
       localStorage.setItem(this._settingsKey(), JSON.stringify({
         order: this._order, hidden: [...this._hidden],
         sortKey: this._sort.key, sortDir: this._sort.dir, pageSize: this._pageSize,
-        maxh: this._maxH,
+        maxh: this._maxH, hideFailed: this._hideFailed,
       }));
     } catch (e) { /* private mode — layout just will not persist */ }
   }
@@ -267,11 +269,19 @@ class BambuCostsJobsTable extends HTMLElement {
 
   // ── view pipeline ────────────────────────────────────────
   _filtered() {
+    let rows = this._rows;
+    // The hidden count is what the footer reports, so the successes-only
+    // default never silently loses a logged failure.
+    this._hiddenFailed = 0;
+    if (this._hideFailed) {
+      rows = rows.filter(r => r.status !== "failed");
+      this._hiddenFailed = this._rows.length - rows.length;
+    }
     const q = this._filter;
-    if (!q) return this._rows;
-    return this._rows.filter(r => {
+    if (!q) return rows;
+    return rows.filter(r => {
       const trays = (r.trays || []).map(t => `${t.label} ${t.type || ""} ${t.name}`).join(" ");
-      return `${r.ts} ${r.job} ${r.nozzle} ${r.nozzle_type} ${this._typeDisp(r.nozzle_type)} ${r.types} ${trays}`
+      return `${r.ts} ${r.job} ${r.nozzle} ${r.nozzle_type} ${this._typeDisp(r.nozzle_type)} ${r.types} ${trays} ${r.status || ""}`
         .toLowerCase().includes(q);
     });
   }
@@ -398,6 +408,283 @@ class BambuCostsJobsTable extends HTMLElement {
     ov.querySelector("button.close").addEventListener("click", close);
     document.addEventListener("keydown", esc);
     this.appendChild(ov);
+  }
+
+  // ── the failed-print form ────────────────────────────────
+  // Pre-filled by the integration from the print on the printer (or the last
+  // one, once it is idle): the plan's filament figures scaled by how many
+  // layers actually finished, the stint's measured time, energy and
+  // electricity as they are. Everything is editable; Save appends the row.
+  async _openFailed() {
+    let draft;
+    try {
+      draft = (await this._hass.callWS({
+        type: "call_service", domain: "bambu_costs", service: "draft_failed_job",
+        service_data: {}, return_response: true,
+      })).response;
+    } catch (err) {
+      this._msg("Could not pre-fill the failed print: " + err.message, "err");
+      return;
+    }
+
+    const row = draft.row || {};
+    row.status = "failed";
+    // The untouched plan, kept aside so the layer ratio always scales from
+    // the full job rather than compounding on its own output.
+    const plan = JSON.parse(JSON.stringify(row));
+    const cur = this._esc(this._cur());
+
+    const num = (k, unit, w = 8) => `<span class="trline"><input class="cell tin num"
+      type="number" step="any" data-ff="${k}" value="${isNaN(parseFloat(row[k])) ? "" : parseFloat(row[k])}"
+      style="width:${w}ch"><span class="cu">${unit}</span></span>`;
+    const field = (label, inner, sub = "") => `
+      <div class="bcjt-target">
+        <span class="bcjt-target-label"><span class="bcjt-target-name">${label}</span>${
+          sub ? `<span class="bcjt-target-cur">${sub}</span>` : ""}</span>
+        ${inner}
+      </div>`;
+    const text = (k, w) => `<input class="cell tin" data-ff="${k}"
+      value="${this._esc(row[k] || "")}" style="width:${w}ch">`;
+
+    const trayHtml = (t, i) => `
+      <div class="bcjt-target trrow">
+        <input type="color" class="tsw" data-i="${i}" data-tf="color"
+          value="${this._esc(/^#[0-9a-f]{6}/i.test(t.color || "") ? t.color.slice(0, 7) : "#808080")}">
+        <span class="bcjt-target-label">
+          <span class="trline">
+            <input class="cell tin" data-i="${i}" data-tf="label" title="Slot"
+              value="${this._esc(t.label || "")}" style="width:6ch">
+            <input class="cell tin" data-i="${i}" data-tf="type" placeholder="material"
+              value="${this._esc(t.type || "")}" style="width:15ch">
+          </span>
+          <span class="trline">
+            <input class="cell tin" data-i="${i}" data-tf="name" placeholder="colour name"
+              value="${this._esc(t.name || "")}" style="width:23ch">
+          </span>
+        </span>
+        <span class="trnum">
+          <span class="trline"><input class="cell tin num" type="number" step="any" data-i="${i}"
+            data-tf="weight" value="${isNaN(parseFloat(t.weight)) ? "" : parseFloat(t.weight)}"
+            style="width:8ch"><span class="cu">g</span></span>
+          <span class="trline"><input class="cell tin num" type="number" step="any" data-i="${i}"
+            data-tf="price" value="${isNaN(parseFloat(t.price)) ? "" : parseFloat(t.price)}"
+            style="width:8ch"><span class="cu">${cur}/kg</span></span>
+          <span class="trline"><input class="cell tin num" type="number" step="any" data-i="${i}"
+            data-tf="cost" value="${isNaN(parseFloat(t.cost)) ? "" : parseFloat(t.cost)}"
+            style="width:8ch"><span class="cu">${cur}</span></span>
+        </span>
+      </div>`;
+
+    const ov = document.createElement("div");
+    ov.className = "bcjt-modal";
+    ov.innerHTML = `
+      <div class="bcjt-sheet" style="width:min(94vw,560px)" role="dialog" aria-modal="true">
+        <div class="bcjt-sheet-head">
+          <div class="bcjt-sheet-title">Log failed print</div>
+          <div class="bcjt-target-cur">${draft.running
+            ? "Pre-filled from the print running now."
+            : "Pre-filled from the last print."} Everything is editable.</div>
+        </div>
+        <div class="bcjt-sheet-body">
+          ${field("Date", text("ts", 21))}
+          ${field("Job", text("job", 26))}
+          ${field("Layers completed",
+            `<span class="lsplit"><input class="cell tin num" type="number" step="any"
+              data-ff="layers_done" value="${isNaN(parseFloat(row.layers_done)) ? "" : parseFloat(row.layers_done)}"
+              style="width:6ch"><span class="sep"> / </span><input class="cell tin num" type="number" step="any"
+              data-ff="layers" value="${isNaN(parseFloat(row.layers)) ? "" : parseFloat(row.layers)}"
+              style="width:6ch"></span>`,
+            "Editing these rescales the filament figures from the plan")}
+          ${field("Print time", text("time", 12))}
+          ${field("Weight", num("weight", "g"))}
+          ${field("Length", num("length", "m"))}
+          ${field("Nozzle", `<span class="trline">${text("nozzle", 5)}${text("nozzle_type", 20)}</span>`)}
+          ${field("Energy", num("kwh", "kWh"))}
+          ${field("Filament cost", num("f_cost", cur))}
+          ${field("Power cost", num("p_cost", cur), "Measured for the stint — not scaled")}
+          ${field("Total", num("cost", cur))}
+          ${field("Material", text("types", 24))}
+          <div class="bcjt-target"><span class="bcjt-target-label">
+            <span class="bcjt-target-name" style="font-weight:600">Filament used</span>
+          </span><span class="trtotal"></span></div>
+          <div class="ftrays">${(row.trays || []).map(trayHtml).join("")
+            || `<div class="bcjt-target"><span class="muted">No per-slot data</span></div>`}</div>
+          <div class="bcjt-target fcover">
+            <img style="display:none" alt="">
+            <span class="bcjt-target-label">
+              <span class="bcjt-target-name">Picture</span>
+              <span class="bcjt-target-cur fcap">${draft.has_camera
+                ? "Capture a photo of the plate, or Save uses the slicer's render."
+                : "Save stores the slicer's render."}</span>
+            </span>
+            ${draft.has_camera ? `<button class="tbtn snap">📷 Capture photo</button>` : ""}
+          </div>
+          <div class="bcjt-target">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px">
+              <input type="checkbox" class="ftot" checked>
+              Add the filament to the lifetime totals
+            </label>
+          </div>
+        </div>
+        <div class="bcjt-sheet-foot">
+          <button class="tbtn cancel">Cancel</button>
+          <button class="save fsave">Save</button>
+        </div>
+      </div>`;
+
+    const q = s => ov.querySelector(s);
+    const setVal = (sel, v) => { const el = q(sel); if (el) el.value = v; };
+
+    const totals = () => {
+      const trays = row.trays || [];
+      const w = trays.reduce((s, t) => s + (parseFloat(t.weight) || 0), 0);
+      const c2 = trays.reduce((s, t) => s + (parseFloat(t.cost) || 0), 0);
+      q(".trtotal").textContent = trays.length
+        ? `${w.toFixed(1)} g · ${c2.toFixed(2)} ${this._cur()}` : "";
+    };
+
+    const rescale = () => {
+      const total = parseFloat(row.layers) || 0;
+      const done = parseFloat(row.layers_done) || 0;
+      // No completed-layer figure yet means "show the plan", not "times zero".
+      const ratio = total > 0 && done > 0 ? Math.min(1, done / total) : 1;
+      row.weight = Math.round(plan.weight * ratio * 1e3) / 1e3;
+      row.length = Math.round(plan.length * ratio * 100) / 100;
+      (row.trays || []).forEach((t, i) => {
+        const p = (plan.trays || [])[i] || {};
+        t.weight = Math.round((parseFloat(p.weight) || 0) * ratio * 1e3) / 1e3;
+        t.cost = Math.round(t.weight / 1000 * (parseFloat(t.price) || 0) * 1e4) / 1e4;
+        setVal(`[data-i="${i}"][data-tf="weight"]`, t.weight);
+        setVal(`[data-i="${i}"][data-tf="cost"]`, t.cost);
+      });
+      row.f_cost = (row.trays || []).length
+        ? Math.round(row.trays.reduce((s, t) => s + (parseFloat(t.cost) || 0), 0) * 1e4) / 1e4
+        : Math.round(plan.f_cost * ratio * 1e4) / 1e4;
+      row.cost = Math.round((row.f_cost + (parseFloat(row.p_cost) || 0)) * 1e4) / 1e4;
+      setVal('[data-ff="weight"]', row.weight);
+      setVal('[data-ff="length"]', row.length);
+      setVal('[data-ff="f_cost"]', row.f_cost);
+      setVal('[data-ff="cost"]', row.cost);
+      totals();
+    };
+
+    ov.addEventListener("change", e => {
+      const ff = e.target.closest("[data-ff]");
+      if (ff) {
+        const k = ff.dataset.ff;
+        if (ff.classList.contains("num")) {
+          row[k] = parseFloat(String(ff.value).replace(",", ".")) || 0;
+        } else {
+          row[k] = ff.value;
+          if (k === "time") {
+            const h = /(\d+)\s*h/i.exec(ff.value);
+            const m = /(\d+)\s*min/i.exec(ff.value);
+            if (h || m) row.mins = (h ? +h[1] * 60 : 0) + (m ? +m[1] : 0);
+          }
+        }
+        if (k === "layers" || k === "layers_done") rescale();
+        else if (k === "f_cost" || k === "p_cost") {
+          row.cost = Math.round(((parseFloat(row.f_cost) || 0)
+            + (parseFloat(row.p_cost) || 0)) * 1e4) / 1e4;
+          setVal('[data-ff="cost"]', row.cost);
+        }
+        return;
+      }
+      const tf = e.target.closest("[data-tf]");
+      if (!tf) return;
+      const t = (row.trays || [])[Number(tf.dataset.i)];
+      if (!t) return;
+      const f = tf.dataset.tf;
+      if (f === "weight" || f === "price" || f === "cost") {
+        t[f] = parseFloat(String(tf.value).replace(",", ".")) || 0;
+        if (f !== "cost") {
+          t.cost = Math.round((parseFloat(t.weight) || 0) / 1000 * (parseFloat(t.price) || 0) * 1e4) / 1e4;
+          setVal(`[data-i="${tf.dataset.i}"][data-tf="cost"]`, t.cost);
+        }
+        // The row's filament figures follow the slots, like the logger's did.
+        row.weight = Math.round(row.trays.reduce((s, x) => s + (parseFloat(x.weight) || 0), 0) * 1e3) / 1e3;
+        row.f_cost = Math.round(row.trays.reduce((s, x) => s + (parseFloat(x.cost) || 0), 0) * 1e4) / 1e4;
+        row.cost = Math.round((row.f_cost + (parseFloat(row.p_cost) || 0)) * 1e4) / 1e4;
+        setVal('[data-ff="weight"]', row.weight);
+        setVal('[data-ff="f_cost"]', row.f_cost);
+        setVal('[data-ff="cost"]', row.cost);
+        totals();
+      } else {
+        t[f] = tf.value;
+      }
+    });
+
+    const snap = q("button.snap");
+    if (snap) snap.addEventListener("click", async () => {
+      snap.disabled = true;
+      snap.textContent = "Capturing…";
+      try {
+        const resp = (await this._hass.callWS({
+          type: "call_service", domain: "bambu_costs", service: "capture_cover",
+          service_data: { timestamp: String(row.ts || "") }, return_response: true,
+        })).response;
+        row.cover = resp.cover;
+        const img = q(".fcover img");
+        img.src = resp.url + "?t=" + Date.now();
+        img.style.display = "";
+        q(".fcap").textContent = "Captured — Save keeps this photo.";
+        snap.textContent = "↻ Retake";
+      } catch (err) {
+        q(".fcap").textContent = "Capture failed: " + err.message;
+        snap.textContent = "📷 Capture photo";
+      }
+      snap.disabled = false;
+    });
+
+    const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
+    const esc = e => { if (e.key === "Escape") close(); };
+    ov.addEventListener("click", e => { if (e.target === ov) close(); });
+    q("button.cancel").addEventListener("click", close);
+    document.addEventListener("keydown", esc);
+
+    q("button.fsave").addEventListener("click", async () => {
+      const btn = q("button.fsave");
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+      try {
+        await this._hass.callService("bambu_costs", "add_job", {
+          row: {
+            ts: String(row.ts || ""), job: String(row.job || ""),
+            time: String(row.time || ""), mins: Number(row.mins) || 0,
+            layers: Number(row.layers) || 0, layers_done: Number(row.layers_done) || 0,
+            weight: Number(row.weight) || 0, length: Number(row.length) || 0,
+            nozzle: String(row.nozzle || ""), nozzle_type: String(row.nozzle_type || ""),
+            kwh: Number(row.kwh) || 0, f_cost: Number(row.f_cost) || 0,
+            p_cost: Number(row.p_cost) || 0, cost: Number(row.cost) || 0,
+            cover: String(row.cover || ""), types: String(row.types || ""),
+            trays: Array.isArray(row.trays) ? row.trays : [],
+            status: "failed",
+          },
+          capture_cover: true,
+          update_totals: q(".ftot").checked,
+        });
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "Save";
+        q(".fcap").textContent = "Save failed: " + err.message;
+        return;
+      }
+      close();
+      this._msg("Failed print logged."
+        + (this._hideFailed ? " It is hidden by default — see ⚙ → Hide failed prints." : ""));
+      if (!this._dirty) {
+        try {
+          await this._hass.callService("homeassistant", "update_entity",
+            { entity_id: this._cfg.entity });
+          await this._sleep(1500);
+          this._load();
+          this._paint();
+        } catch (err) { /* the next sensor refresh will bring it in */ }
+      }
+    });
+
+    this.appendChild(ov);
+    rescale();
   }
 
   // ── image modal ──────────────────────────────────────────
@@ -561,10 +848,27 @@ class BambuCostsJobsTable extends HTMLElement {
             color:var(--secondary-text-color); border-radius:6px; width:24px; height:24px;
             font-size:12px; line-height:1; padding:0; cursor:pointer; }
           .arrows button:hover { border-color:var(--primary-color); color:var(--primary-color); }
+          /* A failed print reads as one at a glance: the faintest red wash. */
+          table.bcjt tr.failed td { background:rgba(244,67,54,.05); }
+          /* A staged deletion — struck through until Save actually removes it. */
+          table.bcjt tr.deld td { opacity:.45; }
+          table.bcjt tr.deld input.cell, table.bcjt tr.deld button.trbtn,
+          table.bcjt tr.deld button.cbtn { text-decoration:line-through; pointer-events:none; }
+          .del { background:none; border:none; color:var(--secondary-text-color);
+            cursor:pointer; font-size:14px; padding:2px 4px; border-radius:6px; }
+          .del:hover { color:var(--error-color,#f44336); }
+          tr.deld .del { pointer-events:auto; text-decoration:none; opacity:1; }
+          .lsplit { white-space:nowrap; }
+          .lsplit input.cell { width:5ch; text-align:center; }
+          .lsplit .sep { opacity:.6; }
+          .fcover { display:flex; align-items:center; gap:10px; }
+          .fcover img { width:64px; height:64px; object-fit:cover; border-radius:8px;
+            box-shadow:0 0 0 1px var(--divider-color); }
         </style>
         <div class="bcjt-wrap">
           <div class="bcjt-tools">
             <input class="f" type="text" placeholder="Filter jobs…">
+            <button class="tbtn addfail" title="Log a print that failed part-way">+ Failed print</button>
             <button class="tbtn settings" title="Table settings">⚙</button>
             <button class="tbtn reload" title="Reload from file">↻</button>
           </div>
@@ -598,6 +902,7 @@ class BambuCostsJobsTable extends HTMLElement {
       this._paint();
     });
 
+    this.querySelector(".addfail").addEventListener("click", () => this._openFailed());
     this.querySelector(".settings").addEventListener("click", () => this._openSettings());
     this.querySelector(".reload").addEventListener("click", () => this._reload());
     this.querySelector("button.save").addEventListener("click", () => this._save());
@@ -634,6 +939,19 @@ class BambuCostsJobsTable extends HTMLElement {
     this.querySelector("tbody").addEventListener("click", e => {
       const cover = e.target.closest("button.cbtn");
       if (cover) { this._openImage(cover.dataset.src, cover.dataset.cap); return; }
+      const del = e.target.closest("button.del");
+      if (del) {
+        // Staged, not immediate: the row is struck through and the file only
+        // changes on Save, so a mis-click is one more click to take back.
+        const row = this._row(del.dataset.k);
+        if (row) {
+          row._del = !row._del;
+          this._edited.add(row._k);
+          this._dirty = true;
+          this._paint();
+        }
+        return;
+      }
       const trays = e.target.closest("button.trbtn");
       if (trays) {
         const row = this._row(trays.dataset.k);
@@ -742,6 +1060,18 @@ class BambuCostsJobsTable extends HTMLElement {
     }
     if (col.type === "trays") return `<td class="nw">${this._traysCell(r)}</td>`;
 
+    // A failed print's Layers cell carries both figures — how far it got over
+    // how far it was going — each editable in place.
+    if (col.k === "layers" && r.status === "failed") {
+      const done = parseFloat(r.layers_done);
+      const total = parseFloat(r.layers);
+      return `<td class="num nw" title="Layers completed / total"><span class="lsplit"><input
+        class="cell num" type="number" step="any" data-k="${r._k}" data-f="layers_done"
+        value="${isNaN(done) ? "" : done}"><span class="sep">/</span><input
+        class="cell num" type="number" step="any" data-k="${r._k}" data-f="layers"
+        value="${isNaN(total) ? "" : total}"></span></td>`;
+    }
+
     const cls = [col.type === "num" ? "num" : "", col.center ? "ctr" : "",
       col.nowrap ? "nw" : "", col.bold ? "b" : ""].filter(Boolean).join(" ");
     if (!col.edit) return `<td class="${cls}">${this._esc(r[col.k] ?? "—")}</td>`;
@@ -794,7 +1124,7 @@ class BambuCostsJobsTable extends HTMLElement {
     if (!row) return;
     const f = el.dataset.f;
 
-    if (BCJT_COLS.find(c => c.k === f && c.type === "num")) {
+    if (f === "layers_done" || BCJT_COLS.find(c => c.k === f && c.type === "num")) {
       row[f] = parseFloat(String(el.value).replace(",", ".")) || 0;
     } else if (f === "nozzle") {
       // The display drops the leading zero; the data never does.
@@ -832,10 +1162,18 @@ class BambuCostsJobsTable extends HTMLElement {
     const slice = all.slice(this._page * this._pageSize, (this._page + 1) * this._pageSize);
     const cols = this._cols();
 
-    this.querySelector("thead tr").innerHTML = this._headHtml();
-    this.querySelector("tbody").innerHTML = slice.map(r =>
-      `<tr data-k="${r._k}">${cols.map(c => this._cell(c, r)).join("")}</tr>`
-    ).join("") || `<tr><td colspan="${cols.length}"
+    // The delete cell is structural, like the tags editor's: always last,
+    // not a configurable column.
+    this.querySelector("thead tr").innerHTML = this._headHtml() + "<th></th>";
+    this.querySelector("tbody").innerHTML = slice.map(r => {
+      const cls = [r.status === "failed" ? "failed" : "", r._del ? "deld" : ""]
+        .filter(Boolean).join(" ");
+      return `<tr data-k="${r._k}"${cls ? ` class="${cls}"` : ""}>${
+        cols.map(c => this._cell(c, r)).join("")
+      }<td class="nw"><button class="del" data-k="${r._k}" title="${
+        r._del ? "Kept after all — click to undo the deletion" : "Delete this row (applied on Save)"
+      }">${r._del ? "↩" : "🗑"}</button></td></tr>`;
+    }).join("") || `<tr><td colspan="${cols.length + 1}"
       style="text-align:center;padding:24px" class="muted">No jobs logged yet</td></tr>`;
 
     this.querySelector(".pg").textContent = `${this._page + 1} / ${pages}`;
@@ -846,9 +1184,13 @@ class BambuCostsJobsTable extends HTMLElement {
 
   _updateFoot(count) {
     const n = count === undefined ? this._filtered().length : count;
+    const dels = this._rows.filter(r => r._del).length;
+    const edits = this._edited.size - dels;
     this.querySelector(".bcjt-count").textContent =
       `${n} job${n === 1 ? "" : "s"}${this._filter ? " (filtered)" : ""}`
-      + (this._dirty ? ` · ${this._edited.size} unsaved edit${this._edited.size === 1 ? "" : "s"}` : "");
+      + (this._hiddenFailed ? ` · ${this._hiddenFailed} failed hidden` : "")
+      + (edits > 0 ? ` · ${edits} unsaved edit${edits === 1 ? "" : "s"}` : "")
+      + (dels ? ` · ${dels} deletion${dels === 1 ? "" : "s"} pending` : "");
     const b = this.querySelector("button.save");
     if (b && !this._busy) { b.disabled = !this._dirty; b.textContent = "Save"; }
     const d = this.querySelector("button.discard");
@@ -898,6 +1240,14 @@ class BambuCostsJobsTable extends HTMLElement {
           `<option value="${n}"${this._maxH === n ? " selected" : ""}>${
             n ? n + "% of screen" : "Unlimited"}</option>`).join("")
         }</select>
+      </div>
+      <div class="bcjt-target">
+        <span class="bcjt-target-label">
+          <span class="bcjt-target-name">Hide failed prints</span>
+          <span class="bcjt-target-cur">The footer still counts what is hidden</span>
+        </span>
+        <button class="tog${this._hideFailed ? "" : " isoff"}" data-hidefail>${
+          this._hideFailed ? "ON" : "OFF"}</button>
       </div>
       <div class="bcjt-target"><span class="bcjt-target-label">
         <span class="bcjt-target-name" style="font-weight:600">Columns</span>
@@ -955,6 +1305,11 @@ class BambuCostsJobsTable extends HTMLElement {
         this._maxH = Number(e.target.value) || 0;
         this._saveSettings(); this._applyScrollMode();
       });
+      body.querySelector("[data-hidefail]").addEventListener("click", () => {
+        this._hideFailed = !this._hideFailed;
+        this._page = 0;
+        this._saveSettings(); render(); this._paint();
+      });
       body.querySelectorAll("[data-toggle]").forEach(b => {
         b.addEventListener("click", e => {
           const key = e.currentTarget.dataset.toggle;
@@ -986,6 +1341,7 @@ class BambuCostsJobsTable extends HTMLElement {
       this._sort = { key: "ts", dir: -1 };
       this._pageSize = this._cfg.page_size;
       this._maxH = 70;
+      this._hideFailed = true;
       this._page = 0;
       this._saveSettings(); render(); this._paint(); this._applyScrollMode();
     });
@@ -1017,7 +1373,9 @@ class BambuCostsJobsTable extends HTMLElement {
     // Only the rows actually touched: the service matches them into the file
     // by orig_ts, so everything else — including rows past the sensor's
     // window and a job logged while editing — stays exactly as it was.
-    return this._rows.filter(r => this._edited.has(r._k)).map(r => ({
+    return this._rows.filter(r => this._edited.has(r._k)).map(r => r._del ? {
+      orig_ts: r.orig_ts, delete: true,
+    } : ({
       orig_ts: r.orig_ts,
       ts: String(r.ts || ""),
       job: String(r.job || ""),
@@ -1035,6 +1393,8 @@ class BambuCostsJobsTable extends HTMLElement {
       cover: String(r.cover || ""),
       types: String(r.types || ""),
       trays: Array.isArray(r.trays) ? r.trays : [],
+      layers_done: Number(r.layers_done) || 0,
+      status: String(r.status || "success"),
     }));
   }
 
@@ -1074,15 +1434,20 @@ class BambuCostsJobsTable extends HTMLElement {
 
     // What is on screen IS what was just written. The saved timestamps are
     // the rows' identity from here on, so adopt them before the sensor's
-    // refresh lands (_justSaved makes that refresh the new baseline).
-    const saved = this._edited.size;
+    // refresh lands (_justSaved makes that refresh the new baseline); the
+    // deleted rows are gone from the file, so they leave the table too.
+    const dels = this._rows.filter(r => r._del).length;
+    const saved = this._edited.size - dels;
+    this._rows = this._rows.filter(r => !r._del);
     for (const r of this._rows) if (this._edited.has(r._k)) r.orig_ts = String(r.ts || "");
     this._busy = false;
     this._dirty = false;
     this._justSaved = true;
     this._edited = new Set();
-    this._updateFoot();
-    this._msg(`Saved ${saved} row${saved === 1 ? "" : "s"}. Previous version kept as jobs.csv.bak.`);
+    this._paint();
+    this._msg(`Saved ${saved} row${saved === 1 ? "" : "s"}`
+      + (dels ? `, deleted ${dels}` : "")
+      + ". Previous version kept as jobs.csv.bak.");
   }
 }
 

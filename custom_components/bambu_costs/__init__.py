@@ -30,6 +30,7 @@ from .const import (
     ATTR_ROWS,
     ATTR_SERIAL,
     ATTR_TAGS,
+    CONF_CAMERA,
     CONF_PRINT_STATUS,
     DISCONNECTED_STATES,
     DOMAIN,
@@ -38,6 +39,9 @@ from .const import (
     FINISHED_STATES,
     RESUME_STATES,
     RUNNING_STATES,
+    SERVICE_ADD_JOB,
+    SERVICE_CAPTURE_COVER,
+    SERVICE_DRAFT_FAILED_JOB,
     SERVICE_IMPORT_LEGACY,
     SERVICE_LOG_JOB,
     SERVICE_REFRESH,
@@ -45,6 +49,7 @@ from .const import (
     SERVICE_SYNC_SLOT_PRICES,
     SERVICE_WRITE_JOBS,
     SERVICE_WRITE_TAGS,
+    URL_COVERS,
 )
 from .coordinator import BambuCostsCoordinator
 
@@ -97,6 +102,10 @@ _JOB_ROW_SCHEMA = vol.Schema(
         vol.Optional("cover"): cv.string,
         vol.Optional("types"): cv.string,
         vol.Optional("trays"): list,
+        vol.Optional("layers_done"): vol.Coerce(float),
+        vol.Optional("status"): cv.string,
+        # Remove the matched row instead of replacing it.
+        vol.Optional("delete"): cv.boolean,
     },
     extra=vol.REMOVE_EXTRA,
 )
@@ -105,6 +114,49 @@ _WRITE_JOBS_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_ENTRY_ID): cv.string,
         vol.Required(ATTR_ROWS): vol.All(cv.ensure_list, [_JOB_ROW_SCHEMA]),
+    }
+)
+
+# add_job appends one explicit row — the failed-print form's save. The same
+# row shape, minus the identity/delete keys that only make sense for edits.
+_ADD_JOB_ROW_SCHEMA = vol.Schema(
+    {
+        vol.Optional("ts"): cv.string,
+        vol.Optional("job"): cv.string,
+        vol.Optional("time"): cv.string,
+        vol.Optional("mins"): vol.Coerce(float),
+        vol.Optional("layers"): vol.Coerce(float),
+        vol.Optional("weight"): vol.Coerce(float),
+        vol.Optional("length"): vol.Coerce(float),
+        vol.Optional("nozzle"): cv.string,
+        vol.Optional("nozzle_type"): cv.string,
+        vol.Optional("kwh"): vol.Coerce(float),
+        vol.Optional("f_cost"): vol.Coerce(float),
+        vol.Optional("p_cost"): vol.Coerce(float),
+        vol.Optional("cost"): vol.Coerce(float),
+        vol.Optional("cover"): cv.string,
+        vol.Optional("types"): cv.string,
+        vol.Optional("trays"): list,
+        vol.Optional("layers_done"): vol.Coerce(float),
+        vol.Optional("status"): cv.string,
+    },
+    extra=vol.REMOVE_EXTRA,
+)
+
+_ADD_JOB_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): cv.string,
+        vol.Required("row"): _ADD_JOB_ROW_SCHEMA,
+        vol.Optional("capture_cover", default=True): cv.boolean,
+        vol.Optional("update_totals", default=False): cv.boolean,
+    }
+)
+
+_CAPTURE_COVER_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): cv.string,
+        # Names the stored file, so a retake overwrites rather than piles up.
+        vol.Required("timestamp"): cv.string,
     }
 )
 
@@ -426,6 +478,33 @@ def _async_register_services(hass: HomeAssistant) -> None:
             force=call.data.get("force", False),
         )
 
+    async def _add_job(call: ServiceCall) -> ServiceResponse:
+        coordinator = _resolve(hass, call)
+        return await coordinator.async_add_job(
+            call.data["row"],
+            capture_cover=call.data.get("capture_cover", True),
+            update_totals=call.data.get("update_totals", False),
+        )
+
+    async def _draft_failed_job(call: ServiceCall) -> ServiceResponse:
+        coordinator = _resolve(hass, call)
+        return coordinator.draft_failed_job()
+
+    async def _capture_cover(call: ServiceCall) -> ServiceResponse:
+        """Shoot the camera now — the failed-print form's deliberate capture."""
+        coordinator = _resolve(hass, call)
+        camera = coordinator.entity_of(CONF_CAMERA)
+        if not camera:
+            raise ServiceValidationError("No printer camera is configured")
+        stamp = (
+            str(call.data["timestamp"]).replace("-", "").replace(":", "").replace(" ", "-")
+        )
+        cover = await coordinator.async_capture_cover(stamp, sources=[camera])
+        if not cover:
+            raise ServiceValidationError("The camera did not return a picture")
+        entry_id = coordinator.entry.entry_id
+        return {"cover": cover, "url": f"{URL_COVERS}/{entry_id}/covers/{cover}"}
+
     async def _refresh(call: ServiceCall) -> None:
         coordinator = _resolve(hass, call)
         await coordinator.async_request_refresh()
@@ -479,6 +558,27 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_LOG_JOB,
         _log_job,
         schema=_LOG_JOB_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ADD_JOB,
+        _add_job,
+        schema=_ADD_JOB_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DRAFT_FAILED_JOB,
+        _draft_failed_job,
+        schema=_REFRESH_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CAPTURE_COVER,
+        _capture_cover,
+        schema=_CAPTURE_COVER_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     async def _sync_slot_prices(call: ServiceCall) -> ServiceResponse:

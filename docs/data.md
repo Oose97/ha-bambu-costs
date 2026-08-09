@@ -13,9 +13,11 @@ config/bambu_costs/<entry_id>/covers/*.jpg
 Both CSVs have a header row and are written with a real CSV writer, so commas and quotes
 inside a value are quoted rather than stripped. A headerless file still loads, so you can
 drop an existing tag list in unchanged. The `.bak` next to each file is the previous
-version, written before any whole-file save — a tag-library save, or edits from the jobs
-table. When a new column is added in an upgrade, the jobs file is brought up to the
-current header on the first write after it.
+version, written before any whole-file save — a tag-library save, or edits and
+deletions from the jobs table. When a new column is added in an upgrade, the jobs file
+is brought up to the current header on the first write after it. A deleted job's cover
+image stays in `covers/`, so recovering the row from the `.bak` recovers its picture
+too.
 
 Covers are served at `/bambu-costs-covers/`. Nothing else under `config/` is exposed.
 

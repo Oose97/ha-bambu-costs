@@ -70,6 +70,23 @@ narrows it to anything — a date, a job name, a material:
   rows you touched are written, matched into the file by the timestamp they were loaded
   with, so jobs logged while you were editing are never overwritten. The previous file
   is kept as `jobs.csv.bak`.
+- Every row carries a **🗑** button. A deletion is staged like any other edit — the row
+  is struck through, the button flips to ↩ to take it back, and only **Save** actually
+  removes it from the file (with the previous version in `jobs.csv.bak` as the net).
+- **+ Failed print** in the toolbar logs a print that died part-way. The form is
+  pre-filled by the integration — from the print running now, or the last one once the
+  printer is idle — with one extra field: **how many layers finished**. The filament
+  figures start as the job's plan scaled by that ratio (the printer only ever reports
+  planned weights), and editing the layer count rescales them; duration, energy and
+  electricity are the stint's measured reality and are not scaled. Everything is
+  editable, per AMS slot included. The picture is a deliberate choice: press
+  **📷 Capture photo** for a camera shot of the failed plate, or Save stores the
+  slicer's render. A checkbox (on by default) banks the row's filament to the lifetime
+  totals on save — the scaled figures, where the charge button would have banked the
+  full plan.
+- A failed print's row wears the faintest red wash, and its **Layers** cell shows
+  `finished/total` — both halves editable. **Hide failed prints** in the settings is on
+  by default; the footer counts what is hidden.
 - **⚙** opens the table settings: column order and visibility, the default sort column
   and direction, the rows per page, and the table height — all remembered per browser.
   Display only; a save always writes every field.

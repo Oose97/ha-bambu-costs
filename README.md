@@ -75,9 +75,9 @@ Go to [Entities & services](docs/entities.md) for more details.
   totals (including a `utility_meter`-ready one), the tag library and the job log.
 - Writable numbers for every price, marker and total; a charge button for partial
   prints; a switch choosing camera photos over the slicer's render for job covers.
-- Services to log a job with overrides, edit the log, write the tag library, set a
-  tag's price, sync slot prices, and import legacy CSVs. **No automations required** —
-  finished jobs log themselves.
+- Services to log a job with overrides, edit or delete log rows, log a failed print
+  with explicit figures, write the tag library, set a tag's price, sync slot prices,
+  and import legacy CSVs. **No automations required** — finished jobs log themselves.
 
 ### Electricity costing
 
@@ -111,7 +111,9 @@ Go to [Cards](docs/cards.md) for more details.
 - **Tags editor** — spool pairs as one row, a palette-wide filtering combo for colour
   names, drag or button reordering, per-browser table settings.
 - **Print history** — fully editable in place, per-slot breakdown modal, nozzle combos,
-  content-sized columns, pinned header, configurable columns/sort/page size/height.
+  row deletion, a pre-filled failed-print form that scales the plan by the layers that
+  finished, content-sized columns, pinned header, configurable columns/sort/page
+  size/height.
 - **Cost calculator** — quotes from your real spool prices plus runtime, margin and
   VAT. All three register themselves as Lovelace resources.
 
