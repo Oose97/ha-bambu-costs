@@ -71,7 +71,6 @@ jobs:
           import custom_components.bambu_costs.coordinator
           import custom_components.bambu_costs.sensor
           import custom_components.bambu_costs.number
-          import custom_components.bambu_costs.button
           import custom_components.bambu_costs.switch
           import custom_components.bambu_costs.cards
           import custom_components.bambu_costs.discovery

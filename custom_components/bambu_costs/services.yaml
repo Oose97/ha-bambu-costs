@@ -131,6 +131,46 @@ log_job:
       selector:
         boolean:
 
+add_job:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    row:
+      required: true
+      selector:
+        object:
+    capture_cover:
+      required: false
+      default: true
+      selector:
+        boolean:
+    update_totals:
+      required: false
+      default: false
+      selector:
+        boolean:
+
+draft_job:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+
+capture_cover:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    timestamp:
+      required: true
+      example: "2026-08-09 14:16:02"
+      selector:
+        text:
+
 refresh:
   fields:
     entry_id:

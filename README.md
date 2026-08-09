@@ -8,7 +8,7 @@ AMS slot, electricity, and a per-job history — and ships the Lovelace cards to
 Point it at your printer during setup and the sensors are found for you. The filament
 slots are free-form, so any AMS layout — or none — works.
 
-![The print history card: per-job costs, energy, materials and per-slot filament use](docs/images/print_history_full_table.jpg)
+![The print history card: per-job costs, energy, materials, per-slot filament use — and a failed print's red-washed row with its layers reading finished/total](docs/images/print_history_full_table.jpg)
 
 ## Highlights
 
@@ -21,7 +21,10 @@ slots are free-form, so any AMS layout — or none — works.
   power reaches the total. Cross-checked against the energy counters, so a smart plug
   dropping off the network cannot silently under-bill a job.
 - **A job log with pictures** — the slicer's render, or a camera photo of what actually
-  came off the plate.
+  came off the plate. Failed prints are never logged blind — the printer only reports
+  *planned* weights, so that would bill a first-layer crash in full — but the jobs card
+  logs them by hand: pre-filled, scaled to the layers that finished, and marked
+  `[FAILED]` ([details](docs/entities.md#logging-a-finished-job)).
 - **Spools scan themselves in**: loading an unknown tag appends a library row, named
   from Bambu's colour palette, ready for you to price.
 - **Three cards** — tag library editor, print history, quote calculator — registered
@@ -74,11 +77,11 @@ Go to [Entities & services](docs/entities.md) for more details.
 - Sensors for the live breakdown, session filament and power cost, cost rate, lifetime
   totals (including a `utility_meter`-ready one), the tag library with its spool
   counts, and the job log.
-- Writable numbers for every price, marker and total; a charge button for partial
-  prints; a switch choosing camera photos over the slicer's render for job covers.
-- Services to log a job with overrides, edit the log, write the tag library, set a
-  tag's price, sync slot prices, and import legacy CSVs. **No automations required** —
-  finished jobs log themselves.
+- Writable numbers for every price, marker and total; a switch choosing camera photos
+  over the slicer's render for job covers.
+- Services to log a job with overrides, edit or delete log rows, log a failed print
+  with explicit figures, write the tag library, set a tag's price, sync slot prices,
+  and import legacy CSVs. **No automations required** — finished jobs log themselves.
 
 ### Electricity costing
 
@@ -112,7 +115,9 @@ Go to [Cards](docs/cards.md) for more details.
 - **Tags editor** — spool pairs as one row, a palette-wide filtering combo for colour
   names, drag or button reordering, per-browser table settings.
 - **Print history** — fully editable in place, per-slot breakdown modal, nozzle combos,
-  content-sized columns, pinned header, configurable columns/sort/page size/height.
+  row deletion, pre-filled failed- and finished-print forms (the failed one scales the
+  plan by the layers that finished), content-sized columns, pinned header, configurable
+  columns/sort/page size/height.
 - **Cost calculator** — quotes from your real spool prices plus runtime, margin and
   VAT. All three register themselves as Lovelace resources.
 

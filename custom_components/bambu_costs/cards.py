@@ -139,6 +139,23 @@ async def _async_register_resources(hass: HomeAssistant, resources: Any) -> None
     integration = await async_get_integration(hass, DOMAIN)
     version = str(integration.version or "0")
 
+    # Each file's own timestamp rides along in the URL: the version alone
+    # cannot bust the browser's module cache when a newer card arrives under
+    # the same release — a hand-copied file, or a repaired install — and a
+    # hard refresh does not reliably refetch JS modules.
+    cards_dir = pathlib.Path(__file__).parent / "frontend"
+
+    def _stamps() -> dict[str, int]:
+        out: dict[str, int] = {}
+        for filename in CARD_FILES:
+            try:
+                out[filename] = int((cards_dir / filename).stat().st_mtime)
+            except OSError:
+                out[filename] = 0
+        return out
+
+    stamps = await hass.async_add_executor_job(_stamps)
+
     existing = {
         str(item["url"]).split("?")[0]: item
         for item in resources.async_items()
@@ -147,7 +164,7 @@ async def _async_register_resources(hass: HomeAssistant, resources: Any) -> None
 
     for filename in CARD_FILES:
         url = f"{URL_CARDS}/{filename}"
-        versioned = f"{url}?v={version}"
+        versioned = f"{url}?v={version}.{stamps[filename]}"
         current = existing.get(url)
 
         if current is None:

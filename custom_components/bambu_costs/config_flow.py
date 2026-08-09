@@ -39,6 +39,7 @@ from .const import (
     CONF_COLOR_NAME_API,
     CONF_COVER_IMAGE,
     CONF_CURRENCY,
+    CONF_CURRENT_LAYER,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_ELECTRICITY_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
@@ -95,6 +96,7 @@ ALL_KEYS = (
     CONF_PRINT_STATUS,
     CONF_TASK_NAME,
     CONF_LAYERS,
+    CONF_CURRENT_LAYER,
     CONF_LENGTH,
     CONF_NOZZLE_SIZE,
     CONF_NOZZLE_TYPE,
@@ -201,6 +203,9 @@ def _printer_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Required(CONF_PRINT_STATUS, description=dflt(CONF_PRINT_STATUS)): _SENSOR,
             vol.Optional(CONF_TASK_NAME, description=dflt(CONF_TASK_NAME)): _SENSOR_OPT,
             vol.Optional(CONF_LAYERS, description=dflt(CONF_LAYERS)): _SENSOR_OPT,
+            vol.Optional(
+                CONF_CURRENT_LAYER, description=dflt(CONF_CURRENT_LAYER)
+            ): _SENSOR_OPT,
             vol.Optional(CONF_LENGTH, description=dflt(CONF_LENGTH)): _SENSOR_OPT,
             vol.Optional(CONF_NOZZLE_SIZE, description=dflt(CONF_NOZZLE_SIZE)): _SENSOR_OPT,
             vol.Optional(CONF_NOZZLE_TYPE, description=dflt(CONF_NOZZLE_TYPE)): _SENSOR_OPT,

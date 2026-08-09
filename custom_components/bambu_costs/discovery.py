@@ -19,6 +19,7 @@ from homeassistant.helpers import entity_registry as er
 from .const import (
     CONF_CAMERA,
     CONF_COVER_IMAGE,
+    CONF_CURRENT_LAYER,
     CONF_END_TIME,
     CONF_LAYERS,
     CONF_LENGTH,
@@ -40,6 +41,7 @@ ROLE_KEYS: dict[str, tuple[str, ...]] = {
     CONF_PRINT_STATUS: ("print_status",),
     CONF_TASK_NAME: ("subtask_name", "task_name"),
     CONF_LAYERS: ("total_layers", "total_layer_count"),
+    CONF_CURRENT_LAYER: ("current_layer",),
     CONF_LENGTH: ("print_length",),
     CONF_NOZZLE_SIZE: ("nozzle_diameter", "nozzle_size"),
     CONF_NOZZLE_TYPE: ("nozzle_type",),

@@ -32,6 +32,7 @@ from .const import (
     CONF_CURRENCY,
     CONF_ELECTRICITY_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
+    CONF_CURRENT_LAYER,
     CONF_ENERGY_SENSORS,
     CONF_LAYERS,
     CONF_LENGTH,
@@ -572,6 +573,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._print_ended_at = now or dt_util.utcnow()
         spent = self.spend_since("cost_at_print_start")
         self.set_value("last_print_power_cost", spent)
+        # The job's own energy, closed off here so a failed print logged from
+        # the card later is not billed the standby that accrued in between.
+        self.set_value("energy_at_print_end", self.energy_now())
         # The stint is banked here, not by log_job: an aborted print gets no
         # log call, and its electricity was just as real. log_job adds only
         # the filament, so nothing is counted twice.
@@ -872,6 +876,12 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return max(0.0, (end - self._print_started_at).total_seconds() / 60.0)
 
         start = self._ts(CONF_START_TIME)
+        # While a print runs, the printer's end-time sensor is its ESTIMATE of
+        # when the job will finish — measuring to it reports the whole planned
+        # duration. What has actually elapsed is start → now; the estimate is
+        # only trustworthy as an end once the job is over.
+        if self._saw_print_start and start:
+            return max(0.0, (dt_util.utcnow() - start).total_seconds() / 60.0)
         end = self._ts(CONF_END_TIME)
         if start and end and end > start:
             return (end - start).total_seconds() / 60.0
@@ -976,26 +986,152 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "power_cost": round(power_cost, 4),
             "total_cost": round(filament_cost + power_cost, 4),
             "cover": "",
-            "trays": [
-                {
-                    "label": row["label"],
-                    "name": row["name"],
-                    # The full product name, brand included — the per-slot
-                    # detail is where the whole story belongs; the Material
-                    # column is the one that shortens.
-                    "type": row.get("filament") or row.get("material") or "",
-                    "color": row["color"],
-                    "weight": round(row["weight"], 3),
-                    "price": row["price"],
-                    "cost": round(row["cost"], 4),
-                }
-                for row in breakdown["slots"]
-            ],
+            "trays": self._sensor_trays(breakdown),
             # The distinct types once each, however many slots fed the job —
             # "PLA Basic" for a single-material print, "PLA Basic, PETG HF"
             # for a multi-material one.
             "filament_type": overrides.get("filament_type")
             or distinct_filaments(breakdown["slots"]),
+            "layers_done": as_float(overrides.get("layers_done")),
+            "status": overrides.get("status") or "success",
+        }
+
+    @staticmethod
+    def _sensor_trays(breakdown: dict[str, Any]) -> list[dict[str, Any]]:
+        """The breakdown's slots in the shape job rows carry them."""
+        return [
+            {
+                "label": row["label"],
+                "name": row["name"],
+                # The full product name, brand included — the per-slot
+                # detail is where the whole story belongs; the Material
+                # column is the one that shortens.
+                "type": row.get("filament") or row.get("material") or "",
+                "color": row["color"],
+                "weight": round(row["weight"], 3),
+                "price": row["price"],
+                "cost": round(row["cost"], 4),
+            }
+            for row in breakdown["slots"]
+        ]
+
+    def draft_job(self) -> dict[str, Any]:
+        """A pre-filled row for logging a print by hand, in the sensor's shape.
+
+        Backs both of the jobs card's manual forms: a print that failed
+        part-way, and a finished one the integration missed. Prefers the
+        print on the printer now; with nothing running it describes the last
+        one, whose sensors and markers all survive its end. Filament figures
+        are the job's *plan* — the printer reports planned weights, not
+        progress — so the failed form scales them by how many layers actually
+        finished. Duration, energy and electricity are the measured reality
+        of the stint and are not scaled.
+        """
+        breakdown = self.breakdown(remember=False)
+        minutes = self.print_minutes()
+        running = self.print_running
+
+        if running:
+            power_cost = self.spend_since("cost_at_print_start")
+            energy_kwh = max(0.0, self.energy_now() - self.value("energy_at_print_start"))
+        else:
+            power_cost = self.value("last_print_power_cost")
+            # The closing marker keeps post-failure standby out; entries from
+            # before it existed fall back to the counter, standby included.
+            energy_kwh = self.value("energy_at_print_end") - self.value(
+                "energy_at_print_start"
+            )
+            if energy_kwh <= 0:
+                energy_kwh = max(
+                    0.0, self.energy_now() - self.value("energy_at_print_start")
+                )
+
+        # The planned duration, for the form to show next to the measured one
+        # the way it shows layers done against layers total. Only a running
+        # print knows it — the end-time sensor is the printer's estimated
+        # finish then; once the job is over it is just the actual end.
+        mins_planned = 0.0
+        if running:
+            start, end = self._ts(CONF_START_TIME), self._ts(CONF_END_TIME)
+            if start and end and end > start:
+                mins_planned = (end - start).total_seconds() / 60.0
+
+        filament_cost = breakdown["cost"]
+        return {
+            "running": running,
+            "has_camera": bool(self.entity_of(CONF_CAMERA)),
+            "mins_planned": round(mins_planned, 2),
+            "row": {
+                "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "job": self._state(CONF_TASK_NAME) or "",
+                "time": f"{int(minutes) // 60}h {int(minutes) % 60}min" if minutes else "",
+                "mins": round(minutes, 2),
+                "layers": as_float(self._state(CONF_LAYERS)),
+                "layers_done": as_float(self._state(CONF_CURRENT_LAYER)),
+                "weight": round(breakdown["weight"], 3),
+                "length": as_float(self._state(CONF_LENGTH)),
+                "nozzle": self._state(CONF_NOZZLE_SIZE) or "",
+                "nozzle_type": self._state(CONF_NOZZLE_TYPE) or "",
+                "kwh": round(energy_kwh, 4),
+                "f_cost": round(filament_cost, 4),
+                "p_cost": round(power_cost, 4),
+                "cost": round(filament_cost + power_cost, 4),
+                "cover": "",
+                "types": distinct_filaments(breakdown["slots"]),
+                "trays": self._sensor_trays(breakdown),
+                "status": "failed",
+            },
+        }
+
+    async def async_add_job(
+        self,
+        row: dict[str, Any],
+        capture_cover: bool = True,
+        update_totals: bool = False,
+    ) -> dict[str, Any]:
+        """Append one fully explicit row — the manual forms' save path.
+
+        Unlike ``log_job`` this reads no live state and never touches the
+        logged-once guard, so saving a failed print while the next job is
+        already running cannot swallow that job's own auto-log. With no cover
+        of its own the row gets the slicer's render — the camera shot is the
+        form's deliberate capture button, never an automatic side effect.
+
+        ``update_totals`` banks the row's filament (weight and cost) as the
+        form shows them — for a failure that is the plan scaled by the layers
+        that finished, not the full plan. Electricity is never added here:
+        the coordinator banks it live, aborted stints included. The
+        last-print markers are left alone — this row is history, not
+        necessarily the latest print.
+        """
+        data = dict(row)
+        data["ts"] = str(data.get("ts") or "").strip() or datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        csv_row = BambuCostsStore._job_to_csv(data)  # noqa: SLF001 — its canonical mapper
+
+        if capture_cover and not csv_row["cover"]:
+            stamp = (
+                str(csv_row["timestamp"]).replace("-", "").replace(":", "").replace(" ", "-")
+            )
+            render = self.entity_of(CONF_COVER_IMAGE)
+            if render:
+                csv_row["cover"] = await self.async_capture_cover(stamp, sources=[render])
+
+        await self.async_append_job(csv_row)
+
+        if update_totals:
+            weight = as_float(csv_row["weight_g"])
+            filament_cost = as_float(csv_row["filament_cost"])
+            self.set_value("total_cost", self.value("total_cost") + filament_cost)
+            self.set_value(
+                "total_filament_used", self.value("total_filament_used") + weight
+            )
+
+        return {
+            "logged": True,
+            "timestamp": csv_row["timestamp"],
+            "cover": csv_row["cover"],
         }
 
     def _cover_sources(self) -> list[str]:
@@ -1011,7 +1147,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return [e for e in (camera, cover) if e]
         return [cover] if cover else []
 
-    async def async_capture_cover(self, name: str) -> str:
+    async def async_capture_cover(self, name: str, sources: list[str] | None = None) -> str:
         """Fetch and store the current job's picture. Returns the filename.
 
         A source may be an ``image`` (the slicer's render of the model) or a
@@ -1019,8 +1155,12 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         logged the moment the printer reports finish, so the part is still on
         it). Each domain has its own fetch helper, so this dispatches; either
         way the bytes go through the same thumbnailing.
+
+        ``sources`` overrides the configured preference — the failed-print
+        form uses it to shoot the camera on demand, and to keep an automatic
+        save to the render only.
         """
-        for entity_id in self._cover_sources():
+        for entity_id in sources if sources is not None else self._cover_sources():
             try:
                 if entity_id.startswith("camera."):
                     from homeassistant.components.camera import async_get_image

@@ -17,6 +17,7 @@
           "print_status": "Print status sensor",
           "task_name": "Job name sensor",
           "layers": "Layer count sensor",
+          "current_layer": "Current layer sensor",
           "print_length": "Filament length sensor",
           "nozzle_size": "Nozzle size sensor",
           "nozzle_type": "Nozzle type sensor",
@@ -76,6 +77,7 @@
           "print_status": "Print status sensor",
           "task_name": "Job name sensor",
           "layers": "Layer count sensor",
+          "current_layer": "Current layer sensor",
           "print_length": "Filament length sensor",
           "nozzle_size": "Nozzle size sensor",
           "nozzle_type": "Nozzle type sensor",
@@ -222,6 +224,52 @@
         "update_totals": {
           "name": "Update totals",
           "description": "Advance the lifetime total numbers."
+        }
+      }
+    },
+    "add_job": {
+      "name": "Add job row",
+      "description": "Append one explicit row to the job log — the failed-print form's save path. Reads no live state and never blocks the running job's own auto-log.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        },
+        "row": {
+          "name": "Row",
+          "description": "The row, in the job_log sensor's field names (ts, job, mins, weight, trays, layers_done, status, …). A blank ts becomes now."
+        },
+        "capture_cover": {
+          "name": "Capture cover",
+          "description": "With no cover on the row, store the slicer's render as its picture."
+        },
+        "update_totals": {
+          "name": "Update totals",
+          "description": "Add the row's filament weight and cost to the lifetime totals, exactly as the row carries them."
+        }
+      }
+    },
+    "draft_job": {
+      "name": "Draft job",
+      "description": "Returns a pre-filled row for logging a print by hand — the current print, or the last one when the printer is idle. Backs both the failed-print and add-finished-print forms. Read-only.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        }
+      }
+    },
+    "capture_cover": {
+      "name": "Capture cover photo",
+      "description": "Take a camera photo now and store it as a job cover. Returns the filename and URL.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        },
+        "timestamp": {
+          "name": "Timestamp",
+          "description": "The job row's timestamp — names the file, so a retake overwrites."
         }
       }
     },

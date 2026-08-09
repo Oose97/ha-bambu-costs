@@ -369,6 +369,10 @@ class TagLibrarySensor(BambuCostsSensor):
         tags = self.coordinator.data.get("tags", [])
         return {
             "data": tags,
+            # The owning config entry: the card passes it back on every
+            # service call, so several entries (a second printer, a test
+            # entry) can be loaded without the calls becoming ambiguous.
+            "entry_id": self.coordinator.entry.entry_id,
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
             "currency": self.coordinator.currency,
             "price_targets": self._price_targets(),
@@ -456,6 +460,9 @@ class JobLogSensor(BambuCostsSensor):
             jobs.append(row)
         return {
             "data": jobs,
+            # Same contract as the tag library's: the card names this entry
+            # on every save, draft and capture call.
+            "entry_id": entry_id,
             "currency": self.coordinator.currency,
             # The jobs card shortens stored filament names against this list —
             # the configured one, or the shipped Bambu lineup when unset.

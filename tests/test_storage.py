@@ -9,6 +9,7 @@ from custom_components.bambu_costs.storage import (
     count_spools,
     distinct_filaments,
     is_disabled,
+    job_status,
     minimal_filament,
     normalise_colour,
 )
@@ -246,3 +247,50 @@ def test_update_jobs_pairs_duplicate_timestamps_in_order(store):
     ]
     store.update_jobs(edits)
     assert [r["job"] for r in store.read_jobs()] == ["First edited", "Second edited"]
+
+
+def test_update_jobs_deletes_a_matched_row(store):
+    for hour in ("10", "11", "12"):
+        store.append_job(job_row(f"2026-08-07 {hour}:00:00", job=f"Job {hour}"))
+
+    assert store.update_jobs([{"orig_ts": "2026-08-07 11:00:00", "delete": True}]) == 1
+
+    rows = store.read_jobs()
+    assert [r["job"] for r in rows] == ["Job 10", "Job 12"]
+    assert rows[0]["cost"] == 0.9, "the survivors keep their values"
+
+
+def test_update_jobs_mixes_edits_and_deletions(store):
+    store.append_job(job_row("2026-08-07 10:00:00", job="Keep"))
+    store.append_job(job_row("2026-08-07 11:00:00", job="Drop"))
+    store.update_jobs([
+        edit_for(job_row("2026-08-07 10:00:00"), job="Kept and renamed"),
+        {"orig_ts": "2026-08-07 11:00:00", "delete": True},
+    ])
+    assert [r["job"] for r in store.read_jobs()] == ["Kept and renamed"]
+
+
+def test_a_failed_job_round_trips_its_columns(store):
+    row = job_row("2026-08-07 10:00:00", job="Died at layer 30")
+    row["layers_done"] = 30.0
+    row["status"] = "failed"
+    store.append_job(row)
+    read = store.read_jobs()[0]
+    assert read["layers_done"] == 30.0
+    assert read["status"] == "failed"
+
+
+def test_rows_from_before_the_status_column_read_as_successes(store):
+    store.append_job(job_row("2026-08-07 10:00:00"))
+    read = store.read_jobs()[0]
+    assert read["status"] == "success"
+    assert read["layers_done"] == 0.0
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("failed", "failed"), ("FAILED", "failed"), ("", "success"),
+     (None, "success"), ("done", "success")],
+)
+def test_status_is_lenient_like_the_disabled_column(value, expected):
+    assert job_status(value) == expected

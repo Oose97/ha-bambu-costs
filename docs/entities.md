@@ -31,19 +31,13 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 - `number.<name>_electricity_price` — per kWh, the fallback when no price sensor is set
 - `number.<name>_last_print_cost`, `_last_print_filament_cost`, `_last_print_power_cost`
 - `number.<name>_total_filament_used`, `_total_cost` — lifetime running totals
-- `number.<name>_energy_at_print_start` — snapshot taken when a print begins
+- `number.<name>_energy_at_print_start`, `_energy_at_print_end` — snapshots taken as a
+  print begins and ends, aborts included — they are what lets a failed print logged
+  later carry the job's own energy, without the standby since
 - `number.<name>_cost_at_print_start`, `_cost_at_print_end` — markers in the running total
 - `number.<name>_cost_at_idle_start` — where the current idle window began; moves only
   when a print really ends, so a restart mid-idle cannot truncate the idle figure
 - `number.<name>_last_idle_cost` — electricity burnt between the last two prints
-
-## Buttons
-
-- `button.<name>_charge_filament_to_totals` — adds the current job's filament cost and
-  weight to the lifetime totals. For a print that failed part-way. Deliberately manual:
-  the printer reports the job's *planned* weight, so charging a failure automatically
-  would bill a first-layer failure in full. The last press is recorded in the button's
-  attributes so a mis-press is visible.
 
 ## Switches
 
@@ -58,12 +52,18 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 | Service | Does |
 | --- | --- |
 | `bambu_costs.log_job` | Appends the finished job, captures the cover image, advances the totals. Anything you do not pass is read from the configured sensors. |
+| `bambu_costs.add_job` | Appends one fully explicit row — the save path of both manual forms. Reads no live state, so it can never swallow a running job's own auto-log. `update_totals` banks the row's filament. |
+| `bambu_costs.draft_job` | Returns a pre-filled row for logging a print by hand — the current print, or the last one once the printer is idle. Backs the failed-print and finished-print forms. Read-only. |
+| `bambu_costs.capture_cover` | Takes a camera photo now and stores it as a job cover; returns the filename and URL. The failed-print form's capture button. |
+| `bambu_costs.write_jobs` | Applies edited log rows, matched into the file by the timestamp they were loaded with; a row carrying `delete: true` is removed instead. Previous file kept as `jobs.csv.bak`. |
 | `bambu_costs.write_tags` | Replaces the tag library. Previous file kept as `tags.csv.bak`. |
 | `bambu_costs.set_tag_price` | Updates the price on every tag with a given RFID serial. |
 | `bambu_costs.refresh` | Re-reads the CSVs from disk. |
 | `bambu_costs.sync_slot_prices` | Copies the loaded spool's tag price into each slot's price number. |
 
-Pass `entry_id` only if you have set up more than one printer.
+Pass `entry_id` only if you have set up more than one printer — and even then only
+when calling by hand: the cards pass it by themselves, from the `entry_id` attribute
+their sensor publishes, so several entries can be loaded side by side.
 
 ### Job pictures
 
@@ -82,10 +82,16 @@ and **appends the job to the log when the printer reports finish** — cover pic
 totals and all. The *Log finished jobs automatically* option (on by default) controls
 this.
 
-Aborted prints are deliberately not logged — the printer reports a job's *planned*
-weight, so logging a failure would bill a first-layer crash in full. Their electricity
-still reaches the total (see [costing](costing.md)); the charge button covers the
-filament, as a judgement call.
+Aborted prints are deliberately not logged automatically — the printer reports a job's
+*planned* weight, so logging a failure blind would bill a first-layer crash in full.
+Their electricity still reaches the total either way (see [costing](costing.md)). The
+judgement call — how far did it actually get — is the jobs card's
+[failed-print form](cards.md#jobs-table): pre-filled from the printer, scaled by the
+layers that finished, the job name marked `[FAILED]` (edit it away if unwanted), and
+able to bank the scaled filament to the totals as it saves.
+Its twin, the finished-print form, covers the opposite gap — a completed job the
+integration never saw finish (Home Assistant down at the time, say) — with the same
+pre-fill and the same totals checkbox.
 
 The `bambu_costs.log_job` service stays for passing overrides — a corrected duration, an
 explicit cost. A call for a job that is already logged is skipped, so a service call on

@@ -44,7 +44,17 @@ JOB_FIELDS = [
     "cover",
     "trays",
     "filament_type",
+    # Appended for the same reason again. layers_done is how far a failed
+    # print got; status is "success" or "failed", blank meaning success so
+    # files from before the column read unchanged.
+    "layers_done",
+    "status",
 ]
+
+
+def job_status(value: Any) -> str:
+    """Normalise the status column: only an explicit "failed" is a failure."""
+    return "failed" if str(value or "").strip().lower() == "failed" else "success"
 
 _TRUTHY = {"1", "true", "yes", "on", "disabled"}
 
@@ -281,6 +291,8 @@ class BambuCostsStore:
                     "cover": raw.get("cover", ""),
                     "trays": trays if isinstance(trays, list) else [],
                     "types": (raw.get("filament_type") or "").strip(),
+                    "layers_done": as_float(raw.get("layers_done")),
+                    "status": job_status(raw.get("status")),
                 }
             )
         return rows[-limit:] if limit else rows
@@ -331,6 +343,10 @@ class BambuCostsStore:
 
         A row that cannot be matched means the file changed under the editor,
         and the whole save is refused rather than half-applied.
+
+        An edit carrying ``delete: true`` removes its matched row instead of
+        replacing it. The row's cover image is left on disk — a 2 kB file is
+        a cheap price for a deletion being recoverable from jobs.csv.bak.
         """
         raw_rows = self._read_rows(self.jobs_path, JOB_FIELDS)
 
@@ -338,7 +354,7 @@ class BambuCostsStore:
         for index, raw in enumerate(raw_rows):
             by_ts.setdefault((raw.get("timestamp") or "").strip(), []).append(index)
 
-        replacements: list[tuple[int, dict[str, Any]]] = []
+        replacements: list[tuple[int, dict[str, Any] | None]] = []
         for edit in edits:
             key = str(edit.get("orig_ts") or edit.get("ts") or "").strip()
             queue = by_ts.get(key)
@@ -349,15 +365,24 @@ class BambuCostsStore:
                 )
             # Duplicate timestamps pair up in file order, so two same-second
             # rows each get their own edit instead of both taking the first.
-            replacements.append((queue.pop(0), self._job_to_csv(edit)))
+            converted = None if edit.get("delete") else self._job_to_csv(edit)
+            replacements.append((queue.pop(0), converted))
 
+        dropped: set[int] = set()
         for index, converted in replacements:
-            raw_rows[index] = converted
+            if converted is None:
+                dropped.add(index)
+            else:
+                raw_rows[index] = converted
 
         self._backup(self.jobs_path)
         self._write_rows(
             self.jobs_path, JOB_FIELDS,
-            [{field: raw.get(field, "") for field in JOB_FIELDS} for raw in raw_rows],
+            [
+                {field: raw.get(field, "") for field in JOB_FIELDS}
+                for index, raw in enumerate(raw_rows)
+                if index not in dropped
+            ],
         )
         return len(replacements)
 
@@ -386,6 +411,8 @@ class BambuCostsStore:
             if isinstance(trays, (list, dict))
             else str(trays or "[]"),
             "filament_type": str(row.get("types") or "").strip(),
+            "layers_done": as_float(row.get("layers_done")),
+            "status": job_status(row.get("status")),
         }
 
     # ── covers ───────────────────────────────────────────────────────────────
