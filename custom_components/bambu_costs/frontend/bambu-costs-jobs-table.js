@@ -433,6 +433,7 @@ class BambuCostsJobsTable extends HTMLElement {
     // the full job rather than compounding on its own output.
     const plan = JSON.parse(JSON.stringify(row));
     const cur = this._esc(this._cur());
+    const hmin = m => `${Math.floor(m / 60)}h ${Math.round(m % 60)}min`;
 
     const num = (k, unit, w = 8) => `<span class="trline"><input class="cell tin num"
       type="number" step="any" data-ff="${k}" value="${isNaN(parseFloat(row[k])) ? "" : parseFloat(row[k])}"
@@ -495,7 +496,9 @@ class BambuCostsJobsTable extends HTMLElement {
               data-ff="layers" value="${isNaN(parseFloat(row.layers)) ? "" : parseFloat(row.layers)}"
               style="width:6ch"></span>`,
             "Editing these rescales the filament figures from the plan")}
-          ${field("Print time", text("time", 12))}
+          ${field("Print time", text("time", 12), draft.mins_planned > 0
+            ? `Ran so far, of the planned ${hmin(draft.mins_planned)}`
+            : "How long it actually ran")}
           ${field("Weight", num("weight", "g"))}
           ${field("Length", num("length", "m"))}
           ${field("Nozzle", `<span class="trline">${text("nozzle", 5)}${text("nozzle_type", 20)}</span>`)}

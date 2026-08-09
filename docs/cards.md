@@ -82,7 +82,9 @@ narrows it to anything — a date, a job name, a material:
   printer is idle — with one extra field: **how many layers finished**. The filament
   figures start as the job's plan scaled by that ratio (the printer only ever reports
   planned weights), and editing the layer count rescales them; duration, energy and
-  electricity are the stint's measured reality and are not scaled. Everything is
+  electricity are the stint's measured reality and are not scaled — for a print still
+  running, the Print time field notes the planned duration alongside, the way the
+  layers pair reads done against total. Everything is
   editable, per AMS slot included. The picture is a deliberate choice: press
   **📷 Capture photo** for a camera shot of the failed plate, or Save stores the
   slicer's render. A checkbox (on by default) banks the row's filament to the lifetime

@@ -267,6 +267,23 @@ def test_next_job_can_log_again():
     assert c.appended == 2
 
 
+def test_a_running_prints_fallback_measures_elapsed_not_the_estimate():
+    """Restart mid-print: the stopwatch is gone and the printer's end-time
+    sensor is its ESTIMATED finish — the fallback must read start → now, or
+    a failed print drafted mid-job reports the whole planned duration."""
+    import datetime as dt
+
+    c = make()
+    c._saw_print_start = True
+    start = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=30)
+    estimate = dt.datetime.now(dt.UTC) + dt.timedelta(hours=3)
+    c._state = lambda key: {
+        "start_time": start.isoformat(),
+        "end_time": estimate.isoformat(),
+    }.get(key, "Job")
+    assert c.print_minutes() == pytest.approx(30.0, abs=0.1)
+
+
 def test_print_end_snapshots_the_energy_counter():
     c = make()
     c.energy_now = lambda: 5.2
@@ -296,14 +313,25 @@ def _draftable(c):
 
 
 def test_draft_prefills_from_the_running_print():
+    import datetime as dt
+
     c = _draftable(make())
     c._saw_print_start = True
     c.cost_total = 0.30
     c.values.update({"cost_at_print_start": 0.10, "energy_at_print_start": 4.5})
     c.energy_now = lambda: 5.0
+    start = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=90)
+    estimate = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=120)
+    base = c._state
+    c._state = lambda key: {
+        "start_time": start.isoformat(),
+        "end_time": estimate.isoformat(),
+    }.get(key) or base(key)
 
     d = c.draft_failed_job()
     assert d["running"] is True and d["has_camera"] is True
+    assert d["mins_planned"] == pytest.approx(210.0, abs=0.1), \
+        "start to estimated finish — the plan the form shows the ran-time against"
     row = d["row"]
     assert row["status"] == "failed"
     assert row["layers"] == 70.0 and row["layers_done"] == 30.0

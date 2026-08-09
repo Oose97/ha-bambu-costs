@@ -876,6 +876,12 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return max(0.0, (end - self._print_started_at).total_seconds() / 60.0)
 
         start = self._ts(CONF_START_TIME)
+        # While a print runs, the printer's end-time sensor is its ESTIMATE of
+        # when the job will finish — measuring to it reports the whole planned
+        # duration. What has actually elapsed is start → now; the estimate is
+        # only trustworthy as an end once the job is over.
+        if self._saw_print_start and start:
+            return max(0.0, (dt_util.utcnow() - start).total_seconds() / 60.0)
         end = self._ts(CONF_END_TIME)
         if start and end and end > start:
             return (end - start).total_seconds() / 60.0
@@ -1038,10 +1044,21 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     0.0, self.energy_now() - self.value("energy_at_print_start")
                 )
 
+        # The planned duration, for the form to show next to the measured one
+        # the way it shows layers done against layers total. Only a running
+        # print knows it — the end-time sensor is the printer's estimated
+        # finish then; once the job is over it is just the actual end.
+        mins_planned = 0.0
+        if running:
+            start, end = self._ts(CONF_START_TIME), self._ts(CONF_END_TIME)
+            if start and end and end > start:
+                mins_planned = (end - start).total_seconds() / 60.0
+
         filament_cost = breakdown["cost"]
         return {
             "running": running,
             "has_camera": bool(self.entity_of(CONF_CAMERA)),
+            "mins_planned": round(mins_planned, 2),
             "row": {
                 "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "job": self._state(CONF_TASK_NAME) or "",
