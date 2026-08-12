@@ -160,6 +160,8 @@ the settings.
 `custom:bambu-costs-printing-now` — the job on the printer, as the row it will be
 logged as, editable while it prints.
 
+![The Printing-now card: the render beside the live figures, a renamed job wearing its edit mark, the predicted total, and the per-slot filament table](images/printing_now_card.jpg)
+
 - **What you edit here is what the finished job logs.** Only the fields you touch are
   stored (marked with an accent bar); everything untouched keeps following live data,
   and a **↺ Reset edits** button drops the lot. Edits survive a restart mid-print, are
