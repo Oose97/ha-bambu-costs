@@ -27,8 +27,9 @@ slots are free-form, so any AMS layout — or none — works.
   `[FAILED]` ([details](docs/entities.md#logging-a-finished-job)).
 - **Spools scan themselves in**: loading an unknown tag appends a library row, named
   from Bambu's colour palette, ready for you to price.
-- **Three cards** — tag library editor, print history, quote calculator — registered
-  automatically, no resource wrangling.
+- **Four cards** — tag library editor, print history, a live *Printing now* view whose
+  edits become the logged row, and a quote calculator — registered automatically, no
+  resource wrangling.
 - **No automations required** — logging, meter snapshots, slot prices, durations and
   idle tracking are the integration's own job. The ones worth adding are notifications,
   and the [Automations](#automations) section has them ready to paste.
@@ -118,8 +119,11 @@ Go to [Cards](docs/cards.md) for more details.
   row deletion, pre-filled failed- and finished-print forms (the failed one scales the
   plan by the layers that finished), content-sized columns, pinned header, configurable
   columns/sort/page size/height.
+- **Printing now** — the running job as the row it will be logged as: name, filament
+  lines and costs editable mid-print, measured values read-only, and the edits are
+  what the finished job logs. Survives restarts; reset takes it all back.
 - **Cost calculator** — quotes from your real spool prices plus runtime, margin and
-  VAT. All three register themselves as Lovelace resources.
+  VAT. All four register themselves as Lovelace resources.
 
 ### Data on disk
 

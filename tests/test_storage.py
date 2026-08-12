@@ -92,6 +92,20 @@ def test_filtering_out_disabled_rows_keeps_the_half_enabled_pair():
     assert count_spools([t for t in tags if not t["disabled"]]) == 1
 
 
+def test_overlay_round_trips_and_clears(store, tmp_path):
+    assert store.read_overlay() == {}, "no file is an empty overlay"
+    store.write_overlay({"job": "Edited", "trays": {"0": {"price": 12.5}}})
+    assert store.read_overlay() == {"job": "Edited", "trays": {"0": {"price": 12.5}}}
+    store.write_overlay({})
+    assert store.read_overlay() == {}
+    assert not (tmp_path / "current_job.json").exists(), "empty means gone"
+
+
+def test_a_corrupt_overlay_reads_as_empty(store, tmp_path):
+    (tmp_path / "current_job.json").write_text("{not json", encoding="utf-8")
+    assert store.read_overlay() == {}
+
+
 def test_write_keeps_a_backup(store, tmp_path):
     store.write_tags([tag("AAA")])
     store.write_tags([tag("AAA"), tag("CCC")])

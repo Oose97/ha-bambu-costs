@@ -21,6 +21,9 @@ URL_COVERS: Final = "/bambu-costs-covers"
 DATA_DIR: Final = "bambu_costs"
 TAGS_FILE: Final = "tags.csv"
 JOBS_FILE: Final = "jobs.csv"
+# The current print's edits from the Printing-now card, applied when the job
+# is logged. A file rather than memory so a restart mid-print keeps them.
+OVERLAY_FILE: Final = "current_job.json"
 COVERS_DIR: Final = "covers"
 
 # ── config keys ──────────────────────────────────────────────────────────────
@@ -94,6 +97,7 @@ SERVICE_LOG_JOB: Final = "log_job"
 SERVICE_ADD_JOB: Final = "add_job"
 SERVICE_DRAFT_JOB: Final = "draft_job"
 SERVICE_CAPTURE_COVER: Final = "capture_cover"
+SERVICE_UPDATE_CURRENT_JOB: Final = "update_current_job"
 SERVICE_REFRESH: Final = "refresh"
 SERVICE_IMPORT_LEGACY: Final = "import_legacy"
 SERVICE_SYNC_SLOT_PRICES: Final = "sync_slot_prices"

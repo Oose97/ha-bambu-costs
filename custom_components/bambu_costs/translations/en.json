@@ -273,6 +273,24 @@
         }
       }
     },
+    "update_current_job": {
+      "name": "Update current job",
+      "description": "Store edits for the job on the printer now. Only the touched fields are kept; they are applied when the job is logged, and cleared when a new one starts. The Printing-now card calls this.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        },
+        "patch": {
+          "name": "Patch",
+          "description": "The edited fields (job, layers, weight, length, nozzle, nozzle_type, types, f_cost, trays by index). Measured-at-finish fields are ignored."
+        },
+        "clear": {
+          "name": "Clear",
+          "description": "Drop every stored edit instead of patching."
+        }
+      }
+    },
     "refresh": {
       "name": "Refresh",
       "description": "Re-read the CSV files from disk.",

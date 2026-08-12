@@ -15,7 +15,7 @@ import shutil
 import tempfile
 from typing import Any
 
-from .const import COVERS_DIR, JOBS_FILE, TAGS_FILE
+from .const import COVERS_DIR, JOBS_FILE, OVERLAY_FILE, TAGS_FILE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -175,7 +175,40 @@ class BambuCostsStore:
         self.root = root
         self.tags_path = os.path.join(root, TAGS_FILE)
         self.jobs_path = os.path.join(root, JOBS_FILE)
+        self.overlay_path = os.path.join(root, OVERLAY_FILE)
         self.covers_path = os.path.join(root, COVERS_DIR)
+
+    # ── the current job's edits ──────────────────────────────────────────────
+    def read_overlay(self) -> dict[str, Any]:
+        """The user's mid-print edits — only what they touched, nothing else.
+
+        A missing or unreadable file is an empty overlay: the worst a corrupt
+        file can do is forget edits, never break logging.
+        """
+        try:
+            with open(self.overlay_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def write_overlay(self, overlay: dict[str, Any]) -> None:
+        """Persist the edits; an empty overlay removes the file."""
+        if not overlay:
+            with suppress_errors():
+                os.remove(self.overlay_path)
+            return
+        handle = tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=self.root, delete=False
+        )
+        try:
+            with handle:
+                json.dump(overlay, handle, separators=(",", ":"))
+            os.replace(handle.name, self.overlay_path)
+        except BaseException:
+            with suppress_errors():
+                os.unlink(handle.name)
+            raise
 
     # ── setup ────────────────────────────────────────────────────────────────
     def ensure(self) -> None:

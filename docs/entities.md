@@ -20,6 +20,7 @@ are possible shapes in one install.
 | `sensor.<name>_cost_total` | **Electricity only.** Everything it has cost to run, printing or idle. Restored across restarts. |
 | `sensor.<name>_total_spend` | **The whole bill** — filament, electricity and standby. Metering source; see [Costs per month](costing.md#costs-per-month). |
 | `sensor.<name>_job_log` | Logged jobs. State is the row count; `data` holds the rows. |
+| `sensor.<name>_current_job` | The job on the printer now — `printing`/`idle`. `row` is the live draft with the Printing-now card's edits applied; `edited` names the touched fields. |
 
 ## Numbers
 
@@ -55,6 +56,7 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 | `bambu_costs.add_job` | Appends one fully explicit row — the save path of both manual forms. Reads no live state, so it can never swallow a running job's own auto-log. `update_totals` banks the row's filament. |
 | `bambu_costs.draft_job` | Returns a pre-filled row for logging a print by hand — the current print, or the last one once the printer is idle. Backs the failed-print and finished-print forms. Read-only. |
 | `bambu_costs.capture_cover` | Takes a camera photo now and stores it as a job cover; returns the filename and URL. The failed-print form's capture button. |
+| `bambu_costs.update_current_job` | Stores edits for the job printing now — only the touched fields, applied when the job is logged, cleared when a new one starts. `clear: true` drops them. The Printing-now card's save path. |
 | `bambu_costs.write_jobs` | Applies edited log rows, matched into the file by the timestamp they were loaded with; a row carrying `delete: true` is removed instead. Previous file kept as `jobs.csv.bak`. |
 | `bambu_costs.write_tags` | Replaces the tag library. Previous file kept as `tags.csv.bak`. |
 | `bambu_costs.set_tag_price` | Updates the price on every tag with a given RFID serial. |
