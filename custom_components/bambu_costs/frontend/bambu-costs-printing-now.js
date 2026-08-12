@@ -101,20 +101,31 @@ class BambuCostsPrintingNow extends HTMLElement {
     this.innerHTML = `
       <ha-card header="${this._esc(this._cfg.title)}">
         <style>
-          .bpn-wrap { padding:0 16px 16px; font-size:13px; }
+          /* Sized against the card itself, not the viewport — a full-width
+             card and a narrow column each get a layout that fits them. */
+          .bpn-wrap { padding:0 16px 16px; font-size:13px; container-type:inline-size; }
           .bpn-idle { padding:28px 0 14px; text-align:center; opacity:.5; }
-          .bpn-top { display:flex; gap:14px; align-items:flex-start; }
-          .bpn-top img { width:148px; height:148px; object-fit:contain; border-radius:10px;
+          .bpn-top { display:flex; gap:16px; align-items:stretch; }
+          .bpn-top img { width:min(38cqw, 340px); min-width:160px; aspect-ratio:1;
+            height:auto; object-fit:contain; border-radius:12px; align-self:flex-start;
             box-shadow:0 0 0 1px var(--divider-color); cursor:pointer; flex:none; }
           .bpn-head { flex:1; min-width:0; }
           .bpn-sub { font-size:12px; color:var(--secondary-text-color); margin-top:4px; }
           .bpn-meas { display:flex; flex-wrap:wrap; gap:6px 14px; margin:12px 0 4px;
             font-size:12px; color:var(--secondary-text-color); }
           .bpn-meas b { color:var(--primary-text-color); font-weight:600; }
-          .bpn-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));
-            gap:2px 18px; margin-top:6px; }
+          /* auto-fill with a bounded track: a wide card gets more columns,
+             never one field stretched across half a screen. */
+          .bpn-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr));
+            gap:2px 22px; margin-top:6px; }
           .bpn-fieldrow { display:flex; align-items:center; justify-content:space-between;
-            gap:10px; padding:5px 0; border-bottom:1px solid var(--divider-color); }
+            gap:10px; padding:5px 0; border-bottom:1px solid var(--divider-color);
+            max-width:300px; }
+          @container (max-width:520px) {
+            .bpn-top { flex-direction:column; }
+            .bpn-top img { width:100%; max-height:240px; min-width:0; aspect-ratio:auto; }
+            .bpn-fieldrow { max-width:none; }
+          }
           .bpn-label { color:var(--secondary-text-color); font-size:12px; white-space:nowrap; }
           input.cell { padding:4px 6px; border-radius:7px; border:1px solid transparent;
             background:transparent; color:var(--primary-text-color); font:inherit;
@@ -131,11 +142,19 @@ class BambuCostsPrintingNow extends HTMLElement {
           .cu { font-size:11px; color:var(--secondary-text-color); white-space:nowrap; }
           .bpn-trays { margin-top:10px; }
           .bpn-trayhead { font-weight:600; font-size:12.5px; margin:8px 0 2px; }
-          .trrow { display:flex; align-items:center; gap:10px; padding:7px 0;
+          /* Table-shaped: the name column takes the slack, the number columns
+             stay the width of their numbers — at any card width. */
+          .trrow { display:grid; grid-template-columns:auto minmax(140px, 1fr) auto auto auto;
+            gap:2px 14px; align-items:center; padding:7px 0;
             border-bottom:1px solid var(--divider-color); }
-          .trrow .trmain { flex:1; min-width:0; display:flex; flex-direction:column; }
-          .trline { display:flex; gap:4px; align-items:center; margin:1px 0; }
-          .trnum { display:flex; flex-direction:column; align-items:flex-end; }
+          .trrow .trmain { min-width:0; display:flex; flex-direction:column; }
+          .trline { display:flex; gap:4px; align-items:center; margin:1px 0;
+            justify-content:flex-end; }
+          .trmain .trline { justify-content:flex-start; }
+          @container (max-width:520px) {
+            .trrow { grid-template-columns:auto 1fr auto; }
+            .trrow .trline.tn { grid-column:2 / -1; }
+          }
           .tsw { width:26px; height:26px; padding:0; border:none; background:none;
             border-radius:5px; cursor:pointer; flex:none;
             box-shadow:0 0 0 1px var(--divider-color); }
@@ -274,14 +293,12 @@ class BambuCostsPrintingNow extends HTMLElement {
               value="${this._esc(t.name || "")}" style="width:21ch" placeholder="colour name">
           </span>
         </span>
-        <span class="trnum">
-          <span class="trline"><input class="cell num${ed(`trays.${i}.weight`)}" type="number" step="any"
-            data-i="${i}" data-tf="weight" value="${this._num(t.weight)}" style="width:8ch"><span class="cu">g</span></span>
-          <span class="trline"><input class="cell num${ed(`trays.${i}.price`)}" type="number" step="any"
-            data-i="${i}" data-tf="price" value="${this._num(t.price)}" style="width:8ch"><span class="cu">${cur}/kg</span></span>
-          <span class="trline"><input class="cell num${ed(`trays.${i}.cost`)}" type="number" step="any"
-            data-i="${i}" data-tf="cost" value="${this._num(t.cost)}" style="width:8ch"><span class="cu">${cur}</span></span>
-        </span>
+        <span class="trline tn"><input class="cell num${ed(`trays.${i}.weight`)}" type="number" step="any"
+          data-i="${i}" data-tf="weight" value="${this._num(t.weight)}" style="width:8ch"><span class="cu">g</span></span>
+        <span class="trline tn"><input class="cell num${ed(`trays.${i}.price`)}" type="number" step="any"
+          data-i="${i}" data-tf="price" value="${this._num(t.price)}" style="width:8ch"><span class="cu">${cur}/kg</span></span>
+        <span class="trline tn"><input class="cell num${ed(`trays.${i}.cost`)}" type="number" step="any"
+          data-i="${i}" data-tf="cost" value="${this._num(t.cost)}" style="width:8ch"><span class="cu">${cur}</span></span>
       </div>`;
 
     const layers = this._num(row.layers, 0);
@@ -294,18 +311,18 @@ class BambuCostsPrintingNow extends HTMLElement {
           <div class="bpn-sub">${this._esc(row.time || "0h 0min")} elapsed${
             planned > 0 ? ` of ~${this._esc(this._hmin(planned))}` : ""}${
             layers ? ` · layer ${done || "?"} / ${layers}` : ""}</div>
+          <div class="bpn-meas">
+            <span>Energy <b>${this._num(row.kwh, 3)}</b> kWh</span>
+            <span>Electricity <b>${this._num(row.p_cost, 4)}</b> ${cur}</span>
+            <span>Total so far <b>${this._num(row.cost, 4)}</b> ${cur}</span>
+            ${parseFloat(this._attrs().cost_predicted) > 0
+              ? `<span title="Filament plus the projected electricity — the print's own rate past 5% of the plan, the last print's before that">Predicted total <b>${
+                  this._num(this._attrs().cost_predicted, 4)}</b> ${cur}</span>`
+              : ""}
+          </div>
+          <div class="bpn-grid">${BPN_FIELDS.map(fieldRow).join("")}</div>
         </div>
       </div>
-      <div class="bpn-meas">
-        <span>Energy <b>${this._num(row.kwh, 3)}</b> kWh</span>
-        <span>Electricity <b>${this._num(row.p_cost, 4)}</b> ${cur}</span>
-        <span>Total so far <b>${this._num(row.cost, 4)}</b> ${cur}</span>
-        ${parseFloat(this._attrs().cost_predicted) > 0
-          ? `<span title="Filament plus the projected electricity — the print's own rate past 5% of the plan, the last print's before that">Predicted total <b>${
-              this._num(this._attrs().cost_predicted, 4)}</b> ${cur}</span>`
-          : ""}
-      </div>
-      <div class="bpn-grid">${BPN_FIELDS.map(fieldRow).join("")}</div>
       ${(row.trays || []).length ? `<div class="bpn-trays">
         <div class="bpn-trayhead">Filament</div>
         ${(row.trays || []).map(trayRow).join("")}
