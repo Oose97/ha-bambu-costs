@@ -132,6 +132,12 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Last breakdown that was computed from real per-slot data. Persisted by
         # the breakdown sensor, so a restart mid-print does not lose the split.
         self.last_good: dict[str, Any] | None = None
+        # The Printing-now card's edits to the current job — only the fields
+        # the user touched. Loaded from disk at setup so a restart mid-print
+        # keeps them; applied when the job is logged, cleared when a new one
+        # starts. Everything untouched keeps following live data.
+        self.overlay: dict[str, Any] = {}
+        self._overlay_lock = asyncio.Lock()
 
         # Running cost total, restored by its sensor. _rate is the rate in
         # force since _rate_since, held so an interval can be charged at the
@@ -528,6 +534,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # New work: whatever ended before belongs to a different job now.
         self._ended_had_start = False
         self._job_logged = False
+        # ...including the card's edits to it. A resume keeps them — it is
+        # the same job continuing.
+        if self.overlay:
+            self.overlay = {}
+            self.hass.async_add_executor_job(self.store.write_overlay, {})
         self._print_started_at = now or dt_util.utcnow()
         self._print_ended_at = None
         # The whole window since the last real print end — read before
@@ -969,7 +980,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             power_cost = self.power_cost_for_job(energy_kwh, minutes)
         job_name = overrides.get("job") or self._state(CONF_TASK_NAME) or "unknown"
 
-        return {
+        row = {
             "timestamp": overrides.get("timestamp")
             or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "job": job_name,
@@ -995,6 +1006,45 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "layers_done": as_float(overrides.get("layers_done")),
             "status": overrides.get("status") or "success",
         }
+        # The card's mid-print edits land last — but an explicit service
+        # override outranks them, so log_job stays the final word.
+        return self._overlaid_csv(row, set(overrides))
+
+    def _overlaid_csv(self, row: dict[str, Any], explicit: set[str]) -> dict[str, Any]:
+        """Apply the overlay to a CSV-shape row, minding explicit overrides."""
+        if not self.overlay:
+            return row
+        mapping = {
+            "job": "job",
+            "layers": "layers",
+            "weight": "weight_g",
+            "length": "length_m",
+            "nozzle": "nozzle_size",
+            "nozzle_type": "nozzle_type",
+            "types": "filament_type",
+            "f_cost": "filament_cost",
+        }
+        out = dict(row)
+        for overlay_key, csv_key in mapping.items():
+            if overlay_key in self.overlay and csv_key not in explicit:
+                out[csv_key] = self.overlay[overlay_key]
+        tray_patches = self.overlay.get("trays")
+        if isinstance(tray_patches, dict) and isinstance(out.get("trays"), list):
+            trays = [dict(t) for t in out["trays"]]
+            for index, fields in tray_patches.items():
+                try:
+                    position = int(index)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= position < len(trays) and isinstance(fields, dict):
+                    trays[position].update(fields)
+            out["trays"] = trays
+        # The total follows the edited filament; the power half is measured.
+        if "total_cost" not in explicit:
+            out["total_cost"] = round(
+                as_float(out.get("filament_cost")) + as_float(out.get("power_cost")), 4
+            )
+        return out
 
     @staticmethod
     def _sensor_trays(breakdown: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1014,6 +1064,69 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
             for row in breakdown["slots"]
         ]
+
+    # ── the current job's edits (the Printing-now card) ──────────────────────
+    async def async_update_overlay(
+        self, patch: dict[str, Any] | None, clear: bool = False
+    ) -> dict[str, Any]:
+        """Merge edits for the job on the printer, or drop them all.
+
+        Only what the user touched is kept: every other field keeps following
+        live data, and logging applies the overlay last. Tray patches merge
+        per slot index, so editing one line never freezes its neighbours.
+        """
+        async with self._overlay_lock:
+            if clear:
+                self.overlay = {}
+            elif patch:
+                trays = patch.pop("trays", None)
+                self.overlay.update(patch)
+                if isinstance(trays, dict):
+                    merged = dict(self.overlay.get("trays") or {})
+                    for index, fields in trays.items():
+                        if isinstance(fields, dict):
+                            slot = dict(merged.get(str(index)) or {})
+                            slot.update(fields)
+                            merged[str(index)] = slot
+                    self.overlay["trays"] = merged
+            await self.hass.async_add_executor_job(
+                self.store.write_overlay, self.overlay
+            )
+        self.async_update_listeners()
+        return {"edited": self.overlay_fields()}
+
+    def overlay_fields(self) -> list[str]:
+        """The touched fields, tray edits as ``trays.<index>.<field>``."""
+        fields: list[str] = []
+        for key, value in self.overlay.items():
+            if key == "trays" and isinstance(value, dict):
+                for index, slot in value.items():
+                    fields.extend(f"trays.{index}.{f}" for f in slot)
+            else:
+                fields.append(key)
+        return sorted(fields)
+
+    def _overlaid(self, row: dict[str, Any]) -> dict[str, Any]:
+        """A sensor-shape row with the overlay's edits applied."""
+        if not self.overlay:
+            return row
+        out = dict(row)
+        for key in ("job", "layers", "weight", "length", "nozzle", "nozzle_type",
+                    "types", "f_cost"):
+            if key in self.overlay:
+                out[key] = self.overlay[key]
+        tray_patches = self.overlay.get("trays")
+        if isinstance(tray_patches, dict) and isinstance(out.get("trays"), list):
+            trays = [dict(t) for t in out["trays"]]
+            for index, fields in tray_patches.items():
+                try:
+                    position = int(index)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= position < len(trays) and isinstance(fields, dict):
+                    trays[position].update(fields)
+            out["trays"] = trays
+        return out
 
     def draft_job(self) -> dict[str, Any]:
         """A pre-filled row for logging a print by hand, in the sensor's shape.
@@ -1057,31 +1170,69 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 mins_planned = (end - start).total_seconds() / 60.0
 
         filament_cost = breakdown["cost"]
+        row = {
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "job": self._state(CONF_TASK_NAME) or "",
+            "time": f"{int(minutes) // 60}h {int(minutes) % 60}min" if minutes else "",
+            "mins": round(minutes, 2),
+            "layers": as_float(self._state(CONF_LAYERS)),
+            "layers_done": as_float(self._state(CONF_CURRENT_LAYER)),
+            "weight": round(breakdown["weight"], 3),
+            "length": as_float(self._state(CONF_LENGTH)),
+            "nozzle": self._state(CONF_NOZZLE_SIZE) or "",
+            "nozzle_type": self._state(CONF_NOZZLE_TYPE) or "",
+            "kwh": round(energy_kwh, 4),
+            "f_cost": round(filament_cost, 4),
+            "p_cost": round(power_cost, 4),
+            "cost": round(filament_cost + power_cost, 4),
+            "cover": "",
+            "types": distinct_filaments(breakdown["slots"]),
+            "trays": self._sensor_trays(breakdown),
+            "status": "failed",
+        }
+        # The card's mid-print edits carry into everything drafted from this
+        # job — the Printing-now view, and the failed/finished forms alike.
+        row = self._overlaid(row)
+        row["cost"] = round(as_float(row["f_cost"]) + as_float(row["p_cost"]), 4)
+
+        # What the whole print is likely to cost: the filament is known up
+        # front (the plan, or the user's edit of it); the electricity is
+        # projected. Past 5% of the planned duration the print's own rate is
+        # the best predictor — cost so far over fraction done. Earlier than
+        # that the sample is mostly heat-up noise, so the last print's
+        # measured rate stands in until this one has a track record.
+        p_predicted = 0.0
+        if running and mins_planned > 0:
+            fraction = min(1.0, minutes / mins_planned)
+            if fraction >= 0.05 and power_cost > 0:
+                p_predicted = power_cost / fraction
+            else:
+                p_predicted = self._last_print_power_rate() * mins_planned
+            # Never predict below what is already on the meter.
+            p_predicted = max(p_predicted, power_cost)
+
         return {
             "running": running,
             "has_camera": bool(self.entity_of(CONF_CAMERA)),
             "mins_planned": round(mins_planned, 2),
-            "row": {
-                "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "job": self._state(CONF_TASK_NAME) or "",
-                "time": f"{int(minutes) // 60}h {int(minutes) % 60}min" if minutes else "",
-                "mins": round(minutes, 2),
-                "layers": as_float(self._state(CONF_LAYERS)),
-                "layers_done": as_float(self._state(CONF_CURRENT_LAYER)),
-                "weight": round(breakdown["weight"], 3),
-                "length": as_float(self._state(CONF_LENGTH)),
-                "nozzle": self._state(CONF_NOZZLE_SIZE) or "",
-                "nozzle_type": self._state(CONF_NOZZLE_TYPE) or "",
-                "kwh": round(energy_kwh, 4),
-                "f_cost": round(filament_cost, 4),
-                "p_cost": round(power_cost, 4),
-                "cost": round(filament_cost + power_cost, 4),
-                "cover": "",
-                "types": distinct_filaments(breakdown["slots"]),
-                "trays": self._sensor_trays(breakdown),
-                "status": "failed",
-            },
+            "p_cost_predicted": round(p_predicted, 4),
+            "cost_predicted": round(as_float(row["f_cost"]) + p_predicted, 4)
+            if p_predicted > 0
+            else 0.0,
+            "row": row,
         }
+
+    def _last_print_power_rate(self) -> float:
+        """The last logged print's electricity per minute, or 0 unknown."""
+        jobs = (self.data or {}).get("jobs") or []
+        if not jobs:
+            return 0.0
+        last = jobs[-1]
+        minutes = as_float(last.get("mins"))
+        power = as_float(last.get("p_cost"))
+        if minutes <= 0 or power <= 0:
+            return 0.0
+        return power / minutes
 
     async def async_add_job(
         self,

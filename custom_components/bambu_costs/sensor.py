@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .colors import COLOR_NAME_OPTIONS
 from .const import (
+    CONF_COVER_IMAGE,
     CONF_DEFAULT_FILAMENT_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_FILAMENT_TYPES,
@@ -62,6 +63,7 @@ async def async_setup_entry(
             SpoolCountSensor(coordinator, "spools", "Spools", active_only=False),
             SpoolCountSensor(coordinator, "active_spools", "Active spools", active_only=True),
             JobLogSensor(coordinator),
+            CurrentJobSensor(coordinator),
         ]
     )
 
@@ -400,6 +402,57 @@ class TagLibrarySensor(BambuCostsSensor):
             if entity_id:
                 targets.append({"entity_id": entity_id, "label": label})
         return targets
+
+
+class CurrentJobSensor(BambuCostsSensor):
+    """The job on the printer now, as the row it would be logged as.
+
+    State is ``printing`` or ``idle``. The ``row`` attribute is the live
+    draft — the same one the manual forms open with — with the Printing-now
+    card's edits applied; ``edited`` names the touched fields so the card can
+    mark them. Its own tick keeps the measured parts (elapsed, energy,
+    electricity so far) moving between state changes.
+    """
+
+    _attr_icon = "mdi:printer-3d-nozzle"
+
+    def __init__(self, coordinator: BambuCostsCoordinator) -> None:
+        super().__init__(coordinator, "current_job", "Current job")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass, self._tick, timedelta(seconds=COST_TICK_SECONDS)
+            )
+        )
+
+    @callback
+    def _tick(self, _now: Any) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> str:
+        return "printing" if self.coordinator.print_running else "idle"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        draft = self.coordinator.draft_job()
+        row = draft["row"]
+        # The draft is failure-flavoured for the forms; this sensor is not.
+        row["status"] = self.native_value
+        return {
+            "row": row,
+            "edited": self.coordinator.overlay_fields(),
+            "mins_planned": draft["mins_planned"],
+            "cost_predicted": draft["cost_predicted"],
+            "p_cost_predicted": draft["p_cost_predicted"],
+            "currency": self.coordinator.currency,
+            "entry_id": self.coordinator.entry.entry_id,
+            # The slicer's render of the job, for the card to show — served
+            # by the printer integration's image entity.
+            "cover_entity": self.coordinator.entity_of(CONF_COVER_IMAGE) or "",
+        }
 
 
 class SpoolCountSensor(BambuCostsSensor):

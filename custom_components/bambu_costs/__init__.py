@@ -48,6 +48,7 @@ from .const import (
     SERVICE_REFRESH,
     SERVICE_SET_TAG_PRICE,
     SERVICE_SYNC_SLOT_PRICES,
+    SERVICE_UPDATE_CURRENT_JOB,
     SERVICE_WRITE_JOBS,
     SERVICE_WRITE_TAGS,
     URL_COVERS,
@@ -161,6 +162,46 @@ _CAPTURE_COVER_SCHEMA = vol.Schema(
     }
 )
 
+# The Printing-now card's edits: only fields that are safe to decide before
+# the job ends. Everything measured at finish — duration, energy, power, the
+# timestamp, the cover — is deliberately absent, and REMOVE_EXTRA makes any
+# attempt to sneak one in a silent no-op rather than a stored lie.
+_TRAY_PATCH_SCHEMA = vol.Schema(
+    {
+        vol.Optional("label"): cv.string,
+        vol.Optional("type"): cv.string,
+        vol.Optional("name"): cv.string,
+        vol.Optional("color"): cv.string,
+        vol.Optional("weight"): vol.Coerce(float),
+        vol.Optional("price"): vol.Coerce(float),
+        vol.Optional("cost"): vol.Coerce(float),
+    },
+    extra=vol.REMOVE_EXTRA,
+)
+
+_OVERLAY_PATCH_SCHEMA = vol.Schema(
+    {
+        vol.Optional("job"): cv.string,
+        vol.Optional("layers"): vol.Coerce(float),
+        vol.Optional("weight"): vol.Coerce(float),
+        vol.Optional("length"): vol.Coerce(float),
+        vol.Optional("nozzle"): cv.string,
+        vol.Optional("nozzle_type"): cv.string,
+        vol.Optional("types"): cv.string,
+        vol.Optional("f_cost"): vol.Coerce(float),
+        vol.Optional("trays"): vol.Schema({cv.string: _TRAY_PATCH_SCHEMA}),
+    },
+    extra=vol.REMOVE_EXTRA,
+)
+
+_UPDATE_CURRENT_JOB_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): cv.string,
+        vol.Optional("patch"): _OVERLAY_PATCH_SCHEMA,
+        vol.Optional("clear", default=False): cv.boolean,
+    }
+)
+
 _SET_PRICE_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_ENTRY_ID): cv.string,
@@ -234,6 +275,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Bambu Print Costs from a config entry."""
     coordinator = BambuCostsCoordinator(hass, entry)
     await hass.async_add_executor_job(coordinator.store.ensure)
+    # The Printing-now card's edits to the current job, from before a restart.
+    coordinator.overlay = await hass.async_add_executor_job(
+        coordinator.store.read_overlay
+    )
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
@@ -501,6 +546,12 @@ def _async_register_services(hass: HomeAssistant) -> None:
         coordinator = _resolve(hass, call)
         return coordinator.draft_job()
 
+    async def _update_current_job(call: ServiceCall) -> ServiceResponse:
+        coordinator = _resolve(hass, call)
+        return await coordinator.async_update_overlay(
+            dict(call.data.get("patch") or {}), clear=call.data.get("clear", False)
+        )
+
     async def _capture_cover(call: ServiceCall) -> ServiceResponse:
         """Shoot the camera now — the failed-print form's deliberate capture."""
         coordinator = _resolve(hass, call)
@@ -584,6 +635,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         _draft_job,
         schema=_REFRESH_SCHEMA,
         supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_UPDATE_CURRENT_JOB,
+        _update_current_job,
+        schema=_UPDATE_CURRENT_JOB_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN,

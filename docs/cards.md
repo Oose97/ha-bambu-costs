@@ -155,6 +155,44 @@ page_size: 20
 `page_size` is the default page length for browsers that have not chosen their own in
 the settings.
 
+## Printing now
+
+`custom:bambu-costs-printing-now` — the job on the printer, as the row it will be
+logged as, editable while it prints.
+
+![The Printing-now card: the render beside the live figures, a renamed job wearing its edit mark, the predicted total, and the per-slot filament table](images/printing_now_card.jpg)
+
+- **What you edit here is what the finished job logs.** Only the fields you touch are
+  stored (marked with an accent bar); everything untouched keeps following live data,
+  and a **↺ Reset edits** button drops the lot. Edits survive a restart mid-print, are
+  kept through a pause or jam recovery, and are cleared when a new job starts. If the
+  print dies instead of finishing, the failed-print form opens with these edits
+  already applied.
+- Editable: the job name, layers, weight, length, nozzle size and type, material,
+  filament cost, and every per-slot line — with the same maths as everywhere else:
+  weight or price moves a line's cost, the lines roll up into the row's weight and
+  filament cost, and any computed value can still be overwritten directly.
+- Read-only, because they are measured at the finish rather than decided in advance:
+  elapsed time (with the planned duration alongside while it runs), the current
+  layer, energy, electricity so far, and the running total. The date stays the
+  moment the job finishes, as always.
+- A **predicted total** sits beside them: the filament (as edited) plus projected
+  electricity. Past 5% of the planned duration the projection is the print's own rate
+  — spent so far over fraction done; before that, when the sample is mostly heat-up,
+  the last logged print's measured rate stands in. It never predicts below what the
+  meter already shows.
+- The slicer's render of the job shows beside the name — click it for a bigger look.
+- One caveat: a price edited here changes the **logged row only**. The live session
+  sensors keep following the slot price numbers — the [SET picker](#tags-editor) is
+  the tool when the slot itself has the wrong price.
+- When the printer is idle the card just says so; history is the
+  [jobs table](#jobs-table)'s business.
+
+```yaml
+type: custom:bambu-costs-printing-now
+entity: sensor.bambu_costs_current_job
+```
+
 ## Cost calculator
 
 `custom:bambu-costs-calculator` — manual quote: filament, runtime, margin, VAT. Paired

@@ -171,6 +171,22 @@ capture_cover:
       selector:
         text:
 
+update_current_job:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    patch:
+      required: false
+      selector:
+        object:
+    clear:
+      required: false
+      default: false
+      selector:
+        boolean:
+
 refresh:
   fields:
     entry_id:

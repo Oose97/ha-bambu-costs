@@ -27,6 +27,7 @@ CARD_FILES = (
     "bambu-costs-tags-editor.js",
     "bambu-costs-jobs-table.js",
     "bambu-costs-calculator.js",
+    "bambu-costs-printing-now.js",
 )
 
 _PATHS_DONE = f"{DOMAIN}_static_paths"

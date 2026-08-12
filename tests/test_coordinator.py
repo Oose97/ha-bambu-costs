@@ -34,7 +34,9 @@ def make(power_sensors=True, price=0.23):
     c._print_started_at = None
     c._print_ended_at = None
     c.last_good = None
+    c.overlay = {}
     # the pieces that would need hass, pinned per test instead
+    c.hass = SimpleNamespace(async_add_executor_job=lambda fn, *a: fn(*a))
     c.async_update_listeners = lambda: None
     c.accrue_cost = lambda now=None: None
     c.energy_now = lambda: 0.0
@@ -362,6 +364,141 @@ def test_draft_for_the_idle_printer_uses_the_closed_markers():
     # counter, standby included — a prefill beats a zero.
     c.values["energy_at_print_end"] = 0.0
     assert c.draft_job()["row"]["kwh"] == pytest.approx(1.2)
+
+
+def test_overlay_edits_win_when_the_job_is_logged():
+    c = _loggable_row(make())
+    c.overlay = {
+        "job": "Renamed mid-print",
+        "f_cost": 0.5,
+        "trays": {"0": {"price": 12.5, "cost": 0.5}},
+    }
+    row = c.build_job_row({})
+    assert row["job"] == "Renamed mid-print"
+    assert row["filament_cost"] == 0.5
+    assert row["trays"][0]["price"] == 12.5
+    assert row["total_cost"] == pytest.approx(0.5 + row["power_cost"]), \
+        "the total follows the edited filament plus the measured power"
+
+
+def test_explicit_overrides_outrank_the_overlay():
+    c = _loggable_row(make())
+    c.overlay = {"job": "From the card", "f_cost": 0.5}
+    row = c.build_job_row({"job": "From the service", "filament_cost": 0.9})
+    assert row["job"] == "From the service"
+    assert row["filament_cost"] == 0.9
+
+
+def test_a_new_job_clears_the_overlay_and_a_resume_keeps_it():
+    c = make()
+    written = []
+    c.store = SimpleNamespace(write_overlay=written.append)
+    c.overlay = {"job": "Edited"}
+    c.mark_print_start(new_job=False)
+    assert c.overlay == {"job": "Edited"}, "a resume is the same job continuing"
+    c.mark_print_start(new_job=True)
+    assert c.overlay == {}
+    assert written == [{}], "the cleared overlay reaches the disk too"
+
+
+def test_draft_carries_the_overlay_into_the_forms():
+    c = _draftable(make())
+    c.values.update({"last_print_power_cost": 0.25})
+    c.overlay = {"job": "Edited name", "f_cost": 0.5}
+    row = c.draft_job()["row"]
+    assert row["job"] == "Edited name"
+    assert row["f_cost"] == 0.5
+    assert row["cost"] == pytest.approx(0.75)
+
+
+def _planned(c, planned_minutes):
+    import datetime as dt
+
+    start = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)
+    end = start + dt.timedelta(minutes=planned_minutes)
+    base = c._state
+    c._state = lambda key: {
+        "start_time": start.isoformat(),
+        "end_time": end.isoformat(),
+    }.get(key) or base(key)
+    return c
+
+
+def test_prediction_extrapolates_from_the_prints_own_rate():
+    c = _planned(_draftable(make()), 210)
+    c._saw_print_start = True
+    c.cost_total = 0.30
+    c.values.update({"cost_at_print_start": 0.10, "energy_at_print_start": 4.5})
+    c.energy_now = lambda: 5.0
+
+    d = c.draft_job()  # 90 of 210 minutes, 0.20 spent
+    assert d["p_cost_predicted"] == pytest.approx(0.20 / (90 / 210), abs=1e-3)
+    assert d["cost_predicted"] == pytest.approx(0.8 + d["p_cost_predicted"], abs=1e-3)
+
+
+def test_early_prediction_leans_on_the_last_prints_rate():
+    c = _planned(_draftable(make()), 210)
+    c._saw_print_start = True
+    c.print_minutes = lambda: 5.0          # under 5% of the plan
+    c.cost_total = 0.101
+    c.values.update({"cost_at_print_start": 0.10, "energy_at_print_start": 4.5})
+    c.energy_now = lambda: 5.0
+    c.data = {"jobs": [{"mins": 76.0, "p_cost": 0.05}]}
+
+    d = c.draft_job()
+    assert d["p_cost_predicted"] == pytest.approx(0.05 / 76.0 * 210, abs=1e-3), \
+        "the last print's measured rate, scaled to this plan"
+
+    # With no history at all the floor is what the meter already shows.
+    c.data = {"jobs": []}
+    assert c.draft_job()["p_cost_predicted"] == pytest.approx(0.001)
+
+
+def test_no_plan_means_no_prediction():
+    c = _draftable(make())
+    c._saw_print_start = True
+    c.cost_total = 0.30
+    c.values.update({"cost_at_print_start": 0.10})
+    assert c.draft_job()["cost_predicted"] == 0.0
+
+
+def test_update_overlay_merges_and_clears():
+    import asyncio
+
+    c = make()
+    c._overlay_lock = asyncio.Lock()
+    written = []
+
+    async def _exec(fn, *args):
+        return fn(*args)
+
+    c.hass = SimpleNamespace(async_add_executor_job=_exec)
+    c.store = SimpleNamespace(write_overlay=written.append)
+
+    _run(c.async_update_overlay({"job": "A", "trays": {"0": {"price": 10.0}}}))
+    _run(c.async_update_overlay({"trays": {"0": {"cost": 0.4}, "1": {"weight": 5.0}}}))
+    assert c.overlay["job"] == "A"
+    assert c.overlay["trays"]["0"] == {"price": 10.0, "cost": 0.4}, \
+        "tray patches merge per slot instead of replacing each other"
+    assert c.overlay["trays"]["1"] == {"weight": 5.0}
+
+    out = _run(c.async_update_overlay(None, clear=True))
+    assert c.overlay == {} and out == {"edited": []}
+    assert written[-1] == {}
+
+
+def _loggable_row(c):
+    """Live reads pinned so build_job_row runs bare, like the logger uses it."""
+    c.breakdown = lambda remember=True: {
+        "slots": [{"id": "a1", "label": "Tray 1", "name": "Green", "material": "PLA",
+                   "filament": "Bambu PLA Basic", "color": "#00AE42",
+                   "weight": 40.0, "price": 20.0, "cost": 0.8}],
+        "cost": 0.8, "weight": 40.0, "weight_total": 40.0,
+        "source": "slots", "restored": False,
+    }
+    c.print_minutes = lambda: 76.0
+    c.power_cost_for_job = lambda kwh, minutes: 0.05
+    return c
 
 
 def test_add_job_appends_verbatim_and_leaves_the_guard_alone():
