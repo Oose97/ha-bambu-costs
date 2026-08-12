@@ -7,10 +7,22 @@ const BPN_FIELDS = [
   { k: "layers",      t: "Layers",        num: true, w: 7 },
   { k: "weight",      t: "Weight",        num: true, w: 9, unit: "g" },
   { k: "length",      t: "Length",        num: true, w: 9, unit: "m" },
-  { k: "nozzle",      t: "Nozzle",        w: 6 },
-  { k: "nozzle_type", t: "Nozzle type",   w: 22 },
+  { k: "nozzle",      t: "Nozzle",        w: 6, combo: true },
+  { k: "nozzle_type", t: "Nozzle type",   w: 22, combo: true },
   { k: "types",       t: "Material",      w: 24 },
   { k: "f_cost",      t: "Filament cost", num: true, w: 9, unit: "$" },
+];
+
+// The nozzle combos, exactly as the jobs table has them: focusing the field
+// drops a popup listing EVERY option, the field itself stays free text, the
+// stored value keeps the printer's own spelling and only the label is pretty.
+const BPN_NOZZLE_SIZES = ["0.2", "0.4", "0.6", "0.8"];
+const BPN_NOZZLE_TYPES = [
+  "stainless_steel",
+  "hardened_steel",
+  "high_flow_hardened_steel",
+  "tungsten_carbide",
+  "high_flow_tungsten_carbide",
 ];
 
 class BambuCostsPrintingNow extends HTMLElement {
@@ -58,6 +70,22 @@ class BambuCostsPrintingNow extends HTMLElement {
 
   _hmin(m) { return `${Math.floor(m / 60)}h ${Math.round(m % 60)}min`; }
 
+  // "high_flow_hardened_steel" → "HF Hardened Steel", like the jobs table.
+  _typeDisp(v) {
+    return String(v || "")
+      .split("_")
+      .map(w => w ? w[0].toUpperCase() + w.slice(1) : w)
+      .join(" ")
+      .replace(/^High Flow\b/, "HF");
+  }
+
+  // Display transform per field; the stored value keeps the raw spelling.
+  _disp(k, v) {
+    if (k === "nozzle") return String(v || "").replace(/^0(?=[.,])/, "");
+    if (k === "nozzle_type") return this._typeDisp(v);
+    return v || "";
+  }
+
   _num(v, dp) {
     const n = parseFloat(v);
     return isNaN(n) ? "" : (dp === undefined ? n : n.toFixed(dp));
@@ -76,7 +104,7 @@ class BambuCostsPrintingNow extends HTMLElement {
           .bpn-wrap { padding:0 16px 16px; font-size:13px; }
           .bpn-idle { padding:28px 0 14px; text-align:center; opacity:.5; }
           .bpn-top { display:flex; gap:14px; align-items:flex-start; }
-          .bpn-top img { width:96px; height:96px; object-fit:cover; border-radius:10px;
+          .bpn-top img { width:148px; height:148px; object-fit:contain; border-radius:10px;
             box-shadow:0 0 0 1px var(--divider-color); cursor:pointer; flex:none; }
           .bpn-head { flex:1; min-width:0; }
           .bpn-sub { font-size:12px; color:var(--secondary-text-color); margin-top:4px; }
@@ -119,6 +147,14 @@ class BambuCostsPrintingNow extends HTMLElement {
             font-size:12px; cursor:pointer; white-space:nowrap; }
           .tbtn:hover { border-color:var(--primary-color); color:var(--primary-color); }
           .bpn-msg.err { color:var(--error-color,#f44336); }
+          .bpn-dd { position:fixed; z-index:100000; background:var(--card-background-color);
+            border:1px solid var(--divider-color); border-radius:8px; padding:4px 0;
+            box-shadow:0 6px 20px rgba(0,0,0,.28); font-size:12.5px;
+            max-height:40vh; overflow-y:auto; }
+          .bpn-dd .opt { padding:5px 12px; cursor:pointer; white-space:nowrap;
+            color:var(--primary-text-color); }
+          .bpn-dd .opt:hover { background:rgba(var(--rgb-primary-color),.12); }
+          .bpn-dd .opt.on { color:var(--primary-color); font-weight:600; }
         </style>
         <div class="bpn-wrap"></div>
       </ha-card>`;
@@ -139,6 +175,53 @@ class BambuCostsPrintingNow extends HTMLElement {
       const img = e.target.closest("img.cov");
       if (img && img.src) this._openImage(img.src);
     });
+
+    // The nozzle combos: the full option list on focus, free text kept.
+    wrap.addEventListener("focusin", e => {
+      const inp = e.target.closest("input.combo");
+      if (inp) this._openCombo(inp);
+    });
+    wrap.addEventListener("focusout", () => this._closeCombo());
+    wrap.addEventListener("keydown", e => {
+      if (e.key === "Escape") this._closeCombo();
+    });
+  }
+
+  _openCombo(inp) {
+    this._closeCombo();
+    const f = inp.dataset.f;
+    const opts = f === "nozzle" ? BPN_NOZZLE_SIZES : BPN_NOZZLE_TYPES;
+    const label = v => f === "nozzle" ? v.replace(/^0(?=\.)/, "") : this._typeDisp(v);
+
+    const dd = document.createElement("div");
+    dd.className = "bpn-dd";
+    dd.innerHTML = opts.map(o => {
+      const l = label(o);
+      return `<div class="opt${l === inp.value ? " on" : ""}" data-v="${this._esc(l)}">${this._esc(l)}</div>`;
+    }).join("");
+
+    // mousedown, not click: click would blur the input first, and the
+    // focusout close would eat the selection.
+    dd.addEventListener("mousedown", e => {
+      e.preventDefault();
+      const opt = e.target.closest(".opt");
+      if (!opt) return;
+      inp.value = opt.dataset.v;
+      this._closeCombo();
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    this.appendChild(dd);
+    const r = inp.getBoundingClientRect();
+    dd.style.left = r.left + "px";
+    dd.style.minWidth = Math.max(r.width, 90) + "px";
+    const h = dd.offsetHeight;
+    dd.style.top = (r.bottom + h + 4 > window.innerHeight ? r.top - h - 2 : r.bottom + 2) + "px";
+    this._dd = dd;
+  }
+
+  _closeCombo() {
+    if (this._dd) { this._dd.remove(); this._dd = null; }
   }
 
   // ── body ─────────────────────────────────────────────────
@@ -167,10 +250,10 @@ class BambuCostsPrintingNow extends HTMLElement {
       <div class="bpn-fieldrow">
         <span class="bpn-label">${this._esc(f.t)}</span>
         <span style="display:flex;align-items:center;gap:3px">
-          <input class="cell${f.num ? " num" : ""}${ed(f.k)}"
-            ${f.num ? `type="number" step="any"` : `type="text"`}
+          <input class="cell${f.num ? " num" : ""}${f.combo ? " combo" : ""}${ed(f.k)}"
+            ${f.num ? `type="number" step="any"` : `type="text" autocomplete="off"`}
             data-f="${f.k}" style="width:${f.w}ch"
-            value="${this._esc(f.num ? this._num(row[f.k]) : row[f.k] || "")}">
+            value="${this._esc(f.num ? this._num(row[f.k]) : this._disp(f.k, row[f.k]))}">
           ${f.unit ? `<span class="cu">${f.unit === "$" ? cur : f.unit}</span>` : ""}
         </span>
       </div>`;
@@ -239,9 +322,23 @@ class BambuCostsPrintingNow extends HTMLElement {
     if (el.dataset.f) {
       const k = el.dataset.f;
       const def = BPN_FIELDS.find(f => f.k === k);
-      patch[k] = def && def.num
-        ? parseFloat(String(el.value).replace(",", ".")) || 0
-        : el.value;
+      if (k === "nozzle") {
+        // The display drops the leading zero; the stored value never does.
+        const t = String(el.value).trim().replace(",", ".");
+        patch[k] = t.startsWith(".") ? "0" + t : t;
+      } else if (k === "nozzle_type") {
+        // A pretty label (or the raw spelling, any case) maps back to the
+        // printer's own value; anything else is free text, stored as typed.
+        const t = String(el.value).trim();
+        const hit = BPN_NOZZLE_TYPES.find(o =>
+          o.toLowerCase() === t.toLowerCase()
+          || this._typeDisp(o).toLowerCase() === t.toLowerCase());
+        patch[k] = hit || t;
+      } else {
+        patch[k] = def && def.num
+          ? parseFloat(String(el.value).replace(",", ".")) || 0
+          : el.value;
+      }
     } else {
       const i = Number(el.dataset.i);
       const f = el.dataset.tf;
@@ -297,8 +394,12 @@ class BambuCostsPrintingNow extends HTMLElement {
     const ov = document.createElement("div");
     ov.style.cssText = `position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);
       display:flex;align-items:center;justify-content:center;padding:24px;`;
+    // The render is a transparent PNG — over the dark overlay it would float
+    // as a ghost, so the enlarged view gets a solid card-coloured backing.
     ov.innerHTML = `<img src="${this._esc(src)}" style="max-width:min(90vw,640px);
-      max-height:80vh;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.5);">`;
+      max-height:80vh;border-radius:14px;padding:16px;box-sizing:border-box;
+      background:var(--card-background-color,#fff);
+      box-shadow:0 12px 48px rgba(0,0,0,.5);">`;
     const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
     const esc = e => { if (e.key === "Escape") close(); };
     ov.addEventListener("click", close);

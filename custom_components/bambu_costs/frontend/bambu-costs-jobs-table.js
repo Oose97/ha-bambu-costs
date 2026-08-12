@@ -511,6 +511,10 @@ class BambuCostsJobsTable extends HTMLElement {
       </div>`;
     const text = (k, w) => `<input class="cell tin" data-ff="${k}"
       value="${this._esc(row[k] || "")}" style="width:${w}ch">`;
+    // The nozzle fields are combos like the table's cells: the full option
+    // list on focus, pretty labels shown, the printer's spelling stored.
+    const combo = (k, w, disp) => `<input class="cell tin combo" type="text"
+      autocomplete="off" data-ff="${k}" value="${this._esc(disp)}" style="width:${w}ch">`;
 
     const trayHtml = (t, i) => `
       <div class="bcjt-target trrow">
@@ -567,7 +571,9 @@ class BambuCostsJobsTable extends HTMLElement {
             : "How long it actually ran")}
           ${field("Weight", num("weight", "g"))}
           ${field("Length", num("length", "m"))}
-          ${field("Nozzle", `<span class="trline">${text("nozzle", 5)}${text("nozzle_type", 20)}</span>`)}
+          ${field("Nozzle", `<span class="trline">${
+            combo("nozzle", 5, String(row.nozzle || "").replace(/^0(?=[.,])/, ""))}${
+            combo("nozzle_type", 20, this._typeDisp(row.nozzle_type))}</span>`)}
           ${field("Energy", num("kwh", "kWh"))}
           ${field("Filament cost", num("f_cost", cur))}
           ${field("Power cost", num("p_cost", cur), "Measured for the stint — not scaled")}
@@ -643,6 +649,18 @@ class BambuCostsJobsTable extends HTMLElement {
         const k = ff.dataset.ff;
         if (ff.classList.contains("num")) {
           row[k] = parseFloat(String(ff.value).replace(",", ".")) || 0;
+        } else if (k === "nozzle") {
+          // The display drops the leading zero; the stored value never does.
+          const t = String(ff.value).trim().replace(",", ".");
+          row[k] = t.startsWith(".") ? "0" + t : t;
+        } else if (k === "nozzle_type") {
+          // A pretty label (or the raw spelling, any case) maps back to the
+          // printer's own value; anything else is free text, stored as typed.
+          const t = String(ff.value).trim();
+          const hit = BCJT_NOZZLE_TYPES.find(o =>
+            o.toLowerCase() === t.toLowerCase()
+            || this._typeDisp(o).toLowerCase() === t.toLowerCase());
+          row[k] = hit || t;
         } else {
           row[k] = ff.value;
           if (k === "time") {
@@ -706,11 +724,22 @@ class BambuCostsJobsTable extends HTMLElement {
       snap.disabled = false;
     });
 
-    const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
+    // The combo popup lives outside the modal, so the modal going away must
+    // take it along — however the modal goes away.
+    const close = () => {
+      this._closeCombo();
+      ov.remove();
+      document.removeEventListener("keydown", esc);
+    };
     const esc = e => { if (e.key === "Escape") close(); };
     ov.addEventListener("click", e => { if (e.target === ov) close(); });
     q("button.cancel").addEventListener("click", close);
     document.addEventListener("keydown", esc);
+    ov.addEventListener("focusin", e => {
+      const inp = e.target.closest("input.combo");
+      if (inp) this._openCombo(inp);
+    });
+    ov.addEventListener("focusout", () => this._closeCombo());
 
     q("button.fsave").addEventListener("click", async () => {
       const btn = q("button.fsave");
@@ -1069,7 +1098,8 @@ class BambuCostsJobsTable extends HTMLElement {
 
   _openCombo(inp) {
     this._closeCombo();
-    const f = inp.dataset.f;
+    // data-f in the table's cells, data-ff in the manual forms.
+    const f = inp.dataset.f || inp.dataset.ff;
     const opts = f === "nozzle" ? BCJT_NOZZLE_SIZES : BCJT_NOZZLE_TYPES;
     const label = v => f === "nozzle" ? v.replace(/^0(?=\.)/, "") : this._typeDisp(v);
 
