@@ -174,6 +174,11 @@ logged as, editable while it prints.
   elapsed time (with the planned duration alongside while it runs), the current
   layer, energy, electricity so far, and the running total. The date stays the
   moment the job finishes, as always.
+- A **predicted total** sits beside them: the filament (as edited) plus projected
+  electricity. Past 5% of the planned duration the projection is the print's own rate
+  — spent so far over fraction done; before that, when the sample is mostly heat-up,
+  the last logged print's measured rate stands in. It never predicts below what the
+  meter already shows.
 - The slicer's render of the job shows beside the name — click it for a bigger look.
 - One caveat: a price edited here changes the **logged row only**. The live session
   sensors keep following the slot price numbers — the [SET picker](#tags-editor) is

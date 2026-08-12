@@ -300,6 +300,10 @@ class BambuCostsPrintingNow extends HTMLElement {
         <span>Energy <b>${this._num(row.kwh, 3)}</b> kWh</span>
         <span>Electricity <b>${this._num(row.p_cost, 4)}</b> ${cur}</span>
         <span>Total so far <b>${this._num(row.cost, 4)}</b> ${cur}</span>
+        ${parseFloat(this._attrs().cost_predicted) > 0
+          ? `<span title="Filament plus the projected electricity — the print's own rate past 5% of the plan, the last print's before that">Predicted total <b>${
+              this._num(this._attrs().cost_predicted, 4)}</b> ${cur}</span>`
+          : ""}
       </div>
       <div class="bpn-grid">${BPN_FIELDS.map(fieldRow).join("")}</div>
       ${(row.trays || []).length ? `<div class="bpn-trays">

@@ -1194,12 +1194,45 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # job — the Printing-now view, and the failed/finished forms alike.
         row = self._overlaid(row)
         row["cost"] = round(as_float(row["f_cost"]) + as_float(row["p_cost"]), 4)
+
+        # What the whole print is likely to cost: the filament is known up
+        # front (the plan, or the user's edit of it); the electricity is
+        # projected. Past 5% of the planned duration the print's own rate is
+        # the best predictor — cost so far over fraction done. Earlier than
+        # that the sample is mostly heat-up noise, so the last print's
+        # measured rate stands in until this one has a track record.
+        p_predicted = 0.0
+        if running and mins_planned > 0:
+            fraction = min(1.0, minutes / mins_planned)
+            if fraction >= 0.05 and power_cost > 0:
+                p_predicted = power_cost / fraction
+            else:
+                p_predicted = self._last_print_power_rate() * mins_planned
+            # Never predict below what is already on the meter.
+            p_predicted = max(p_predicted, power_cost)
+
         return {
             "running": running,
             "has_camera": bool(self.entity_of(CONF_CAMERA)),
             "mins_planned": round(mins_planned, 2),
+            "p_cost_predicted": round(p_predicted, 4),
+            "cost_predicted": round(as_float(row["f_cost"]) + p_predicted, 4)
+            if p_predicted > 0
+            else 0.0,
             "row": row,
         }
+
+    def _last_print_power_rate(self) -> float:
+        """The last logged print's electricity per minute, or 0 unknown."""
+        jobs = (self.data or {}).get("jobs") or []
+        if not jobs:
+            return 0.0
+        last = jobs[-1]
+        minutes = as_float(last.get("mins"))
+        power = as_float(last.get("p_cost"))
+        if minutes <= 0 or power <= 0:
+            return 0.0
+        return power / minutes
 
     async def async_add_job(
         self,

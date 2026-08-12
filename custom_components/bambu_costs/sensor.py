@@ -445,6 +445,8 @@ class CurrentJobSensor(BambuCostsSensor):
             "row": row,
             "edited": self.coordinator.overlay_fields(),
             "mins_planned": draft["mins_planned"],
+            "cost_predicted": draft["cost_predicted"],
+            "p_cost_predicted": draft["p_cost_predicted"],
             "currency": self.coordinator.currency,
             "entry_id": self.coordinator.entry.entry_id,
             # The slicer's render of the job, for the card to show — served
