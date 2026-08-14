@@ -104,7 +104,8 @@ Go to [Filament pricing](docs/filament.md) for more details.
 - Loading an unknown tagged spool adds a library row by itself; rows can also be added
   by hand — any way of reading the tag UID works, the AMS just makes it automatic.
 - A slot's price: the loaded spool's tag first, the slot's own number second, the
-  default last. A generic untagged spool's hand-set price is never overwritten.
+  default last. A generic untagged spool's hand-set price is never overwritten, and a
+  spool that runs out mid-print keeps pricing the job it was printing.
 - Colours are named per material **and product line** (`#FFFFFF` is Jade White as PLA
   Basic, Ivory White as PLA Matte); unknown hexes get one optional web lookup. The
   per-slot split survives restarts mid-print.

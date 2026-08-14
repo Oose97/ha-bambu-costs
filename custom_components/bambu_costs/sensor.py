@@ -37,12 +37,18 @@ from .storage import count_spools
 
 @dataclass
 class BreakdownSnapshot(ExtraStoredData):
-    """The last per-slot split, stored so it survives a restart."""
+    """The last per-slot split, stored so it survives a restart.
+
+    ``slots`` rides along: what each slot was printing from, so a restart
+    followed by a spool running out still costs the job at what it was
+    actually printed with. Absent in data stored before it existed.
+    """
 
     snapshot: dict[str, Any] | None
+    slots: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {"snapshot": self.snapshot}
+        return {"snapshot": self.snapshot, "slots": self.slots}
 
 
 async def async_setup_entry(
@@ -100,7 +106,9 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
     @property
     def extra_restore_state_data(self) -> BreakdownSnapshot:
         """Persist the last real per-slot split across restarts."""
-        return BreakdownSnapshot(self.coordinator.last_good)
+        return BreakdownSnapshot(
+            self.coordinator.last_good, self.coordinator.slot_memory
+        )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -109,9 +117,13 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
         # mid-print does not briefly publish a repriced External row.
         stored = await self.async_get_last_extra_data()
         if stored is not None:
-            snapshot = stored.as_dict().get("snapshot")
+            data = stored.as_dict()
+            snapshot = data.get("snapshot")
             if isinstance(snapshot, dict) and snapshot.get("slots"):
                 self.coordinator.last_good = snapshot
+            slots = data.get("slots")
+            if isinstance(slots, dict):
+                self.coordinator.slot_memory = slots
 
         # The breakdown is derived from another entity's attributes, so it has
         # to follow that entity as well as the coordinator's price changes.

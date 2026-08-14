@@ -18,9 +18,10 @@ startup for you to add by hand.
 
   ![A paired spool collapsed to one row](images/filaments_group_collapsed.jpg)
   ![The same spool expanded, its second tag as a child row](images/filaments_group_expanded.jpg)
-- Editing a pair's filament, colour or price applies to both rows; serials stay per-row,
-  since they are what tell the two tags apart. Typing a spool's second serial pairs the
-  rows on the spot.
+- Editing a pair's filament, colour or price applies to both rows, and so does the
+  **ON/OFF** toggle — a spool is one physical thing, retired whole. Serials stay
+  per-row, since they are what tell the two tags apart. Typing a spool's second serial
+  pairs the rows on the spot.
 - The colour-name cell is a combo over the whole Bambu palette: click it and the full
   list drops down, scrollable; start typing and it filters. The list is a convenience,
   not a constraint — anything you type is accepted as-is.

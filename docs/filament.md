@@ -60,7 +60,9 @@ In order of precedence:
 2. The slot's own **price number**, if you have set one.
 3. The **default filament price**.
 
-Each row in the breakdown carries `price_source` so you can see which applied.
+Each row in the breakdown carries `price_source` so you can see which applied —
+including `remembered`, for a spool that
+[ran out mid-print](#when-a-spool-runs-out-mid-print).
 
 ## When a slot's price entity updates
 
@@ -86,6 +88,25 @@ time, so the figures are right even if these entities are stale.
 Filament the printer counted that no configured slot claimed — an external spool, or a
 slot whose attribute name drifted — becomes an `External` row priced at the default,
 rather than being dropped. Mixed AMS + external jobs therefore total correctly.
+
+## When a spool runs out mid-print
+
+A spool that empties part-way through a job gets replaced, and the replacement is
+often a bare one — no tag for the AMS to read. The slot goes from *known* to
+*anonymous* while the same job is still printing, and the last thing that job needs is
+to be repriced at the default and logged under a blank filament name.
+
+So while a print runs, each slot's resolved spool — name, product, colour and price —
+is remembered, and a slot whose tag stops reading falls back to it. The breakdown row
+then carries `price_source: remembered`, so the substitution is visible rather than
+silent. It survives a restart with the per-slot snapshot, and still applies when the
+job is logged, which is the usual case: a spool tends to run out at the *end*, after
+the print-end transition has already fired.
+
+The memory is per print — a new job starts from what is actually loaded — and only
+ever fills a gap. A slot whose tag still reads is priced live as always, a slot that
+never had a tag keeps using its own price number, and swapping in a *different tagged*
+spool prices from that new tag rather than the memory.
 
 ## Surviving a restart mid-print
 
