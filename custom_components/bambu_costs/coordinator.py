@@ -132,6 +132,10 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Last breakdown that was computed from real per-slot data. Persisted by
         # the breakdown sensor, so a restart mid-print does not lose the split.
         self.last_good: dict[str, Any] | None = None
+        # What each slot was printing from, remembered while the job runs so a
+        # spool that runs out mid-print does not take its own identity and
+        # price out of the job with it. Per print; persisted with the snapshot.
+        self.slot_memory: dict[str, dict[str, Any]] = {}
         # The Printing-now card's edits to the current job — only the fields
         # the user touched. Loaded from disk at setup so a restart mid-print
         # keeps them; applied when the job is logged, cleared when a new one
@@ -534,8 +538,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # New work: whatever ended before belongs to a different job now.
         self._ended_had_start = False
         self._job_logged = False
-        # ...including the card's edits to it. A resume keeps them — it is
-        # the same job continuing.
+        # ...including the card's edits to it, and what the slots were loaded
+        # with. A resume keeps both — it is the same job continuing.
+        self.slot_memory = {}
         if self.overlay:
             self.overlay = {}
             self.hass.async_add_executor_job(self.store.write_overlay, {})
@@ -676,6 +681,52 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Drop the snapshot so a new job never inherits the previous split."""
         self.last_good = None
 
+    # ── what is loaded in a slot ─────────────────────────────────────────────
+    def _spool_in(self, slot: SlotDef, remember: bool = True) -> dict[str, Any]:
+        """The spool a slot is printing from: identity, price, provenance.
+
+        A spool that runs out mid-print is replaced, and the replacement is
+        usually a bare one — the AMS reads no tag, so the slot goes from known
+        to anonymous while the same job is still printing. Costing it live from
+        that moment would price the whole job at the default, and log it with
+        the new spool's blank name: the job would lose the very spool it was
+        printed with, at the last minute.
+
+        So a slot's resolved spool is remembered while the print runs, and an
+        anonymous slot falls back to that memory. The memory is per print —
+        cleared when a new job starts — and only ever fills a gap: a slot whose
+        tag still reads, or one that never had a tag at all, is unaffected.
+        """
+        tray = self.tray_info(slot)
+        tag = self.tag_for_serial(tray.get("tag_uid"))
+
+        if tag is None and slot.key in self.slot_memory:
+            spool = dict(self.slot_memory[slot.key])
+            # Named apart from "tag" so the provenance stays honest: this is
+            # what the slot held, not what it holds.
+            spool["price_source"] = "remembered"
+            return spool
+
+        price, price_source = self.slot_price(slot, tag)
+        spool = {
+            "name": (tag or {}).get("color_name") or tray.get("material") or "",
+            "material": tray.get("material") or "",
+            # Full product name for the job log. The tag library's text wins —
+            # it is the user's curated name ("SUNLU PETG HS Matte"), where the
+            # tray just echoes whatever the tag encodes. A spool the library
+            # does not match falls back to the printer's report.
+            "filament": (tag or {}).get("filament") or tray.get("name") or "",
+            "color": tray.get("color") or (tag or {}).get("color_code") or "",
+            "price": price,
+            "price_source": price_source,
+        }
+
+        # Only a tagged spool is worth remembering: it is the one whose
+        # identity and price cannot be recovered once the tag is gone.
+        if tag is not None and remember and self.print_running:
+            self.slot_memory[slot.key] = dict(spool)
+        return spool
+
     # ── filament breakdown ───────────────────────────────────────────────────
     def breakdown(self, remember: bool = True) -> dict[str, Any]:
         """Per-slot filament usage and cost for the current job.
@@ -695,27 +746,15 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             weight = as_float(attrs.get(slot.attribute))
             if weight <= 0:
                 continue
-            tray = self.tray_info(slot)
-            tag = self.tag_for_serial(tray.get("tag_uid"))
-            price, price_source = self.slot_price(slot, tag)
+            spool = self._spool_in(slot, remember=remember)
             rows.append(
                 {
                     "id": slot.key,
                     "label": slot.label,
                     "attribute": slot.attribute,
-                    "name": (tag or {}).get("color_name") or tray.get("material") or "",
-                    "material": tray.get("material") or "",
-                    # Full product name for the job log. The tag library's
-                    # text wins — it is the user's curated name ("SUNLU PETG
-                    # HS Matte"), where the tray just echoes whatever the tag
-                    # encodes. A spool the library does not match falls back
-                    # to the printer's report.
-                    "filament": (tag or {}).get("filament") or tray.get("name") or "",
-                    "color": tray.get("color") or (tag or {}).get("color_code") or "",
+                    **spool,
                     "weight": weight,
-                    "price": price,
-                    "price_source": price_source,
-                    "cost": weight / 1000.0 * price,
+                    "cost": weight / 1000.0 * spool["price"],
                 }
             )
 

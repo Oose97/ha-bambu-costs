@@ -34,6 +34,7 @@ def make(power_sensors=True, price=0.23):
     c._print_started_at = None
     c._print_ended_at = None
     c.last_good = None
+    c.slot_memory = {}
     c.overlay = {}
     # the pieces that would need hass, pinned per test instead
     c.hass = SimpleNamespace(async_add_executor_job=lambda fn, *a: fn(*a))
@@ -566,6 +567,107 @@ def test_breakdown_prefers_the_tag_librarys_filament_name():
     tray = {"available": True, "name": "Bambu PETG HF", "material": "PETG",
             "tag_uid": "", "color": "#FFFFFF"}
     assert c.breakdown(remember=False)["slots"][0]["filament"] == "Bambu PETG HF"
+
+
+def _one_tagged_slot(c):
+    """One slot, one library spool, the tray under the test's control."""
+    from custom_components.bambu_costs.coordinator import SlotDef
+
+    slot = SlotDef(attribute="AMS 1 Tray 1", label="A1", entity="sensor.tray_1")
+    c.slots = [slot]
+    c._attrs = lambda key: {"AMS 1 Tray 1": 40.0}
+    c.data = {"tags": [{"serial": "AAA", "serial_2": "", "filament": "Bambu PLA Basic",
+                        "color_name": "Jade White (10100)", "color_code": "#FFFFFF",
+                        "cost_per_kg": 13.22}]}
+    c.tray_info = lambda s: c._tray
+    c._tray = {"available": True, "empty": False, "name": "Bambu PLA Basic",
+               "material": "PLA", "tag_uid": "AAA", "color": "#FFFFFF"}
+    return c
+
+
+def test_a_spool_running_out_mid_print_keeps_what_it_was_printed_with():
+    """The AMS reads no tag on the replacement, so the slot goes anonymous
+    while the same job prints. It must keep costing what it started with."""
+    c = _one_tagged_slot(make())
+    c.mark_print_start(new_job=True)
+
+    row = c.breakdown()["slots"][0]
+    assert row["price"] == 13.22 and row["price_source"] == "tag"
+
+    # Ran out; the user drops in a bare spool the AMS cannot read.
+    c._tray = {"available": True, "empty": False, "name": None,
+               "material": None, "tag_uid": "0000000000000000", "color": None}
+
+    row = c.breakdown()["slots"][0]
+    assert row["price"] == 13.22, "still the spool the job was printed with"
+    assert row["price_source"] == "remembered"
+    assert row["filament"] == "Bambu PLA Basic"
+    assert row["name"] == "Jade White (10100)"
+    assert row["color"] == "#FFFFFF"
+
+
+def test_the_memory_still_applies_when_the_job_is_logged():
+    """A spool that runs out at the very end: the row is built after the
+    print-end transition, and must still carry the real spool."""
+    c = _one_tagged_slot(make())
+    c.mark_print_start(new_job=True)
+    c.breakdown()
+    c.mark_print_end()
+    c._tray = {"available": True, "empty": True, "name": None,
+               "material": None, "tag_uid": None, "color": None}
+
+    c.print_minutes = lambda: 60.0
+    c.power_cost_for_job = lambda kwh, minutes: 0.05
+    row = c.build_job_row({})
+    assert row["trays"][0]["price"] == 13.22
+    assert row["trays"][0]["type"] == "Bambu PLA Basic"
+    assert row["filament_type"] == "PLA Basic"
+    assert row["filament_cost"] == pytest.approx(40.0 / 1000 * 13.22, abs=1e-4)
+
+
+def test_the_next_job_starts_from_what_is_actually_loaded():
+    c = _one_tagged_slot(make())
+    c.mark_print_start(new_job=True)
+    c.breakdown()
+    c.mark_print_end()
+
+    c._tray = {"available": True, "empty": False, "name": None,
+               "material": None, "tag_uid": "0000000000000000", "color": None}
+    c.mark_print_start(new_job=True)
+
+    row = c.breakdown()["slots"][0]
+    assert row["price_source"] != "remembered", "a new job inherits nothing"
+    assert row["filament"] == ""
+
+
+def test_a_resume_keeps_the_memory():
+    c = _one_tagged_slot(make())
+    c.mark_print_start(new_job=True)
+    c.breakdown()
+    c._tray = {"available": True, "empty": False, "name": None,
+               "material": None, "tag_uid": "0000000000000000", "color": None}
+    c.mark_print_start(new_job=False)  # a pause, or a jam recovered
+    assert c.breakdown()["slots"][0]["price"] == 13.22
+
+
+def test_a_slot_that_never_had_a_tag_is_untouched():
+    c = _one_tagged_slot(make())
+    c._tray = {"available": True, "empty": False, "name": None,
+               "material": None, "tag_uid": "0000000000000000", "color": None}
+    c.values[c.slots[0].price_key] = 18.0
+    c.mark_print_start(new_job=True)
+
+    row = c.breakdown()["slots"][0]
+    assert row["price"] == 18.0 and row["price_source"] == "slot", \
+        "a generic spool still prices from its slot number"
+
+
+def test_nothing_is_remembered_between_prints():
+    """Off the clock the printer is not printing this job — a tag read while
+    idle must not become the next job's fallback."""
+    c = _one_tagged_slot(make())
+    c.breakdown()  # idle: no print start observed
+    assert c.slot_memory == {}
 
 
 def test_job_row_names_each_material_once():

@@ -148,7 +148,18 @@ class BambuCostsJobsTable extends HTMLElement {
     this._baseSig = JSON.stringify(d);
     // orig_ts is the row's identity for saving: it stays what the file had
     // even after the visible timestamp is edited.
-    this._rows = d.map(r => Object.assign({ _k: this._nextKey++, orig_ts: String(r.ts || "") }, r));
+    //
+    // The tray objects are copied, not referenced: Object.assign is shallow,
+    // so the card would otherwise share them with the sensor's own attribute
+    // data and the per-slot editor would mutate hass state in place. That
+    // made the pre-save comparison see the log as changed on disk (it had
+    // changed — we changed it), refusing the save, and left the edits
+    // looking applied until the next real state push silently dropped them.
+    this._rows = d.map(r => Object.assign(
+      { _k: this._nextKey++, orig_ts: String(r.ts || "") },
+      r,
+      { trays: Array.isArray(r.trays) ? r.trays.map(t => Object.assign({}, t)) : [] },
+    ));
     this._edited = new Set();
     this._dirty = false;
   }
