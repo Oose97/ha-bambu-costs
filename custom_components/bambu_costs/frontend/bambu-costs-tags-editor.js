@@ -693,27 +693,36 @@ class BambuCostsTagsEditor extends HTMLElement {
   _toggleDisabled(k) {
     const row = this._row(k);
     if (!row) return;
-    row.disabled = !row.disabled;
+    const off = !row.disabled;
+    // A spool's two tags are one physical thing, so it is retired whole —
+    // the same rule the descriptive fields follow. Disabling one side alone
+    // would leave the spool still pricing a slot through its other tag.
+    const group = this._groupOf(row._k);
+    const rows = group.length ? group : [row];
+
+    for (const r of rows) {
+      r.disabled = off;
+      const tr = this.querySelector(`tbody tr[data-k="${r._k}"]`);
+      const btn = tr && tr.querySelector("button.tog");
+      if (btn) {
+        btn.textContent = off ? "OFF" : "ON";
+        btn.classList.toggle("isoff", off);
+        btn.title = off ? "Disabled — click to enable" : "Enabled — click to disable";
+      }
+      if (tr) {
+        tr.classList.toggle("dis", off);
+        if (off) tr.dataset.dis = "1"; else delete tr.dataset.dis;
+      }
+    }
     this._dirty = true;
 
-    const tr = this.querySelector(`tbody tr[data-k="${row._k}"]`);
-    const btn = tr && tr.querySelector("button.tog");
-    if (btn) {
-      btn.textContent = row.disabled ? "OFF" : "ON";
-      btn.classList.toggle("isoff", row.disabled);
-      btn.title = row.disabled ? "Disabled — click to enable" : "Enabled — click to disable";
-    }
-    if (tr) {
-      tr.classList.toggle("dis", row.disabled);
-      if (row.disabled) tr.dataset.dis = "1"; else delete tr.dataset.dis;
-    }
-
     const label = `${row.filament || "Row"}${row.color_name ? " · " + row.color_name : ""}`;
-    if (row.disabled && !this._showDisabled) {
-      this._msg(`${label} disabled and hidden — “Show disabled” to see it. `
+    const both = rows.length > 1 ? " (both tags)" : "";
+    if (off && !this._showDisabled) {
+      this._msg(`${label} disabled${both} and hidden — “Show disabled” to see it. `
         + "Press Save to write it to the file.");
     } else {
-      this._msg(`${label} ${row.disabled ? "disabled" : "enabled"} — `
+      this._msg(`${label} ${off ? "disabled" : "enabled"}${both} — `
         + "press Save to write it to the file.");
     }
 
