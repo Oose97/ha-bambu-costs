@@ -70,6 +70,21 @@ The filter narrows it to anything — a date, a job name, a material:
 
 ![The print history filtered to one day](images/print_history_filtered_results.jpg)
 
+Plain text matches anywhere in a row, exactly as it reads. Adding **`[AND]`**,
+**`[OR]`** or **`[NOT]`** turns the box into a boolean expression, with parentheses
+for grouping:
+
+```
+(2026-08-15 [OR] 2026-08-16) [AND] penguin
+```
+
+— the penguins printed on either of those two days. Operands sitting side by side are
+AND-ed, so the `[AND]` above is optional; the operators are case-insensitive; and text
+with no operator in it stays one literal phrase, so job names carrying their own
+brackets or parentheses still search the way they look. A half-typed expression
+matches on the words it already has rather than emptying the table, and the footer
+says so.
+
 - Every value field edits in place — click a cell, type, and press **Save**. Nozzle
   size and type are combo fields: free text, with the printer's own vocabulary offered
   as a dropdown (labels prettified, the printer's spelling stored). **Discard** appears
@@ -117,9 +132,14 @@ The filter narrows it to anything — a date, a job name, a material:
 - A failed print's row wears the faintest red wash, and its **Layers** cell shows
   `finished/total` — both halves editable. **Hide failed prints** in the settings is on
   by default; the footer counts what is hidden.
+- A **totals row** sits under the table, summing every numeric column on screen —
+  print time, weight, length, energy and the three costs — over **everything the
+  filter kept**, not just the page in view. It pins itself to the bottom of the box
+  the way the header pins to the top, and switches off in the settings.
 - **⚙** opens the table settings: column order and visibility, the default sort column
-  and direction, the rows per page, and the table height — all remembered per browser.
-  Display only; a save always writes every field.
+  and direction, the rows per page, the table height, and whether failed prints and
+  the totals row are shown — all remembered per browser. Display only; a save always
+  writes every field.
 
   ![The jobs table's settings sheet](images/print_history_table_settings.jpg)
 - By default the table is bounded to 70% of the screen and scrolls inside its own box:

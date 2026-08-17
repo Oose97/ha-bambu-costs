@@ -85,8 +85,12 @@ class BambuCostsJobsTable extends HTMLElement {
     this._pageSize = this._cfg.page_size;
     this._maxH = 70;
     this._hideFailed = true;
+    this._showTotals = true;
     this._page = 0;
     this._filter = "";
+    // Compiled from the filter box; null means "everything matches".
+    this._filterFn = null;
+    this._filterBad = false;
     this._rows = [];
     this._baseSig = null;
     this._dirty = false;
@@ -193,6 +197,7 @@ class BambuCostsJobsTable extends HTMLElement {
       if (Number(s.pageSize) > 0) this._pageSize = Number(s.pageSize);
       if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
       if (typeof s.hideFailed === "boolean") this._hideFailed = s.hideFailed;
+      if (typeof s.showTotals === "boolean") this._showTotals = s.showTotals;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
 
@@ -201,7 +206,7 @@ class BambuCostsJobsTable extends HTMLElement {
       localStorage.setItem(this._settingsKey(), JSON.stringify({
         order: this._order, hidden: [...this._hidden],
         sortKey: this._sort.key, sortDir: this._sort.dir, pageSize: this._pageSize,
-        maxh: this._maxH, hideFailed: this._hideFailed,
+        maxh: this._maxH, hideFailed: this._hideFailed, showTotals: this._showTotals,
       }));
     } catch (e) { /* private mode — layout just will not persist */ }
   }
@@ -221,6 +226,9 @@ class BambuCostsJobsTable extends HTMLElement {
       el.style.maxHeight = "";
       el.style.overflowY = "hidden";
     }
+    // The totals row only pins itself against a box that actually scrolls;
+    // unbounded, it would stick to the page and float over the rows.
+    el.classList.toggle("bounded", this._maxH > 0);
   }
 
   // ── helpers ──────────────────────────────────────────────
@@ -288,6 +296,95 @@ class BambuCostsJobsTable extends HTMLElement {
       .replace(/^High Flow\b/, "HF");
   }
 
+  // ── filtering ────────────────────────────────────────────
+  // Everything about a row that is worth searching, as one lowercase string.
+  _haystack(r) {
+    const trays = (r.trays || []).map(t => `${t.label} ${t.type || ""} ${t.name}`).join(" ");
+    return `${r.ts} ${r.job} ${r.nozzle} ${r.nozzle_type} ${this._typeDisp(r.nozzle_type)} ${r.types} ${trays} ${r.status || ""}`
+      .toLowerCase();
+  }
+
+  // Compile the filter box into a predicate over that string.
+  //
+  // Plain text stays exactly what it always was — one literal substring —
+  // because job names carry brackets and parentheses of their own, and a
+  // search box that reinterprets them would be a trap. Only an explicit
+  // [AND], [OR] or [NOT] switches the text into a boolean expression, where
+  // ( ) group and two operands side by side are AND-ed.
+  //
+  // Typing is a partial expression most of the time, so a text that does not
+  // parse never errors: it falls back to AND-ing whatever terms it does
+  // contain, and the footer says the expression was not understood yet.
+  _compileFilter(text) {
+    const q = String(text || "").trim().toLowerCase();
+    this._filterBad = false;
+    if (!q) return null;
+    if (!/\[(and|or|not)\]/.test(q)) return hay => hay.includes(q);
+
+    const tokens = [];
+    const rx = /\[(and|or|not)\]|[()]/g;
+    let last = 0, m;
+    while ((m = rx.exec(q)) !== null) {
+      const term = q.slice(last, m.index).trim();
+      if (term) tokens.push({ t: "term", v: term });
+      tokens.push({ t: m[1] || m[0] });
+      last = rx.lastIndex;
+    }
+    const tail = q.slice(last).trim();
+    if (tail) tokens.push({ t: "term", v: tail });
+
+    let i = 0;
+    const peek = () => tokens[i];
+    const eat = t => (tokens[i] && tokens[i].t === t ? (i++, true) : false);
+
+    const parseOr = () => {
+      let node = parseAnd();
+      while (eat("or")) node = { op: "or", l: node, r: parseAnd() };
+      return node;
+    };
+    const parseAnd = () => {
+      let node = parseNot();
+      // An explicit [AND], or simply the next operand: "a [OR] b c" reads
+      // the way a search box is expected to.
+      while (peek() && ["and", "term", "(", "not"].includes(peek().t)) {
+        eat("and");
+        node = { op: "and", l: node, r: parseNot() };
+      }
+      return node;
+    };
+    const parseNot = () => (eat("not") ? { op: "not", l: parseNot() } : parsePrimary());
+    const parsePrimary = () => {
+      if (eat("(")) {
+        const node = parseOr();
+        if (!eat(")")) throw new Error("unbalanced parentheses");
+        return node;
+      }
+      const tok = peek();
+      if (!tok || tok.t !== "term") throw new Error("expected something to match");
+      i++;
+      return { op: "term", v: tok.v };
+    };
+
+    const test = (node, hay) =>
+      node.op === "term" ? hay.includes(node.v)
+        : node.op === "not" ? !test(node.l, hay)
+          : node.op === "and" ? test(node.l, hay) && test(node.r, hay)
+            : test(node.l, hay) || test(node.r, hay);
+
+    try {
+      const ast = parseOr();
+      if (i !== tokens.length) throw new Error("trailing input");
+      return hay => test(ast, hay);
+    } catch (err) {
+      // Half-typed, or genuinely malformed: match on the terms alone rather
+      // than emptying the table while the expression is still being written.
+      this._filterBad = true;
+      const terms = tokens.filter(t => t.t === "term").map(t => t.v);
+      if (!terms.length) return null;
+      return hay => terms.every(t => hay.includes(t));
+    }
+  }
+
   // ── view pipeline ────────────────────────────────────────
   _filtered() {
     let rows = this._rows;
@@ -298,13 +395,8 @@ class BambuCostsJobsTable extends HTMLElement {
       rows = rows.filter(r => r.status !== "failed");
       this._hiddenFailed = this._rows.length - rows.length;
     }
-    const q = this._filter;
-    if (!q) return rows;
-    return rows.filter(r => {
-      const trays = (r.trays || []).map(t => `${t.label} ${t.type || ""} ${t.name}`).join(" ");
-      return `${r.ts} ${r.job} ${r.nozzle} ${r.nozzle_type} ${this._typeDisp(r.nozzle_type)} ${r.types} ${trays} ${r.status || ""}`
-        .toLowerCase().includes(q);
-    });
+    if (!this._filterFn) return rows;
+    return rows.filter(r => this._filterFn(this._haystack(r)));
   }
 
   _sorted() {
@@ -861,6 +953,14 @@ class BambuCostsJobsTable extends HTMLElement {
           table.bcjt td { padding:4px 3px; border-bottom:1px solid var(--divider-color);
             vertical-align:middle; }
           table.bcjt td.nw, table.bcjt th.nw { white-space:nowrap; }
+          /* The totals row: pinned to the bottom of the box the same way the
+             header is pinned to the top, and only while that box scrolls. */
+          table.bcjt tfoot td { padding:7px 3px; font-weight:600; border-bottom:none;
+            border-top:1px solid var(--divider-color);
+            background:var(--ha-card-background, var(--card-background-color)); }
+          .bcjt-scroll.bounded table.bcjt tfoot td { position:sticky; bottom:0; z-index:2;
+            box-shadow:0 -1px 0 var(--divider-color); }
+          table.bcjt tfoot .tlabel { color:var(--secondary-text-color); font-weight:500; }
           table.bcjt td.num { text-align:right; white-space:nowrap; }
           table.bcjt td.ctr { text-align:center; }
           table.bcjt td.ctr input.cell { text-align:center; }
@@ -981,7 +1081,8 @@ class BambuCostsJobsTable extends HTMLElement {
         </style>
         <div class="bcjt-wrap">
           <div class="bcjt-tools">
-            <input class="f" type="text" placeholder="Filter jobs…">
+            <input class="f" type="text" placeholder="Filter jobs — [AND] [OR] [NOT] ( )"
+              title="Plain text matches anywhere in the row.&#10;Combine with [AND], [OR], [NOT] and parentheses:&#10;(2026-08-15 [OR] 2026-08-16) [AND] penguin">
             <button class="tbtn addprint" title="Log a print by hand">+ Print</button>
             <button class="tbtn settings" title="Table settings">⚙</button>
             <button class="tbtn reload" title="Reload from file">↻</button>
@@ -991,6 +1092,7 @@ class BambuCostsJobsTable extends HTMLElement {
             <table class="bcjt">
               <thead><tr></tr></thead>
               <tbody></tbody>
+              <tfoot></tfoot>
             </table>
           </div>
           <div class="bcjt-foot">
@@ -1011,7 +1113,8 @@ class BambuCostsJobsTable extends HTMLElement {
     this._built = true;
 
     this.querySelector("input.f").addEventListener("input", e => {
-      this._filter = e.target.value.toLowerCase();
+      this._filter = e.target.value;
+      this._filterFn = this._compileFilter(this._filter);
       this._page = 0;
       this._paint();
     });
@@ -1292,10 +1395,43 @@ class BambuCostsJobsTable extends HTMLElement {
     }).join("") || `<tr><td colspan="${cols.length + 1}"
       style="text-align:center;padding:24px" class="muted">No jobs logged yet</td></tr>`;
 
+    // Totals cover everything the filter kept, not just the page on screen.
+    this.querySelector("tfoot").innerHTML =
+      this._showTotals ? this._totalsHtml(all, cols) : "";
+
     this.querySelector(".pg").textContent = `${this._page + 1} / ${pages}`;
     this.querySelector(".prev").disabled = this._page === 0;
     this.querySelector(".next").disabled = this._page >= pages - 1;
     this._updateFoot(all.length);
+  }
+
+  // Sums for every numeric column that is on screen, under the column it
+  // belongs to. Print time is summed from the minutes behind the text.
+  _totalsHtml(rows, cols) {
+    if (!rows.length) return "";
+    const sum = key => rows.reduce((s, r) => s + (parseFloat(r[key]) || 0), 0);
+    const mins = sum("mins");
+    let labelled = false;
+
+    const cells = cols.map(col => {
+      if (col.type === "num") {
+        const unit = this._unit(col);
+        return `<td class="num nw">${sum(col.k).toFixed(col.dp === undefined ? 0 : col.dp)}${
+          unit ? `<span class="cu">${this._esc(unit)}</span>` : ""}</td>`;
+      }
+      if (col.k === "time") {
+        return `<td class="nw">${mins ? `${Math.floor(mins / 60)}h ${Math.round(mins % 60)}min` : ""}</td>`;
+      }
+      // The label goes in the first column that has no sum of its own.
+      if (!labelled) {
+        labelled = true;
+        return `<td class="nw">Total <span class="tlabel">· ${rows.length} job${
+          rows.length === 1 ? "" : "s"}</span></td>`;
+      }
+      return "<td></td>";
+    }).join("");
+
+    return `<tr>${cells}<td></td></tr>`;
   }
 
   _updateFoot(count) {
@@ -1304,6 +1440,7 @@ class BambuCostsJobsTable extends HTMLElement {
     const edits = this._edited.size - dels;
     this.querySelector(".bcjt-count").textContent =
       `${n} job${n === 1 ? "" : "s"}${this._filter ? " (filtered)" : ""}`
+      + (this._filterBad ? " · filter incomplete — matching on its words" : "")
       + (this._hiddenFailed ? ` · ${this._hiddenFailed} failed hidden` : "")
       + (edits > 0 ? ` · ${edits} unsaved edit${edits === 1 ? "" : "s"}` : "")
       + (dels ? ` · ${dels} deletion${dels === 1 ? "" : "s"} pending` : "");
@@ -1364,6 +1501,14 @@ class BambuCostsJobsTable extends HTMLElement {
         </span>
         <button class="tog${this._hideFailed ? "" : " isoff"}" data-hidefail>${
           this._hideFailed ? "ON" : "OFF"}</button>
+      </div>
+      <div class="bcjt-target">
+        <span class="bcjt-target-label">
+          <span class="bcjt-target-name">Show totals</span>
+          <span class="bcjt-target-cur">A summed row under the table, following the filter</span>
+        </span>
+        <button class="tog${this._showTotals ? "" : " isoff"}" data-totals>${
+          this._showTotals ? "ON" : "OFF"}</button>
       </div>
       <div class="bcjt-target"><span class="bcjt-target-label">
         <span class="bcjt-target-name" style="font-weight:600">Columns</span>
@@ -1426,6 +1571,10 @@ class BambuCostsJobsTable extends HTMLElement {
         this._page = 0;
         this._saveSettings(); render(); this._paint();
       });
+      body.querySelector("[data-totals]").addEventListener("click", () => {
+        this._showTotals = !this._showTotals;
+        this._saveSettings(); render(); this._paint();
+      });
       body.querySelectorAll("[data-toggle]").forEach(b => {
         b.addEventListener("click", e => {
           const key = e.currentTarget.dataset.toggle;
@@ -1458,6 +1607,7 @@ class BambuCostsJobsTable extends HTMLElement {
       this._pageSize = this._cfg.page_size;
       this._maxH = 70;
       this._hideFailed = true;
+      this._showTotals = true;
       this._page = 0;
       this._saveSettings(); render(); this._paint(); this._applyScrollMode();
     });

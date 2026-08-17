@@ -118,7 +118,8 @@ Go to [Cards](docs/cards.md) for more details.
   names, drag or button reordering, per-browser table settings.
 - **Print history** — fully editable in place, per-slot breakdown modal, nozzle combos,
   row deletion, pre-filled failed- and finished-print forms (the failed one scales the
-  plan by the layers that finished), content-sized columns, pinned header, configurable
+  plan by the layers that finished), a totals row that follows the filter, `[AND]` /
+  `[OR]` / `[NOT]` filtering, content-sized columns, pinned header, configurable
   columns/sort/page size/height.
 - **Printing now** — the running job as the row it will be logged as: name, filament
   lines and costs editable mid-print, measured values read-only, and the edits are
