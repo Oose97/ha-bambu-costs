@@ -32,6 +32,7 @@ from .const import (
     ATTR_SERIAL,
     ATTR_TAGS,
     CONF_CAMERA,
+    CONF_FILAMENT_INVENTORY,
     CONF_PRINT_STATUS,
     DISCONNECTED_STATES,
     DOMAIN,
@@ -70,6 +71,8 @@ _TAG_SCHEMA = vol.Schema(
         vol.Optional("serial_2"): cv.string,
         # Same for the learned cloud spool id — a save must not shed it.
         vol.Optional("tray_uuid"): cv.string,
+        # And the synced grams left. Blank means unknown, so both shapes pass.
+        vol.Optional("remaining_g"): vol.Any(vol.Coerce(float), cv.string),
         vol.Optional("cost_per_kg"): vol.Coerce(float),
         vol.Optional("disabled"): vol.Any(cv.boolean, cv.string),
     },
@@ -301,6 +304,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_track_print_status(hass, entry, coordinator)
     _async_track_trays(hass, entry, coordinator)
+    _async_track_inventory(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
 
@@ -470,6 +474,42 @@ def _async_track_trays(
     entry.async_on_unload(
         async_track_state_change_event(hass, list(by_entity), _tray_changed)
     )
+
+
+@callback
+def _async_track_inventory(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: BambuCostsCoordinator
+) -> None:
+    """Keep the library's remaining grams current from the cloud inventory.
+
+    The inventory sensor updates when the cloud's spool bookkeeping moves —
+    a tray engaging, a print ending — so following its state changes is both
+    prompt and cheap. The store writes only on actual differences, so a
+    burst of updates costs reads, not file churn. One sync runs at setup so
+    a restart never waits for the next spool event to catch up.
+    """
+    entity = coordinator.entity_of(CONF_FILAMENT_INVENTORY)
+    if not entity:
+        return
+
+    async def _sync() -> None:
+        result = await coordinator.async_sync_inventory()
+        if result and (result["updated"] or result["seeded"]):
+            _LOGGER.info(
+                "Filament inventory: %s remaining value(s) refreshed, "
+                "%s spool(s) added to the library",
+                result["updated"],
+                result["seeded"],
+            )
+
+    @callback
+    def _changed(_event: Event[EventStateChangedData]) -> None:
+        entry.async_create_task(hass, _sync())
+
+    entry.async_on_unload(
+        async_track_state_change_event(hass, [entity], _changed)
+    )
+    entry.async_create_task(hass, _sync())
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -185,6 +185,76 @@ def test_a_half_paired_row_is_not_matched_by_id(store):
     assert store.read_tags()[1]["serial_2"] == ""
 
 
+def _spool(uuid, remaining, name="PLA Basic", color="#00AE42"):
+    return {
+        "tray_uuid": uuid, "remaining_g": remaining,
+        "match_name": name, "color_code": color,
+        "seed": {"filament": f"Bambu {name}", "color_code": color,
+                 "color_name": "Seeded", "serial": "", "cost_per_kg": 0.0,
+                 "disabled": False, "serial_2": "", "tray_uuid": uuid},
+    }
+
+
+def test_inventory_updates_remaining_on_every_row_with_the_id(store):
+    a = tag("AAA", serial_2="BBB")
+    a["tray_uuid"] = "UUID-ONE"
+    b = tag("BBB", serial_2="AAA")
+    b["tray_uuid"] = "UUID-ONE"
+    store.write_tags([a, b])
+
+    out = store.sync_inventory([_spool("UUID-ONE", 590)])
+    assert out == {"updated": 2, "seeded": 0}
+    rows = store.read_tags()
+    assert rows[0]["remaining_g"] == "590" and rows[1]["remaining_g"] == "590"
+
+    # Unchanged values write nothing and count nothing.
+    assert store.sync_inventory([_spool("UUID-ONE", 590)]) == {"updated": 0, "seeded": 0}
+    # A moved value updates again.
+    assert store.sync_inventory([_spool("UUID-ONE", 200)])["updated"] == 2
+
+
+def test_an_unknown_spool_is_seeded_serial_less(store):
+    store.write_tags([tag("AAA")])
+    out = store.sync_inventory([_spool("UUID-NEW", 1000, name="PLA Glow", color="#A1FFAC")])
+    assert out == {"updated": 0, "seeded": 1}
+    rows = store.read_tags()
+    assert len(rows) == 2
+    seeded = rows[1]
+    assert seeded["serial"] == "" and seeded["tray_uuid"] == "UUID-NEW"
+    assert seeded["filament"] == "Bambu PLA Glow"
+    assert seeded["remaining_g"] == "1000"
+
+
+def test_a_matching_id_less_row_blocks_seeding(store):
+    """A row with the same product and colour but no id yet is almost
+    certainly this very spool, waiting to learn its id on the next load."""
+    store.write_tags([tag("AAA")])  # Bambu PLA Basic #00AE42, no uuid
+    out = store.sync_inventory([_spool("UUID-ONE", 700)])
+    assert out == {"updated": 0, "seeded": 0}
+    assert len(store.read_tags()) == 1
+
+
+def test_scanning_claims_a_seeded_row_instead_of_twinning(store):
+    store.sync_inventory([_spool("UUID-NEW", 1000)])
+    assert store.claim_seeded_row("AAA", "UUID-NEW") is True
+    rows = store.read_tags()
+    assert len(rows) == 1 and rows[0]["serial"] == "AAA"
+
+    # A serial already known claims nothing; neither does a blank id.
+    assert store.claim_seeded_row("AAA", "UUID-NEW") is False
+    assert store.claim_seeded_row("BBB", "") is False
+    assert store.claim_seeded_row("BBB", "0" * 32) is False
+
+
+def test_remaining_grams_round_trip_and_blank_stays_blank(store):
+    row = tag("AAA")
+    row["remaining_g"] = 590.4
+    store.write_tags([row, tag("BBB")])
+    rows = store.read_tags()
+    assert rows[0]["remaining_g"] == "590"
+    assert rows[1]["remaining_g"] == "", "unknown is not zero"
+
+
 def test_write_keeps_a_backup(store, tmp_path):
     store.write_tags([tag("AAA")])
     store.write_tags([tag("AAA"), tag("CCC")])

@@ -26,6 +26,12 @@ startup for you to add by hand.
   itself](filament.md#the-spool-id-learns-itself) whenever the spool is loaded — and
   the reason freshly scanned second sides pair up on their own. Editable like
   everything else; shared across a pair, one spool being one spool.
+- The **Left** column is a ring showing how much of the spool remains — green, then
+  yellow under 30%, orange under 20%, red under 10% — with the grams in its tooltip.
+  Click it to type the grams directly; with a
+  [filament inventory sensor](filament.md#remaining-grams-from-the-cloud-inventory)
+  configured, the value keeps itself current. Shared across a pair, like everything
+  else describing the spool.
 - The colour-name cell is a combo over the whole Bambu palette: click it and the full
   list drops down, scrollable; start typing and it filters. The list is a convenience,
   not a constraint — anything you type is accepted as-is.

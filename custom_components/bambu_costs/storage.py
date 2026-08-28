@@ -26,6 +26,10 @@ _LOGGER = logging.getLogger(__name__)
 TAG_FIELDS = [
     "filament", "color_code", "color_name", "serial", "cost_per_kg", "disabled", "serial_2",
     "tray_uuid",
+    # Grams left on the spool, kept current from the cloud filament inventory
+    # when one is configured. Blank means "not known", which is different
+    # from 0 — an empty spool is knowledge too.
+    "remaining_g",
 ]
 
 # filament_type is appended for the same reason serial_2 is above: files
@@ -240,6 +244,7 @@ class BambuCostsStore:
                     "disabled": is_disabled(raw.get("disabled")),
                     "serial_2": (raw.get("serial_2") or "").strip(),
                     "tray_uuid": (raw.get("tray_uuid") or "").strip(),
+                    "remaining_g": (raw.get("remaining_g") or "").strip(),
                 }
             )
         return rows
@@ -264,6 +269,9 @@ class BambuCostsStore:
                 "disabled": "true" if is_disabled(t.get("disabled")) else "false",
                 "serial_2": str(t.get("serial_2") or "").strip(),
                 "tray_uuid": str(t.get("tray_uuid") or "").strip(),
+                "remaining_g": ""
+                if str(t.get("remaining_g", "")).strip() == ""
+                else f"{as_float(t.get('remaining_g')):.0f}",
             }
             for t in tags
         ]
@@ -298,6 +306,99 @@ class BambuCostsStore:
         if any(serial.lower() in self._serials(t) for t in tags):
             return False
         tags.append(tag)
+        self.write_tags(tags)
+        return True
+
+    def sync_inventory(self, spools: list[dict[str, Any]]) -> dict[str, int]:
+        """Fold the cloud filament inventory into the library.
+
+        Two jobs, both keyed on the learned spool id. Every row carrying a
+        spool's id gets its ``remaining_g`` refreshed — a pair's two rows and
+        clone rows sharing one id alike. A spool whose id no row carries is
+        *added*, serial-less, unless an id-less row already matches its
+        product and colour — that row is almost certainly the same physical
+        spool waiting to learn its id on the next load, and seeding a twin
+        for it would litter the library. Each spool dict carries a prepared
+        ``seed`` row for exactly this case.
+
+        Only actual differences write the file, so this can run on every
+        inventory update without churning it.
+        """
+        tags = self.read_tags()
+        updated = 0
+        seeded = 0
+        changed = False
+
+        for spool in spools:
+            uuid = str(spool.get("tray_uuid") or "").strip()
+            if not uuid or set(uuid) == {"0"}:
+                continue
+            remaining = f"{as_float(spool.get('remaining_g')):.0f}"
+
+            rows = [
+                t
+                for t in tags
+                if str(t.get("tray_uuid") or "").strip().lower() == uuid.lower()
+            ]
+            if rows:
+                for row in rows:
+                    if str(row.get("remaining_g", "")).strip() != remaining:
+                        row["remaining_g"] = remaining
+                        updated += 1
+                        changed = True
+                continue
+
+            match_name = str(spool.get("match_name") or "").strip().lower()
+            colour = str(spool.get("color_code") or "").strip().upper()
+            candidate = any(
+                not str(t.get("tray_uuid") or "").strip()
+                and minimal_filament(t.get("filament")).lower() == match_name
+                and str(t.get("color_code") or "").strip().upper() == colour
+                for t in tags
+            )
+            if candidate:
+                continue
+
+            seed = dict(spool.get("seed") or {})
+            if not seed:
+                continue
+            seed["remaining_g"] = remaining
+            tags.append(seed)
+            seeded += 1
+            changed = True
+
+        if changed:
+            self.write_tags(tags)
+        return {"updated": updated, "seeded": seeded}
+
+    def claim_seeded_row(self, serial: str, tray_uuid: str) -> bool:
+        """Give an inventory-seeded row its tag, instead of adding a twin.
+
+        A row seeded from the inventory knows its spool id but no serial —
+        the cloud does not carry tag UIDs. The first time that spool is
+        actually loaded, the scan would otherwise append a fresh row for it;
+        claiming writes the serial onto the seeded row instead, and from
+        there it behaves like any scanned spool.
+        """
+        uuid = str(tray_uuid or "").strip()
+        wanted = str(serial or "").strip()
+        if not uuid or not wanted or set(uuid) == {"0"}:
+            return False
+        tags = self.read_tags()
+        if any(wanted.lower() in self._serials(t) for t in tags):
+            return False
+        row = next(
+            (
+                t
+                for t in tags
+                if not str(t.get("serial") or "").strip()
+                and str(t.get("tray_uuid") or "").strip().lower() == uuid.lower()
+            ),
+            None,
+        )
+        if row is None:
+            return False
+        row["serial"] = wanted
         self.write_tags(tags)
         return True
 
