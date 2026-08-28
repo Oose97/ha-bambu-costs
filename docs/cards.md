@@ -22,6 +22,10 @@ startup for you to add by hand.
   **ON/OFF** toggle — a spool is one physical thing, retired whole. Serials stay
   per-row, since they are what tell the two tags apart. Typing a spool's second serial
   pairs the rows on the spot.
+- The **Spool ID** column is the printer cloud's per-spool id, [learned by
+  itself](filament.md#the-spool-id-learns-itself) whenever the spool is loaded — and
+  the reason freshly scanned second sides pair up on their own. Editable like
+  everything else; shared across a pair, one spool being one spool.
 - The colour-name cell is a combo over the whole Bambu palette: click it and the full
   list drops down, scrollable; start typing and it filters. The list is a convenience,
   not a constraint — anything you type is accepted as-is.

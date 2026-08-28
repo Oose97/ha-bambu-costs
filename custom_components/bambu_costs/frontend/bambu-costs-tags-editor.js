@@ -7,6 +7,7 @@ const BTE_COLS = [
   { key: "color_name", label: "Color" },
   { key: "serial",     label: "Serial",   width: "150px" },
   { key: "serial_2",   label: "Serial 2", width: "150px" },
+  { key: "tray_uuid",  label: "Spool ID", width: "150px" },
   { key: "price",      label: "PRICE",    width: "120px", tight: true },
 ];
 const BTE_DEFAULT_ORDER = BTE_COLS.map(c => c.key);
@@ -98,6 +99,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       color_name: r.color_name || "",
       serial: r.serial || "",
       serial_2: r.serial_2 || "",
+      tray_uuid: r.tray_uuid || "",
       cost_per_kg: Number(r.cost_per_kg) || 0,
       disabled: this._isDisabled(r.disabled),
     }));
@@ -155,6 +157,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       color_name: this._clean(r.color_name),
       serial: this._clean(r.serial),
       serial_2: this._clean(r.serial_2),
+      tray_uuid: this._clean(r.tray_uuid),
       cost_per_kg: Number(r.cost_per_kg) || 0,
       disabled: !!r.disabled,
     }));
@@ -507,7 +510,7 @@ class BambuCostsTagsEditor extends HTMLElement {
 
     q(".add").addEventListener("click", () => {
       this._rows.unshift({ _k: this._nextKey++, filament: "", color_code: "#808080",
-        color_name: "", serial: "", serial_2: "", cost_per_kg: 0, disabled: false });
+        color_name: "", serial: "", serial_2: "", tray_uuid: "", cost_per_kg: 0, disabled: false });
       this._dirty = true;
       this._paint();
       const first = this.querySelector("tbody tr input.cell");
@@ -564,7 +567,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     const cols = this._cols();
 
     tbody.innerHTML = groups.map((group, gi) => group.map((r, ri) => {
-      const key = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2}`
+      const key = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2} ${r.tray_uuid}`
         .toLowerCase().replace(/"/g, "");
       const sig = this._groupSig(group);
       const expanded = group.length > 1 && this._isExpanded(sig);
@@ -929,6 +932,13 @@ class BambuCostsTagsEditor extends HTMLElement {
       case "serial_2":
         return `<td><input class="cell ser" type="text" data-k="${k}" data-f="serial_2"
                 placeholder="other side" value="${this._esc(r.serial_2 || "")}"></td>`;
+      case "tray_uuid":
+        // The printer cloud's per-spool id, learned when the spool is
+        // loaded. Shared by a pair like every descriptive field: one spool,
+        // one id.
+        return `<td><input class="cell ser" type="text" data-k="${k}" data-f="tray_uuid"
+                placeholder="learned on load" title="${this._esc(r.tray_uuid || "")}"
+                value="${this._esc(r.tray_uuid || "")}"></td>`;
       case "price":
         return `<td><span class="pricecell">
                   <input class="cell p" type="number" step="0.01" min="0" data-k="${k}"
@@ -1093,7 +1103,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       hx.value = this._norm(r.color_code);
       hx.style.color = this._textFor(r.color_code, bg);
     }
-    tr.dataset.s = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2}`
+    tr.dataset.s = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2} ${r.tray_uuid}`
       .toLowerCase().replace(/"/g, "");
   }
 

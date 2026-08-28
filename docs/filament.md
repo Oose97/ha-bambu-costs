@@ -47,7 +47,8 @@ hand; they are inert for slot pricing but show in the calculator's filament list
 Re-reading a tag already in the library does nothing. A serial named as some row's
 **`serial_2`** counts as already known — so if you fill in a spool's second tag before
 scanning that side, it will not create a duplicate. Leave `serial_2` blank and the
-second tag becomes its own row, which you can pair up later by hand.
+second tag becomes its own row — and the shared
+[spool id](#the-spool-id-learns-itself) pairs the two on the spot.
 
 ## How a slot gets its price
 
@@ -88,6 +89,24 @@ time, so the figures are right even if these entities are stale.
 Filament the printer counted that no configured slot claimed — an external spool, or a
 slot whose attribute name drifted — becomes an `External` row priced at the default,
 rather than being dropped. Mixed AMS + external jobs therefore total correctly.
+
+## The spool id learns itself
+
+Loading a spool is the one moment two identifiers are visible side by side: the RFID
+tag the AMS just read, and the ``tray_uuid`` the printer reports for that spool — the
+same id its cloud filament inventory uses. Whenever that happens, the id is recorded
+on the matching library row's **Spool ID** column, hands-free. Only a blank is ever
+filled: a value you typed or corrected stands, and the column is editable in the tags
+card like any other.
+
+The id also does the pairing chore. A spool carries a tag on each side, and until now
+the second side either scanned in as a puzzling new row or had to be typed in by
+hand. Now, when two rows turn out to share one spool id and **both** have an empty
+second-serial slot, they are paired on the spot — the two sides found each other.
+Rows already paired are never touched: that is also what keeps clone-tagged spools
+safe, since several physical clones can share one cloud id without being stitched
+together, each pairing only to its own other side. A newly scanned spool records its
+id from the very first read.
 
 ## When a spool runs out mid-print
 

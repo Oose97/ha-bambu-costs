@@ -68,6 +68,8 @@ _TAG_SCHEMA = vol.Schema(
         # The spool's second RFID tag. Must be listed: REMOVE_EXTRA drops any
         # key the schema does not name, which would strip pairings on save.
         vol.Optional("serial_2"): cv.string,
+        # Same for the learned cloud spool id — a save must not shed it.
+        vol.Optional("tray_uuid"): cv.string,
         vol.Optional("cost_per_kg"): vol.Coerce(float),
         vol.Optional("disabled"): vol.Any(cv.boolean, cv.string),
     },
@@ -447,6 +449,21 @@ def _async_track_trays(
                 )
                 # The row exists now, so the slot can take its price from it.
                 coordinator.sync_slot_prices()
+            # New spool or old, this is the moment both of its identifiers
+            # are visible at once — learn the cloud spool id, and let it
+            # pair the two sides of a spool that scanned in separately.
+            learned = await coordinator.async_learn_tray_uuid(slot)
+            if learned and "paired_with" in learned:
+                _LOGGER.info(
+                    "Paired the spool in %s with its other tag %s via the "
+                    "shared spool id",
+                    slot.label,
+                    learned["paired_with"],
+                )
+            elif learned:
+                _LOGGER.debug(
+                    "Learned spool id for the tag in %s", slot.label
+                )
 
         entry.async_create_task(hass, _add())
 

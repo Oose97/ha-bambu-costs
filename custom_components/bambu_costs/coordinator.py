@@ -316,6 +316,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "material": attrs.get("type")
             or (state.state if state.state.lower() not in _BAD_STATES else None),
             "tag_uid": attrs.get("tag_uid"),
+            # The cloud's per-spool id — the bridge between the tag the AMS
+            # read and the printer's filament inventory.
+            "tray_uuid": attrs.get("tray_uuid"),
         }
 
     # ── tag scanning ─────────────────────────────────────────────────────────
@@ -346,6 +349,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "cost_per_kg": 0.0,
             "disabled": False,
             "serial_2": "",
+            "tray_uuid": str(tray.get("tray_uuid") or "").strip(),
         }
 
         # Reloading a whole AMS scans four spools at once, and add_tag_if_new is
@@ -357,6 +361,24 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         await self.async_request_refresh()
         return tag
+
+    async def async_learn_tray_uuid(self, slot: SlotDef) -> dict[str, str] | None:
+        """Learn the loaded spool's cloud id, and pair rows it betrays.
+
+        Runs on every tag read, new spool or old: the store only ever fills
+        blanks, so a quiet pass costs one file read and writes nothing.
+        """
+        tray = self.tray_info(slot)
+        serial = str(tray.get("tag_uid") or "").strip()
+        if serial.lower() in EMPTY_TAG_UIDS:
+            return None
+        async with self._tag_write_lock:
+            changed = await self.hass.async_add_executor_job(
+                self.store.learn_tray_uuid, serial, str(tray.get("tray_uuid") or "")
+            )
+        if changed:
+            await self.async_request_refresh()
+        return changed
 
     async def _async_resolved_color_name(
         self, color_code: str, material: str | None = None, product: str | None = None

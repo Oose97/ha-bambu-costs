@@ -21,8 +21,11 @@ _LOGGER = logging.getLogger(__name__)
 
 # serial_2 is appended rather than slotted next to serial: a file written
 # before it existed has six columns, and appending keeps those readable.
+# tray_uuid — the printer cloud's per-spool id, learned from the tray when a
+# spool is loaded — is appended again for the same reason.
 TAG_FIELDS = [
     "filament", "color_code", "color_name", "serial", "cost_per_kg", "disabled", "serial_2",
+    "tray_uuid",
 ]
 
 # filament_type is appended for the same reason serial_2 is above: files
@@ -236,6 +239,7 @@ class BambuCostsStore:
                     "cost_per_kg": as_float(raw.get("cost_per_kg")),
                     "disabled": is_disabled(raw.get("disabled")),
                     "serial_2": (raw.get("serial_2") or "").strip(),
+                    "tray_uuid": (raw.get("tray_uuid") or "").strip(),
                 }
             )
         return rows
@@ -259,6 +263,7 @@ class BambuCostsStore:
                 "cost_per_kg": f"{as_float(t.get('cost_per_kg')):.2f}",
                 "disabled": "true" if is_disabled(t.get("disabled")) else "false",
                 "serial_2": str(t.get("serial_2") or "").strip(),
+                "tray_uuid": str(t.get("tray_uuid") or "").strip(),
             }
             for t in tags
         ]
@@ -295,6 +300,75 @@ class BambuCostsStore:
         tags.append(tag)
         self.write_tags(tags)
         return True
+
+    def learn_tray_uuid(self, serial: str, tray_uuid: str) -> dict[str, str] | None:
+        """Record the cloud's per-spool id on the row this tag belongs to.
+
+        Loading a spool is the one moment both identifiers are visible at
+        once — the tag the AMS read and the ``tray_uuid`` the printer reports
+        for it — so the mapping is learned here, hands-free. Only a blank is
+        ever filled: a value the user typed, corrected or learned before
+        stands, so this can run on every load without churning the file.
+
+        The id also pairs rows. A spool carries a tag on each side; when the
+        other side is scanned later it lands as its own row, and the shared
+        tray_uuid is what betrays the two as one spool — so if both rows have
+        an empty ``serial_2``, they are paired on the spot. Rows already
+        paired are never touched, which is also what keeps clone-tagged
+        spools (several physical spools sharing one cloud id) safe: their
+        rows pair to their own other sides, not to each other.
+
+        Returns what changed, or None when nothing did.
+        """
+        uuid = str(tray_uuid or "").strip()
+        wanted = str(serial or "").strip().lower()
+        if not uuid or not wanted or set(uuid) == {"0"}:
+            return None
+
+        tags = self.read_tags()
+        row = next((t for t in tags if wanted in self._serials(t)), None)
+        if row is None:
+            return None
+
+        changed: dict[str, str] = {}
+        if not row.get("tray_uuid"):
+            row["tray_uuid"] = uuid
+            changed["learned"] = uuid
+        elif row["tray_uuid"].strip().lower() != uuid.lower():
+            # A different id on file — an edit, or a clone collision. Theirs.
+            return None
+
+        # One spool, one id: a row already paired shares the spool with its
+        # partner, so a blank on the other side is filled along with it.
+        if row.get("serial_2"):
+            other = str(row["serial_2"]).strip().lower()
+            for t in tags:
+                if t is not row and other in self._serials(t) and not t.get("tray_uuid"):
+                    t["tray_uuid"] = uuid
+                    changed["learned_partner"] = t.get("serial", "")
+
+        if not row.get("serial_2"):
+            partner = next(
+                (
+                    t
+                    for t in tags
+                    if t is not row
+                    and str(t.get("tray_uuid") or "").strip().lower() == uuid.lower()
+                    and not t.get("serial_2")
+                    and t.get("serial")
+                    and t["serial"].strip().lower() not in self._serials(row)
+                ),
+                None,
+            )
+            if partner is not None:
+                row["serial_2"] = partner["serial"]
+                partner["serial_2"] = row["serial"]
+                changed["paired_with"] = partner["serial"]
+
+        if not changed:
+            return None
+        self.write_tags(tags)
+        return changed
 
     # ── jobs ─────────────────────────────────────────────────────────────────
     def read_jobs(self, limit: int = 200) -> list[dict[str, Any]]:
