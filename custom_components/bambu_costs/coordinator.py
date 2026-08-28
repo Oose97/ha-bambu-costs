@@ -34,6 +34,7 @@ from .const import (
     CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_CURRENT_LAYER,
     CONF_ENERGY_SENSORS,
+    CONF_FILAMENT_INVENTORY,
     CONF_LAYERS,
     CONF_LENGTH,
     CONF_NOZZLE_SIZE,
@@ -316,6 +317,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "material": attrs.get("type")
             or (state.state if state.state.lower() not in _BAD_STATES else None),
             "tag_uid": attrs.get("tag_uid"),
+            # The cloud's per-spool id — the bridge between the tag the AMS
+            # read and the printer's filament inventory.
+            "tray_uuid": attrs.get("tray_uuid"),
         }
 
     # ── tag scanning ─────────────────────────────────────────────────────────
@@ -346,17 +350,118 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "cost_per_kg": 0.0,
             "disabled": False,
             "serial_2": "",
+            "tray_uuid": str(tray.get("tray_uuid") or "").strip(),
         }
 
         # Reloading a whole AMS scans four spools at once, and add_tag_if_new is
         # a read-modify-write of the same file. Serialised here so concurrent
         # scans queue instead of overwriting each other.
         async with self._tag_write_lock:
-            added = await self.hass.async_add_executor_job(self.store.add_tag_if_new, tag)
+            # A row seeded from the filament inventory knows this spool's id
+            # but had no serial until now — claim it rather than adding a twin.
+            claimed = await self.hass.async_add_executor_job(
+                self.store.claim_seeded_row, serial, str(tray.get("tray_uuid") or "")
+            )
+            if claimed:
+                added = False
+            else:
+                added = await self.hass.async_add_executor_job(
+                    self.store.add_tag_if_new, tag
+                )
+        if claimed:
+            _LOGGER.info(
+                "Scanned tag %s claimed its inventory-seeded library row", serial
+            )
+            await self.async_request_refresh()
+            return None
         if not added:
             return None
         await self.async_request_refresh()
         return tag
+
+    # ── the cloud filament inventory ─────────────────────────────────────────
+    def _inventory_spools(self) -> list[dict[str, Any]]:
+        """The configured inventory sensor's spools, shaped for the store."""
+        entity = self.entity_of(CONF_FILAMENT_INVENTORY)
+        if not entity:
+            return []
+        state = self.hass.states.get(entity)
+        if state is None or state.state.lower() in _BAD_STATES:
+            return []
+        spools = state.attributes.get("spools")
+        if not isinstance(spools, list):
+            return []
+
+        out: list[dict[str, Any]] = []
+        for spool in spools:
+            if not isinstance(spool, dict):
+                continue
+            uuid = str(spool.get("rfid") or "").strip()
+            if not uuid:
+                continue
+            name = str(spool.get("name") or "").strip()
+            vendor = str(spool.get("vendor") or "").strip()
+            # "Bambu Lab" + "PLA Basic" should read "Bambu PLA Basic", the way
+            # the trays report it — not "Bambu Lab PLA Basic".
+            product = (
+                f"Bambu {name}"
+                if vendor.lower().startswith("bambu")
+                else f"{vendor} {name}".strip()
+            )
+            colour = normalise_colour(spool.get("color"))
+            out.append(
+                {
+                    "tray_uuid": uuid,
+                    "remaining_g": as_float(spool.get("remaining_g")),
+                    # Brandless, to compare against library rows the same way
+                    # the jobs card shortens them.
+                    "match_name": name,
+                    "color_code": colour,
+                    "seed": {
+                        "filament": product or "Unknown",
+                        "color_code": colour,
+                        "color_name": color_name(colour, spool.get("type"), product)
+                        or UNKNOWN_COLOR,
+                        "serial": "",
+                        "cost_per_kg": 0.0,
+                        "disabled": False,
+                        "serial_2": "",
+                        "tray_uuid": uuid,
+                    },
+                }
+            )
+        return out
+
+    async def async_sync_inventory(self) -> dict[str, int] | None:
+        """Fold the inventory sensor into the library, if one is configured."""
+        spools = self._inventory_spools()
+        if not spools:
+            return None
+        async with self._tag_write_lock:
+            result = await self.hass.async_add_executor_job(
+                self.store.sync_inventory, spools
+            )
+        if result.get("updated") or result.get("seeded"):
+            await self.async_request_refresh()
+        return result
+
+    async def async_learn_tray_uuid(self, slot: SlotDef) -> dict[str, str] | None:
+        """Learn the loaded spool's cloud id, and pair rows it betrays.
+
+        Runs on every tag read, new spool or old: the store only ever fills
+        blanks, so a quiet pass costs one file read and writes nothing.
+        """
+        tray = self.tray_info(slot)
+        serial = str(tray.get("tag_uid") or "").strip()
+        if serial.lower() in EMPTY_TAG_UIDS:
+            return None
+        async with self._tag_write_lock:
+            changed = await self.hass.async_add_executor_job(
+                self.store.learn_tray_uuid, serial, str(tray.get("tray_uuid") or "")
+            )
+        if changed:
+            await self.async_request_refresh()
+        return changed
 
     async def _async_resolved_color_name(
         self, color_code: str, material: str | None = None, product: str | None = None

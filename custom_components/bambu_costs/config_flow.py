@@ -44,6 +44,7 @@ from .const import (
     CONF_ELECTRICITY_PRICE,
     CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_END_TIME,
+    CONF_FILAMENT_INVENTORY,
     CONF_ENERGY_SENSORS,
     CONF_FILAMENT_TYPES,
     CONF_LAYERS,
@@ -97,6 +98,7 @@ ALL_KEYS = (
     CONF_TASK_NAME,
     CONF_LAYERS,
     CONF_CURRENT_LAYER,
+    CONF_FILAMENT_INVENTORY,
     CONF_LENGTH,
     CONF_NOZZLE_SIZE,
     CONF_NOZZLE_TYPE,
@@ -205,6 +207,9 @@ def _printer_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Optional(CONF_LAYERS, description=dflt(CONF_LAYERS)): _SENSOR_OPT,
             vol.Optional(
                 CONF_CURRENT_LAYER, description=dflt(CONF_CURRENT_LAYER)
+            ): _SENSOR_OPT,
+            vol.Optional(
+                CONF_FILAMENT_INVENTORY, description=dflt(CONF_FILAMENT_INVENTORY)
             ): _SENSOR_OPT,
             vol.Optional(CONF_LENGTH, description=dflt(CONF_LENGTH)): _SENSOR_OPT,
             vol.Optional(CONF_NOZZLE_SIZE, description=dflt(CONF_NOZZLE_SIZE)): _SENSOR_OPT,

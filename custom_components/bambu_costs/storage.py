@@ -21,8 +21,15 @@ _LOGGER = logging.getLogger(__name__)
 
 # serial_2 is appended rather than slotted next to serial: a file written
 # before it existed has six columns, and appending keeps those readable.
+# tray_uuid — the printer cloud's per-spool id, learned from the tray when a
+# spool is loaded — is appended again for the same reason.
 TAG_FIELDS = [
     "filament", "color_code", "color_name", "serial", "cost_per_kg", "disabled", "serial_2",
+    "tray_uuid",
+    # Grams left on the spool, kept current from the cloud filament inventory
+    # when one is configured. Blank means "not known", which is different
+    # from 0 — an empty spool is knowledge too.
+    "remaining_g",
 ]
 
 # filament_type is appended for the same reason serial_2 is above: files
@@ -236,6 +243,8 @@ class BambuCostsStore:
                     "cost_per_kg": as_float(raw.get("cost_per_kg")),
                     "disabled": is_disabled(raw.get("disabled")),
                     "serial_2": (raw.get("serial_2") or "").strip(),
+                    "tray_uuid": (raw.get("tray_uuid") or "").strip(),
+                    "remaining_g": (raw.get("remaining_g") or "").strip(),
                 }
             )
         return rows
@@ -259,6 +268,10 @@ class BambuCostsStore:
                 "cost_per_kg": f"{as_float(t.get('cost_per_kg')):.2f}",
                 "disabled": "true" if is_disabled(t.get("disabled")) else "false",
                 "serial_2": str(t.get("serial_2") or "").strip(),
+                "tray_uuid": str(t.get("tray_uuid") or "").strip(),
+                "remaining_g": ""
+                if str(t.get("remaining_g", "")).strip() == ""
+                else f"{as_float(t.get('remaining_g')):.0f}",
             }
             for t in tags
         ]
@@ -295,6 +308,168 @@ class BambuCostsStore:
         tags.append(tag)
         self.write_tags(tags)
         return True
+
+    def sync_inventory(self, spools: list[dict[str, Any]]) -> dict[str, int]:
+        """Fold the cloud filament inventory into the library.
+
+        Two jobs, both keyed on the learned spool id. Every row carrying a
+        spool's id gets its ``remaining_g`` refreshed — a pair's two rows and
+        clone rows sharing one id alike. A spool whose id no row carries is
+        *added*, serial-less, unless an id-less row already matches its
+        product and colour — that row is almost certainly the same physical
+        spool waiting to learn its id on the next load, and seeding a twin
+        for it would litter the library. Each spool dict carries a prepared
+        ``seed`` row for exactly this case.
+
+        Only actual differences write the file, so this can run on every
+        inventory update without churning it.
+        """
+        tags = self.read_tags()
+        updated = 0
+        seeded = 0
+        changed = False
+
+        for spool in spools:
+            uuid = str(spool.get("tray_uuid") or "").strip()
+            if not uuid or set(uuid) == {"0"}:
+                continue
+            remaining = f"{as_float(spool.get('remaining_g')):.0f}"
+
+            rows = [
+                t
+                for t in tags
+                if str(t.get("tray_uuid") or "").strip().lower() == uuid.lower()
+            ]
+            if rows:
+                for row in rows:
+                    if str(row.get("remaining_g", "")).strip() != remaining:
+                        row["remaining_g"] = remaining
+                        updated += 1
+                        changed = True
+                continue
+
+            match_name = str(spool.get("match_name") or "").strip().lower()
+            colour = str(spool.get("color_code") or "").strip().upper()
+            candidate = any(
+                not str(t.get("tray_uuid") or "").strip()
+                and minimal_filament(t.get("filament")).lower() == match_name
+                and str(t.get("color_code") or "").strip().upper() == colour
+                for t in tags
+            )
+            if candidate:
+                continue
+
+            seed = dict(spool.get("seed") or {})
+            if not seed:
+                continue
+            seed["remaining_g"] = remaining
+            tags.append(seed)
+            seeded += 1
+            changed = True
+
+        if changed:
+            self.write_tags(tags)
+        return {"updated": updated, "seeded": seeded}
+
+    def claim_seeded_row(self, serial: str, tray_uuid: str) -> bool:
+        """Give an inventory-seeded row its tag, instead of adding a twin.
+
+        A row seeded from the inventory knows its spool id but no serial —
+        the cloud does not carry tag UIDs. The first time that spool is
+        actually loaded, the scan would otherwise append a fresh row for it;
+        claiming writes the serial onto the seeded row instead, and from
+        there it behaves like any scanned spool.
+        """
+        uuid = str(tray_uuid or "").strip()
+        wanted = str(serial or "").strip()
+        if not uuid or not wanted or set(uuid) == {"0"}:
+            return False
+        tags = self.read_tags()
+        if any(wanted.lower() in self._serials(t) for t in tags):
+            return False
+        row = next(
+            (
+                t
+                for t in tags
+                if not str(t.get("serial") or "").strip()
+                and str(t.get("tray_uuid") or "").strip().lower() == uuid.lower()
+            ),
+            None,
+        )
+        if row is None:
+            return False
+        row["serial"] = wanted
+        self.write_tags(tags)
+        return True
+
+    def learn_tray_uuid(self, serial: str, tray_uuid: str) -> dict[str, str] | None:
+        """Record the cloud's per-spool id on the row this tag belongs to.
+
+        Loading a spool is the one moment both identifiers are visible at
+        once — the tag the AMS read and the ``tray_uuid`` the printer reports
+        for it — so the mapping is learned here, hands-free. Only a blank is
+        ever filled: a value the user typed, corrected or learned before
+        stands, so this can run on every load without churning the file.
+
+        The id also pairs rows. A spool carries a tag on each side; when the
+        other side is scanned later it lands as its own row, and the shared
+        tray_uuid is what betrays the two as one spool — so if both rows have
+        an empty ``serial_2``, they are paired on the spot. Rows already
+        paired are never touched, which is also what keeps clone-tagged
+        spools (several physical spools sharing one cloud id) safe: their
+        rows pair to their own other sides, not to each other.
+
+        Returns what changed, or None when nothing did.
+        """
+        uuid = str(tray_uuid or "").strip()
+        wanted = str(serial or "").strip().lower()
+        if not uuid or not wanted or set(uuid) == {"0"}:
+            return None
+
+        tags = self.read_tags()
+        row = next((t for t in tags if wanted in self._serials(t)), None)
+        if row is None:
+            return None
+
+        changed: dict[str, str] = {}
+        if not row.get("tray_uuid"):
+            row["tray_uuid"] = uuid
+            changed["learned"] = uuid
+        elif row["tray_uuid"].strip().lower() != uuid.lower():
+            # A different id on file — an edit, or a clone collision. Theirs.
+            return None
+
+        # One spool, one id: a row already paired shares the spool with its
+        # partner, so a blank on the other side is filled along with it.
+        if row.get("serial_2"):
+            other = str(row["serial_2"]).strip().lower()
+            for t in tags:
+                if t is not row and other in self._serials(t) and not t.get("tray_uuid"):
+                    t["tray_uuid"] = uuid
+                    changed["learned_partner"] = t.get("serial", "")
+
+        if not row.get("serial_2"):
+            partner = next(
+                (
+                    t
+                    for t in tags
+                    if t is not row
+                    and str(t.get("tray_uuid") or "").strip().lower() == uuid.lower()
+                    and not t.get("serial_2")
+                    and t.get("serial")
+                    and t["serial"].strip().lower() not in self._serials(row)
+                ),
+                None,
+            )
+            if partner is not None:
+                row["serial_2"] = partner["serial"]
+                partner["serial_2"] = row["serial"]
+                changed["paired_with"] = partner["serial"]
+
+        if not changed:
+            return None
+        self.write_tags(tags)
+        return changed
 
     # ── jobs ─────────────────────────────────────────────────────────────────
     def read_jobs(self, limit: int = 200) -> list[dict[str, Any]]:

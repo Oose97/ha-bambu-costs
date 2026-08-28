@@ -7,6 +7,8 @@ const BTE_COLS = [
   { key: "color_name", label: "Color" },
   { key: "serial",     label: "Serial",   width: "150px" },
   { key: "serial_2",   label: "Serial 2", width: "150px" },
+  { key: "tray_uuid",  label: "Spool ID", width: "150px" },
+  { key: "remaining",  label: "Left",     width: "44px",  tight: true },
   { key: "price",      label: "PRICE",    width: "120px", tight: true },
 ];
 const BTE_DEFAULT_ORDER = BTE_COLS.map(c => c.key);
@@ -98,6 +100,8 @@ class BambuCostsTagsEditor extends HTMLElement {
       color_name: r.color_name || "",
       serial: r.serial || "",
       serial_2: r.serial_2 || "",
+      tray_uuid: r.tray_uuid || "",
+      remaining_g: r.remaining_g === undefined ? "" : String(r.remaining_g),
       cost_per_kg: Number(r.cost_per_kg) || 0,
       disabled: this._isDisabled(r.disabled),
     }));
@@ -155,6 +159,8 @@ class BambuCostsTagsEditor extends HTMLElement {
       color_name: this._clean(r.color_name),
       serial: this._clean(r.serial),
       serial_2: this._clean(r.serial_2),
+      tray_uuid: this._clean(r.tray_uuid),
+      remaining_g: this._clean(String(r.remaining_g ?? "")),
       cost_per_kg: Number(r.cost_per_kg) || 0,
       disabled: !!r.disabled,
     }));
@@ -444,6 +450,12 @@ class BambuCostsTagsEditor extends HTMLElement {
           .del { background:none; border:none; color:var(--secondary-text-color);
             cursor:pointer; font-size:14px; padding:2px 4px; border-radius:6px; }
           .del:hover { color:var(--error-color,#f44336); }
+          td.remcell { text-align:center; }
+          .remw { background:none; border:none; padding:0; cursor:pointer;
+            line-height:0; vertical-align:middle; }
+          .remw.unknown { color:var(--secondary-text-color); font-size:18px;
+            width:26px; height:26px; line-height:26px; }
+          .remw:hover svg circle:last-child { filter:brightness(1.15); }
           .tog { background:none; border:1px solid var(--divider-color); border-radius:6px;
             color:var(--secondary-text-color); font-size:9px; font-weight:600;
             letter-spacing:.3px; padding:4px 0; width:36px; cursor:pointer; }
@@ -507,7 +519,8 @@ class BambuCostsTagsEditor extends HTMLElement {
 
     q(".add").addEventListener("click", () => {
       this._rows.unshift({ _k: this._nextKey++, filament: "", color_code: "#808080",
-        color_name: "", serial: "", serial_2: "", cost_per_kg: 0, disabled: false });
+        color_name: "", serial: "", serial_2: "", tray_uuid: "", remaining_g: "",
+        cost_per_kg: 0, disabled: false });
       this._dirty = true;
       this._paint();
       const first = this.querySelector("tbody tr input.cell");
@@ -564,7 +577,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     const cols = this._cols();
 
     tbody.innerHTML = groups.map((group, gi) => group.map((r, ri) => {
-      const key = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2}`
+      const key = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2} ${r.tray_uuid}`
         .toLowerCase().replace(/"/g, "");
       const sig = this._groupSig(group);
       const expanded = group.length > 1 && this._isExpanded(sig);
@@ -621,6 +634,9 @@ class BambuCostsTagsEditor extends HTMLElement {
       b.addEventListener("click", e => this._openPricePicker(e.currentTarget.dataset.k));
     });
 
+    tbody.querySelectorAll("button.remw").forEach(b => {
+      b.addEventListener("click", e => this._editRemaining(e.currentTarget.dataset.k));
+    });
     tbody.querySelectorAll("button.tog").forEach(b => {
       b.addEventListener("click", e => this._toggleDisabled(e.currentTarget.dataset.k));
     });
@@ -688,6 +704,51 @@ class BambuCostsTagsEditor extends HTMLElement {
 
   _closeColorDd() {
     if (this._dd) { this._dd.remove(); this._dd = null; this._ddFor = null; }
+  }
+
+  // How much of the spool is left, as a ring: red under 10%, orange under
+  // 20%, yellow under 30%, green above — against a 1 kg spool. Clicking it
+  // swaps in a grams input; the value is synced from the cloud inventory
+  // when one is configured, and editable either way.
+  _remainingWheel(r) {
+    const g = parseFloat(r.remaining_g);
+    if (isNaN(g)) {
+      return `<button class="remw unknown" data-k="${r._k}"
+        title="Remaining unknown — click to set grams">◌</button>`;
+    }
+    const pct = Math.max(0, Math.min(100, (g / 1000) * 100));
+    const color = pct < 10 ? "#f44336" : pct < 20 ? "#ff9800"
+      : pct < 30 ? "#fdd835" : "#4caf50";
+    const R = 15.9155;
+    return `<button class="remw" data-k="${r._k}"
+      title="${Math.round(g)} g left (${Math.round(pct)}%) — click to edit">
+      <svg viewBox="0 0 36 36" width="26" height="26">
+        <circle cx="18" cy="18" r="${R}" fill="none"
+          stroke="var(--divider-color)" stroke-width="4"></circle>
+        <circle cx="18" cy="18" r="${R}" fill="none" stroke="${color}"
+          stroke-width="4" stroke-linecap="round"
+          stroke-dasharray="${pct.toFixed(1)} ${(100 - pct).toFixed(1)}"
+          stroke-dashoffset="25"></circle>
+      </svg></button>`;
+  }
+
+  _editRemaining(k) {
+    const btn = this.querySelector(`.remw[data-k="${k}"]`);
+    const row = this._row(k);
+    if (!btn || !row) return;
+    const cell = btn.closest("td");
+    const g = parseFloat(row.remaining_g);
+    cell.innerHTML = `<input class="cell num" type="number" step="any" min="0"
+      data-k="${k}" data-f="remaining_g" style="width:7ch"
+      value="${isNaN(g) ? "" : g}">`;
+    const inp = cell.querySelector("input");
+    // Cell inputs get their listeners at paint time; this one is born later.
+    inp.addEventListener("change", () => this._edit(inp));
+    inp.focus();
+    inp.select();
+    // Back to the wheel once the edit is done — the change event has fired
+    // by then and the value is in the row.
+    inp.addEventListener("blur", () => { cell.innerHTML = this._remainingWheel(this._row(k) || row); });
   }
 
   _toggleDisabled(k) {
@@ -929,6 +990,15 @@ class BambuCostsTagsEditor extends HTMLElement {
       case "serial_2":
         return `<td><input class="cell ser" type="text" data-k="${k}" data-f="serial_2"
                 placeholder="other side" value="${this._esc(r.serial_2 || "")}"></td>`;
+      case "tray_uuid":
+        // The printer cloud's per-spool id, learned when the spool is
+        // loaded. Shared by a pair like every descriptive field: one spool,
+        // one id.
+        return `<td><input class="cell ser" type="text" data-k="${k}" data-f="tray_uuid"
+                placeholder="learned on load" title="${this._esc(r.tray_uuid || "")}"
+                value="${this._esc(r.tray_uuid || "")}"></td>`;
+      case "remaining":
+        return `<td class="remcell">${this._remainingWheel(r)}</td>`;
       case "price":
         return `<td><span class="pricecell">
                   <input class="cell p" type="number" step="0.01" min="0" data-k="${k}"
@@ -1045,6 +1115,9 @@ class BambuCostsTagsEditor extends HTMLElement {
       row.cost_per_kg = Number(el.value) || 0;
     } else if (f === "hex" || f === "color_code") {
       row.color_code = this._norm(el.value);
+    } else if (f === "remaining_g") {
+      const g = parseFloat(String(el.value).replace(",", "."));
+      row.remaining_g = isNaN(g) ? "" : String(Math.max(0, g));
     } else {
       row[f] = el.value;
     }
@@ -1088,12 +1161,16 @@ class BambuCostsTagsEditor extends HTMLElement {
     set('input[data-f="color_name"]', r.color_name);
     set('input[data-f="cost_per_kg"]', (Number(r.cost_per_kg) || 0).toFixed(2));
     set("input.sw", this._norm(r.color_code));
+    const rem = tr.querySelector(".remcell");
+    if (rem && !rem.querySelector('input[data-f="remaining_g"]')) {
+      rem.innerHTML = this._remainingWheel(r);
+    }
     const hx = tr.querySelector("input.hx");
     if (hx) {
       hx.value = this._norm(r.color_code);
       hx.style.color = this._textFor(r.color_code, bg);
     }
-    tr.dataset.s = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2}`
+    tr.dataset.s = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2} ${r.tray_uuid}`
       .toLowerCase().replace(/"/g, "");
   }
 

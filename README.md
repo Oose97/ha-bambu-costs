@@ -103,6 +103,10 @@ Go to [Filament pricing](docs/filament.md) for more details.
 
 - Loading an unknown tagged spool adds a library row by itself; rows can also be added
   by hand — any way of reading the tag UID works, the AMS just makes it automatic.
+  The printer cloud's spool id is learned on load too, and pairs a spool's two tags
+  the moment the second side is scanned. Point the optional inventory sensor at the
+  cloud's spool list and the library also tracks grams left per spool — a colour-staged
+  ring in the tags card — and adds spools it has never seen.
 - A slot's price: the loaded spool's tag first, the slot's own number second, the
   default last. A generic untagged spool's hand-set price is never overwritten, and a
   spool that runs out mid-print keeps pricing the job it was printing.
@@ -118,7 +122,8 @@ Go to [Cards](docs/cards.md) for more details.
   names, drag or button reordering, per-browser table settings.
 - **Print history** — fully editable in place, per-slot breakdown modal, nozzle combos,
   row deletion, pre-filled failed- and finished-print forms (the failed one scales the
-  plan by the layers that finished), content-sized columns, pinned header, configurable
+  plan by the layers that finished), a totals row that follows the filter, `[AND]` /
+  `[OR]` / `[NOT]` filtering, content-sized columns, pinned header, configurable
   columns/sort/page size/height.
 - **Printing now** — the running job as the row it will be logged as: name, filament
   lines and costs editable mid-print, measured values read-only, and the edits are

@@ -106,6 +106,155 @@ def test_a_corrupt_overlay_reads_as_empty(store, tmp_path):
     assert store.read_overlay() == {}
 
 
+def test_tray_uuid_round_trips(store):
+    row = tag("AAA")
+    row["tray_uuid"] = "2876A95C68DB435E9A139B404139AF43"
+    store.write_tags([row])
+    assert store.read_tags()[0]["tray_uuid"] == "2876A95C68DB435E9A139B404139AF43"
+
+
+def test_learning_fills_a_blank_and_only_a_blank(store):
+    store.write_tags([tag("AAA")])
+    assert store.learn_tray_uuid("aaa", "UUID-ONE") == {"learned": "UUID-ONE"}
+    assert store.read_tags()[0]["tray_uuid"] == "UUID-ONE"
+
+    # A value on file stands — an edit, or a clone collision. Never churned.
+    assert store.learn_tray_uuid("AAA", "UUID-TWO") is None
+    assert store.read_tags()[0]["tray_uuid"] == "UUID-ONE"
+    # Re-learning the same id is a quiet no-op, not a rewrite.
+    assert store.learn_tray_uuid("AAA", "uuid-one") is None
+
+
+def test_learning_ignores_junk(store):
+    store.write_tags([tag("AAA")])
+    assert store.learn_tray_uuid("AAA", "") is None
+    assert store.learn_tray_uuid("AAA", "0" * 32) is None, "the cloud's all-zero id"
+    assert store.learn_tray_uuid("ZZZ", "UUID-ONE") is None, "unknown tag"
+    assert store.read_tags()[0]["tray_uuid"] == ""
+
+
+def test_the_shared_id_pairs_the_two_sides_of_a_spool(store):
+    """Side A scans in, the spool is flipped, side B scans in as its own row —
+    the shared spool id is what betrays the two rows as one spool."""
+    a = tag("AAA")
+    a["tray_uuid"] = "UUID-ONE"
+    store.write_tags([a, tag("BBB")])
+
+    changed = store.learn_tray_uuid("BBB", "UUID-ONE")
+    assert changed == {"learned": "UUID-ONE", "paired_with": "AAA"}
+
+    rows = store.read_tags()
+    assert rows[0]["serial_2"] == "BBB"
+    assert rows[1]["serial_2"] == "AAA"
+
+
+def test_rows_already_paired_are_never_repaired(store):
+    """Two clone-tagged spools share one cloud id, but each is already paired
+    to its own other side — the id must not stitch them together."""
+    a = tag("AAA", serial_2="BBB")
+    a["tray_uuid"] = "UUID-ONE"
+    b = tag("BBB", serial_2="AAA")
+    b["tray_uuid"] = "UUID-ONE"
+    c = tag("CCC", serial_2="DDD")
+    d = tag("DDD", serial_2="CCC")
+    store.write_tags([a, b, c, d])
+
+    changed = store.learn_tray_uuid("CCC", "UUID-ONE")
+    rows = store.read_tags()
+    assert rows[2]["serial_2"] == "DDD", "its own pairing stands"
+    assert rows[2]["tray_uuid"] == "UUID-ONE"
+    assert changed and "paired_with" not in changed
+
+
+def test_learning_reaches_the_paired_rows_other_side(store):
+    """One spool, one id: a pair learns the id on both rows at once."""
+    store.write_tags([tag("AAA", serial_2="BBB"), tag("BBB", serial_2="AAA")])
+    changed = store.learn_tray_uuid("AAA", "UUID-ONE")
+    assert changed == {"learned": "UUID-ONE", "learned_partner": "BBB"}
+    rows = store.read_tags()
+    assert rows[0]["tray_uuid"] == "UUID-ONE" and rows[1]["tray_uuid"] == "UUID-ONE"
+
+
+def test_a_half_paired_row_is_not_matched_by_id(store):
+    """Pairing needs an empty second-tag slot on BOTH rows."""
+    a = tag("AAA", serial_2="XXX")
+    a["tray_uuid"] = "UUID-ONE"
+    store.write_tags([a, tag("BBB")])
+    changed = store.learn_tray_uuid("BBB", "UUID-ONE")
+    assert changed == {"learned": "UUID-ONE"}, "learned, but not paired"
+    assert store.read_tags()[1]["serial_2"] == ""
+
+
+def _spool(uuid, remaining, name="PLA Basic", color="#00AE42"):
+    return {
+        "tray_uuid": uuid, "remaining_g": remaining,
+        "match_name": name, "color_code": color,
+        "seed": {"filament": f"Bambu {name}", "color_code": color,
+                 "color_name": "Seeded", "serial": "", "cost_per_kg": 0.0,
+                 "disabled": False, "serial_2": "", "tray_uuid": uuid},
+    }
+
+
+def test_inventory_updates_remaining_on_every_row_with_the_id(store):
+    a = tag("AAA", serial_2="BBB")
+    a["tray_uuid"] = "UUID-ONE"
+    b = tag("BBB", serial_2="AAA")
+    b["tray_uuid"] = "UUID-ONE"
+    store.write_tags([a, b])
+
+    out = store.sync_inventory([_spool("UUID-ONE", 590)])
+    assert out == {"updated": 2, "seeded": 0}
+    rows = store.read_tags()
+    assert rows[0]["remaining_g"] == "590" and rows[1]["remaining_g"] == "590"
+
+    # Unchanged values write nothing and count nothing.
+    assert store.sync_inventory([_spool("UUID-ONE", 590)]) == {"updated": 0, "seeded": 0}
+    # A moved value updates again.
+    assert store.sync_inventory([_spool("UUID-ONE", 200)])["updated"] == 2
+
+
+def test_an_unknown_spool_is_seeded_serial_less(store):
+    store.write_tags([tag("AAA")])
+    out = store.sync_inventory([_spool("UUID-NEW", 1000, name="PLA Glow", color="#A1FFAC")])
+    assert out == {"updated": 0, "seeded": 1}
+    rows = store.read_tags()
+    assert len(rows) == 2
+    seeded = rows[1]
+    assert seeded["serial"] == "" and seeded["tray_uuid"] == "UUID-NEW"
+    assert seeded["filament"] == "Bambu PLA Glow"
+    assert seeded["remaining_g"] == "1000"
+
+
+def test_a_matching_id_less_row_blocks_seeding(store):
+    """A row with the same product and colour but no id yet is almost
+    certainly this very spool, waiting to learn its id on the next load."""
+    store.write_tags([tag("AAA")])  # Bambu PLA Basic #00AE42, no uuid
+    out = store.sync_inventory([_spool("UUID-ONE", 700)])
+    assert out == {"updated": 0, "seeded": 0}
+    assert len(store.read_tags()) == 1
+
+
+def test_scanning_claims_a_seeded_row_instead_of_twinning(store):
+    store.sync_inventory([_spool("UUID-NEW", 1000)])
+    assert store.claim_seeded_row("AAA", "UUID-NEW") is True
+    rows = store.read_tags()
+    assert len(rows) == 1 and rows[0]["serial"] == "AAA"
+
+    # A serial already known claims nothing; neither does a blank id.
+    assert store.claim_seeded_row("AAA", "UUID-NEW") is False
+    assert store.claim_seeded_row("BBB", "") is False
+    assert store.claim_seeded_row("BBB", "0" * 32) is False
+
+
+def test_remaining_grams_round_trip_and_blank_stays_blank(store):
+    row = tag("AAA")
+    row["remaining_g"] = 590.4
+    store.write_tags([row, tag("BBB")])
+    rows = store.read_tags()
+    assert rows[0]["remaining_g"] == "590"
+    assert rows[1]["remaining_g"] == "", "unknown is not zero"
+
+
 def test_write_keeps_a_backup(store, tmp_path):
     store.write_tags([tag("AAA")])
     store.write_tags([tag("AAA"), tag("CCC")])

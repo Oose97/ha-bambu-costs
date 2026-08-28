@@ -41,6 +41,10 @@ CONF_CAMERA: Final = "camera_entity"
 CONF_LAYERS: Final = "layers"
 # Where the print is right now, used to pre-fill how far a failed print got.
 CONF_CURRENT_LAYER: Final = "current_layer"
+# The printer cloud's filament inventory sensor (optional). When set, its
+# per-spool remaining grams flow into the tag library over the learned
+# spool ids, and spools the library has never seen are added to it.
+CONF_FILAMENT_INVENTORY: Final = "filament_inventory"
 CONF_LENGTH: Final = "print_length"
 CONF_NOZZLE_SIZE: Final = "nozzle_size"
 CONF_NOZZLE_TYPE: Final = "nozzle_type"
