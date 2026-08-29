@@ -79,7 +79,8 @@ Go to [Entities & services](docs/entities.md) for more details.
   totals (including a `utility_meter`-ready one), the tag library with its spool
   counts, and the job log.
 - Writable numbers for every price, marker and total; a switch choosing camera photos
-  over the slicer's render for job covers.
+  over the slicer's render for job covers, and a maintenance-mode switch that logs
+  upkeep runs as electricity only.
 - Services to log a job with overrides, edit or delete log rows, log a failed print
   with explicit figures, write the tag library, set a tag's price, sync slot prices,
   and import legacy CSVs. **No automations required** — finished jobs log themselves.

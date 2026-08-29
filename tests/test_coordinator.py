@@ -36,6 +36,7 @@ def make(power_sensors=True, price=0.23):
     c.last_good = None
     c.slot_memory = {}
     c.overlay = {}
+    c.maintenance = False
     # the pieces that would need hass, pinned per test instead
     c.hass = SimpleNamespace(async_add_executor_job=lambda fn, *a: fn(*a))
     c.async_update_listeners = lambda: None
@@ -367,6 +368,49 @@ def test_draft_for_the_idle_printer_uses_the_closed_markers():
     assert c.draft_job()["row"]["kwh"] == pytest.approx(1.2)
 
 
+def test_maintenance_mode_logs_electricity_only():
+    """An upkeep run bills its power and nothing else — no filament figures,
+    no picture, and the name says what it was."""
+    c = _loggable_row(make())
+    c.maintenance = True
+    c.overlay = {"job": "Edited mid-print", "f_cost": 0.5}  # outranked too
+
+    row = c.build_job_row({})
+    assert row["job"] == "Maintenance"
+    assert row["filament_cost"] == 0.0 and row["weight_g"] == 0.0
+    assert row["trays"] == [] and row["filament_type"] == ""
+    assert row["layers"] == 0.0 and row["length_m"] == 0.0
+    assert row["nozzle_size"] == "" and row["nozzle_type"] == ""
+    assert row["energy_kwh"] >= 0.0
+    assert row["power_cost"] == pytest.approx(0.05)
+    assert row["total_cost"] == pytest.approx(0.05), "electricity is the whole bill"
+
+
+def test_maintenance_mode_skips_the_cover():
+    c = _loggable(make())
+    c.maintenance = True
+    captures = []
+
+    async def _capture(name, sources=None):
+        captures.append(name)
+        return "cover.jpg"
+
+    c.async_capture_cover = _capture
+    c.mark_print_start(new_job=True)
+    c.mark_print_end()
+    result = _run(c.async_log_current_job())
+    assert result["logged"] is True
+    assert captures == [], "no screenshot in maintenance mode"
+
+
+def test_maintenance_off_logs_normally():
+    c = _loggable_row(make())
+    c.maintenance = False
+    row = c.build_job_row({})
+    assert row["job"] == "Job"
+    assert row["filament_cost"] == pytest.approx(0.8)
+
+
 def test_overlay_edits_win_when_the_job_is_logged():
     c = _loggable_row(make())
     c.overlay = {
@@ -668,6 +712,17 @@ def test_nothing_is_remembered_between_prints():
     c = _one_tagged_slot(make())
     c.breakdown()  # idle: no print start observed
     assert c.slot_memory == {}
+
+
+def test_loaded_spools_maps_serials_to_slot_labels():
+    c = _one_tagged_slot(make())
+    assert c.loaded_spools() == {"AAA": "A1"}
+
+    # No readable tag, or no printer at all: the map claims nothing.
+    c._tray = {"available": True, "empty": False, "tag_uid": "0000000000000000"}
+    assert c.loaded_spools() == {}
+    c._tray = {"available": False}
+    assert c.loaded_spools() == {}
 
 
 def test_job_row_names_each_material_once():

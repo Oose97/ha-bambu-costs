@@ -11,17 +11,20 @@ startup for you to add by hand.
 
 `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library.
 
-![The filament tag library: colour swatches, names with Bambu codes, both RFID serials and the price per spool](images/filaments_full_table.jpg)
+![The filament tag library: swatches, palette names, the remaining ring, both RFID serials, the learned spool ids and the price per spool](images/filaments_full_table.jpg)
 
-- A spool's two tags render as one row, the second tag a child row behind a **▸** on the
-  spool's handle — collapsed by default, with the default changeable in settings.
+- Every spool is **one row** carrying what its sides share — filament, colour, spool
+  id, remaining, price. The tag serials live underneath: **▸** on the handle unfolds
+  them as child rows, two for a paired spool, one otherwise — collapsed by default,
+  with the default changeable in settings.
 
-  ![A paired spool collapsed to one row](images/filaments_group_collapsed.jpg)
-  ![The same spool expanded, its second tag as a child row](images/filaments_group_expanded.jpg)
-- Editing a pair's filament, colour or price applies to both rows, and so does the
-  **ON/OFF** toggle — a spool is one physical thing, retired whole. Serials stay
-  per-row, since they are what tell the two tags apart. Typing a spool's second serial
-  pairs the rows on the spot.
+  ![A spool collapsed to one row](images/filaments_group_collapsed.jpg)
+  ![The same spool expanded, its tag serials as child rows](images/filaments_group_expanded.jpg)
+- Edits on the spool row apply to both of its tags, and so does the **ON/OFF**
+  toggle — a spool is one physical thing, retired whole. Serials stay per-tag, since
+  they are what tell the two sides apart. An unpaired spool's tag row offers a second
+  serial field: typing it pairs the rows on the spot. The spool row's **✕** deletes
+  the spool with every tag it has; a tag row's **✕** takes just that tag.
 - The **Spool ID** column is the printer cloud's per-spool id, [learned by
   itself](filament.md#the-spool-id-learns-itself) whenever the spool is loaded — and
   the reason freshly scanned second sides pair up on their own. Editable like
@@ -32,14 +35,22 @@ startup for you to add by hand.
   [filament inventory sensor](filament.md#remaining-grams-from-the-cloud-inventory)
   configured, the value keeps itself current. Shared across a pair, like everything
   else describing the spool.
+
+  ![The ring's tooltip: grams left, the percentage, and the click-to-edit hint](images/filaments_table_filament_left_hover.jpg)
+  ![The ring clicked into a plain grams field](images/filaments_table_filament_left_edit.jpg)
 - The colour-name cell is a combo over the whole Bambu palette: click it and the full
   list drops down, scrollable; start typing and it filters. The list is a convenience,
   not a constraint — anything you type is accepted as-is.
 
   ![The colour-name combo: the full palette on focus, filtering as you type](images/filament_color_drop_down.jpg)
-- Pairs share one handle and move as a unit, and reordering works with rows hidden — it
-  steps over what is not shown. Filtering finds collapsed second tags and surfaces them
-  with their spool.
+- A spool sitting in the AMS right now wears a **slot chip beside its filament
+  name** — `A1`, `HT` — coloured per AMS unit, so one glance separates the machines.
+  Expanded, the chip steps down to the tag row whose serial the tray actually read —
+  a paired spool's two sides are two tags, and only one of them is in the machine.
+  The chips switch off in the settings.
+- A spool moves as one block, tag rows and all, and reordering works with rows
+  hidden — it steps over what is not shown. Filtering searches the whole spool,
+  serials included, and surfaces the matching tag rows with it.
 - **⚙** opens the table settings: show-disabled, expand-by-default, sorting, the table
   height, and the column layout (display only — a save always writes every field in
   canonical order).
@@ -48,10 +59,10 @@ startup for you to add by hand.
 - By default the table is bounded to 70% of the screen and scrolls inside its own box,
   which keeps the header row pinned while a long library scrolls under it. "Unlimited"
   in the settings grows the card with the page instead.
-- The footer counts rows and **spools** — a pair is one spool — with the active count
-  beside it, tracking unsaved edits live. The saved figures are also published as the
-  `spools` and `active_spools` [sensors](entities.md#sensors), ready for a badge or an
-  automation.
+- The footer counts **spools** — a pair is one spool — with the active count beside
+  it and the tag total after, tracking unsaved edits live. The saved figures are also
+  published as the `spools` and `active_spools` [sensors](entities.md#sensors), ready
+  for a badge or an automation.
 - Each row's **SET** button opens a picker listing every filament price entity — the
   default first, then one per configured slot — so a tag's price can be pushed into
   whichever slot has that spool loaded. The list is resolved from the entity registry,
@@ -216,6 +227,10 @@ logged as, editable while it prints.
 - One caveat: a price edited here changes the **logged row only**. The live session
   sensors keep following the slot price numbers — the [SET picker](#tags-editor) is
   the tool when the slot itself has the wrong price.
+- With the [maintenance-mode switch](entities.md#switches) on, the card shows what
+  will actually be logged: a wrench where the render would be, the name
+  **Maintenance**, the measured energy and electricity as the whole bill — and no
+  filament fields, since none survive to the log.
 - When the printer is idle the card just says so; history is the
   [jobs table](#jobs-table)'s business.
 

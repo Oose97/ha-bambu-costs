@@ -109,6 +109,16 @@ class BambuCostsPrintingNow extends HTMLElement {
           .bpn-top img { width:min(38cqw, 340px); min-width:160px; aspect-ratio:1;
             height:auto; object-fit:contain; border-radius:12px; align-self:flex-start;
             box-shadow:0 0 0 1px var(--divider-color); cursor:pointer; flex:none; }
+          /* Maintenance runs get a wrench where the render would be — the
+             log gets no picture, so the card should not promise one. */
+          .bpn-covm { width:min(38cqw, 340px); min-width:160px; aspect-ratio:1;
+            border-radius:12px; align-self:flex-start; flex:none;
+            display:flex; align-items:center; justify-content:center;
+            box-shadow:0 0 0 1px var(--divider-color);
+            color:var(--secondary-text-color); }
+          .bpn-covm svg { width:45%; height:45%; opacity:.55; }
+          .bpn-mnote { margin-top:10px; padding:8px 10px; border-radius:8px;
+            font-size:12.5px; background:rgba(255,152,0,.14); }
           .bpn-head { flex:1; min-width:0; }
           .bpn-sub { font-size:12px; color:var(--secondary-text-color); margin-top:4px; }
           .bpn-meas { display:flex; flex-wrap:wrap; gap:6px 14px; margin:12px 0 4px;
@@ -124,6 +134,7 @@ class BambuCostsPrintingNow extends HTMLElement {
           @container (max-width:520px) {
             .bpn-top { flex-direction:column; }
             .bpn-top img { width:100%; max-height:240px; min-width:0; aspect-ratio:auto; }
+            .bpn-covm { width:100%; aspect-ratio:auto; height:140px; min-width:0; }
             .bpn-fieldrow { max-width:none; }
           }
           .bpn-label { color:var(--secondary-text-color); font-size:12px; white-space:nowrap; }
@@ -303,14 +314,47 @@ class BambuCostsPrintingNow extends HTMLElement {
 
     const layers = this._num(row.layers, 0);
     const done = this._num(row.layers_done, 0);
+    const maint = !!this._attrs().maintenance;
+    // mdi:wrench — the log gets no picture in maintenance mode.
+    const wrench = `<div class="bpn-covm" title="Maintenance mode"><svg viewBox="0 0 24 24">
+      <path fill="currentColor" d="M22.7,19L13.6,9.9C14.5,7.6 14,4.9 12.1,3C10.1,1
+      7.1,0.6 4.7,1.7L9,6L6,9L1.6,4.7C0.4,7.1 0.9,10.1 2.9,12.1C4.8,14 7.5,14.5
+      9.8,13.6L18.9,22.7C19.3,23.1 19.9,23.1 20.3,22.7L22.6,20.4C23.1,20 23.1,19.3
+      22.7,19Z"/></svg></div>`;
+    const sub = `${this._esc(row.time || "0h 0min")} elapsed${
+      planned > 0 ? ` of ~${this._esc(this._hmin(planned))}` : ""}${
+      layers ? ` · layer ${done || "?"} / ${layers}` : ""}`;
+
+    if (maint) {
+      // Representative of what will be logged: the name is Maintenance, the
+      // bill is electricity, and no filament figure survives — so none are
+      // offered for editing.
+      wrap.innerHTML = `
+        <div class="bpn-top">
+          ${wrench}
+          <div class="bpn-head">
+            <input class="cell job" value="Maintenance" disabled
+              title="Maintenance mode names the job itself">
+            <div class="bpn-sub">${sub}</div>
+            <div class="bpn-meas">
+              <span>Energy <b>${this._num(row.kwh, 3)}</b> kWh</span>
+              <span>Electricity <b>${this._num(row.p_cost, 4)}</b> ${cur}</span>
+              <span>Will log <b>${this._num(row.p_cost, 4)}</b> ${cur}</span>
+            </div>
+            <div class="bpn-mnote">Maintenance mode — this run logs as
+              electricity only: no filament figures, no picture. The switch on
+              the device page turns it off.</div>
+          </div>
+        </div>`;
+      return;
+    }
+
     wrap.innerHTML = `
       <div class="bpn-top">
         ${coverSrc ? `<img class="cov" src="${this._esc(coverSrc)}" alt="">` : ""}
         <div class="bpn-head">
           <input class="cell job${ed("job")}" data-f="job" value="${this._esc(row.job || "")}">
-          <div class="bpn-sub">${this._esc(row.time || "0h 0min")} elapsed${
-            planned > 0 ? ` of ~${this._esc(this._hmin(planned))}` : ""}${
-            layers ? ` · layer ${done || "?"} / ${layers}` : ""}</div>
+          <div class="bpn-sub">${sub}</div>
           <div class="bpn-meas">
             <span>Energy <b>${this._num(row.kwh, 3)}</b> kWh</span>
             <span>Electricity <b>${this._num(row.p_cost, 4)}</b> ${cur}</span>

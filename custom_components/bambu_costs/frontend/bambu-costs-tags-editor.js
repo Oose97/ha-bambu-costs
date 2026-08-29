@@ -5,8 +5,6 @@ const BTE_COLS = [
   { key: "filament",   label: "Filament" },
   { key: "hex",        label: "Hex",      width: "100px" },
   { key: "color_name", label: "Color" },
-  { key: "serial",     label: "Serial",   width: "150px" },
-  { key: "serial_2",   label: "Serial 2", width: "150px" },
   { key: "tray_uuid",  label: "Spool ID", width: "150px" },
   { key: "remaining",  label: "Left",     width: "44px",  tight: true },
   { key: "price",      label: "PRICE",    width: "120px", tight: true },
@@ -28,6 +26,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     this._justSaved = false;
     this._filter = "";
     this._showDisabled = false;
+    this._showLoaded = true;
     // A pair renders as one spool row with its second tag as a child row.
     // The default state is a persisted setting; per-spool toggles are kept as
     // deviations from it, so a newly formed pair follows the default.
@@ -148,6 +147,56 @@ class BambuCostsTagsEditor extends HTMLElement {
     return id ? Object.assign({ entry_id: id }, data) : data;
   }
 
+  // One colour per AMS unit, so A1..A4 read as one device and HT as
+  // another at a glance. Units are the labels with their tray digits
+  // stripped, coloured in sorted order so the mapping never shuffles.
+  _amsColor(label) {
+    const palette = ["#2196F3", "#F44336", "#4CAF50", "#9C27B0", "#FF9800", "#00BCD4"];
+    const unitOf = l => String(l).replace(/\s*\d+$/, "").trim().toUpperCase() || String(l);
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    const loaded = (st && st.attributes && st.attributes.loaded) || {};
+    const units = [...new Set(Object.values(loaded).map(unitOf))].sort();
+    const i = units.indexOf(unitOf(label));
+    return palette[(i >= 0 ? i : 0) % palette.length];
+  }
+
+  // The slot holding THIS tag — own serial only, so an expanded pair chips
+  // exactly the side the tray read. Falls back to serial_2 when no row owns
+  // the read serial (a one-sided pairing typed by hand).
+  _slotOfOwn(r) {
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    const loaded = (st && st.attributes && st.attributes.loaded) || {};
+    const bySerial = {};
+    for (const [serial, label] of Object.entries(loaded)) {
+      bySerial[serial.toLowerCase()] = label;
+    }
+    const own = String(r.serial || "").trim().toLowerCase();
+    if (own && bySerial[own] !== undefined) return bySerial[own];
+    const other = String(r.serial_2 || "").trim().toLowerCase();
+    if (other && bySerial[other] !== undefined
+        && !this._rows.some(x => String(x.serial || "").trim().toLowerCase() === other)) {
+      return bySerial[other];
+    }
+    return null;
+  }
+
+  // Which slot this row's spool sits in right now, if any — the sensor
+  // publishes {serial: slot label} for every tray with a readable tag, and
+  // either of a pair's serials identifies the spool.
+  _slotOf(r) {
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    const loaded = (st && st.attributes && st.attributes.loaded) || {};
+    const bySerial = {};
+    for (const [serial, label] of Object.entries(loaded)) {
+      bySerial[serial.toLowerCase()] = label;
+    }
+    for (const key of ["serial", "serial_2"]) {
+      const serial = String(r[key] || "").trim().toLowerCase();
+      if (serial && bySerial[serial] !== undefined) return bySerial[serial];
+    }
+    return null;
+  }
+
   _groupOf(k) {
     return this._groups().find(g => g.some(r => r._k === Number(k))) || [];
   }
@@ -184,6 +233,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       }
       if (Array.isArray(s.hidden)) this._hidden = new Set(s.hidden);
       if (typeof s.expandDefault === "boolean") this._expandDefault = s.expandDefault;
+      if (typeof s.showLoaded === "boolean") this._showLoaded = s.showLoaded;
       if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
@@ -192,7 +242,8 @@ class BambuCostsTagsEditor extends HTMLElement {
     try {
       localStorage.setItem(this._colsKey(),
         JSON.stringify({ order: this._order, hidden: [...this._hidden],
-                         expandDefault: this._expandDefault, maxh: this._maxH }));
+                         expandDefault: this._expandDefault, maxh: this._maxH,
+                         showLoaded: this._showLoaded }));
     } catch (e) { /* private mode — layout just will not persist */ }
   }
 
@@ -436,17 +487,34 @@ class BambuCostsTagsEditor extends HTMLElement {
           .bte-dd .opt:hover { background:rgba(var(--rgb-primary-color),.12); }
           .bte-dd .opt.on { color:var(--primary-color); font-weight:600; }
           .bte-dd .opt.muted { opacity:.55; cursor:default; }
-          /* A spool's two rows read as one block. */
-          table.bte tr.paired td { border-bottom-color:transparent; }
-          /* …unless the pair is collapsed — then the first row is the block. */
-          table.bte tr.pairtop.collapsed td { border-bottom-color:var(--divider-color); }
+          /* Child tag rows hang off their spool: inset, quiet, no divider
+             between a spool and its own tags. The divider rides the TOP of
+             each spool row, so blocks stay separated whether or not their
+             (hidden) tag rows follow. */
+          table.bte tr.sp td { border-bottom:none;
+            border-top:1px solid var(--divider-color); }
+          table.bte tbody tr.sp:first-child td { border-top:none; }
+          table.bte tr.child td { border-bottom:none; padding-top:0; }
+          table.bte td.tagline { padding-left:8px; }
+          .taglabel { font-size:10px; color:var(--secondary-text-color);
+            text-transform:uppercase; letter-spacing:.4px; margin-right:6px; }
+          td.tagline input.ser { width:150px; margin-right:6px; }
+          /* Room for the “typing it pairs the rows” hint to read in full. */
+          td.tagline input.ser[data-f="serial_2"] { width:260px; }
+          /* The spool is in the AMS right now — the chip names the slot,
+             coloured per AMS unit, sitting beside the filament name. */
+          td.flcell { white-space:nowrap; }
+          td.flcell input.cell { width:calc(100% - 46px); min-width:9ch; }
+          td.flcell:not(:has(.ldchip)) input.cell { width:100%; }
+          .ldchip { display:inline-block; color:#fff; border-radius:9px;
+            font-size:9.5px; font-weight:600; letter-spacing:.3px; padding:2px 7px;
+            margin-left:4px; vertical-align:middle; white-space:nowrap; }
           .exp { background:none; border:1px solid var(--divider-color); border-radius:6px;
             color:var(--secondary-text-color); font-size:10px; line-height:1;
             width:20px; height:20px; padding:0; cursor:pointer; margin-left:2px;
             vertical-align:middle; }
           .exp:hover { border-color:var(--primary-color); color:var(--primary-color); }
-          table.bte tr.paired:not(.pairtop) td:first-child { border-left:2px solid var(--primary-color); }
-          table.bte tr.pairtop td:first-child { border-left:2px solid var(--primary-color); }
+          table.bte tr.child td:first-child { border-left:2px solid var(--primary-color); }
           .del { background:none; border:none; color:var(--secondary-text-color);
             cursor:pointer; font-size:14px; padding:2px 4px; border-radius:6px; }
           .del:hover { color:var(--error-color,#f44336); }
@@ -571,48 +639,69 @@ class BambuCostsTagsEditor extends HTMLElement {
         : "Button mode — click for drag handles";
     }
 
-    const total = this._rows.length;
-
     const groups = this._groups();
     const cols = this._cols();
 
-    tbody.innerHTML = groups.map((group, gi) => group.map((r, ri) => {
-      const key = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2} ${r.tray_uuid}`
-        .toLowerCase().replace(/"/g, "");
+    // One PARENT row per spool carrying everything its sides share, and one
+    // CHILD row per tag underneath — shown when the spool is expanded, so
+    // the serial plumbing stops widening the main grid.
+    tbody.innerHTML = groups.map((group, gi) => {
+      const top = group[0];
       const sig = this._groupSig(group);
-      const expanded = group.length > 1 && this._isExpanded(sig);
+      const expanded = this._isExpanded(sig);
+      const key = group.map(r =>
+        `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2} ${r.tray_uuid}`
+      ).join(" ").toLowerCase().replace(/"/g, "");
 
-      // One handle per spool, spanning its visible rows: a pair moves as a
-      // unit either way — a collapsed child row still travels with its spool.
-      const handle = ri > 0 ? "" : `<td rowspan="${expanded ? group.length : 1}">${
+      const handle = `<td>${
         this._mode === "drag"
-          ? `<span class="grip" data-k="${r._k}" title="Drag to reorder">⠿</span>`
+          ? `<span class="grip" data-k="${top._k}" title="Drag to reorder">⠿</span>`
           : `<span class="arrows">
-               <button class="up" data-k="${r._k}" title="Move up" ${gi === 0 ? "disabled" : ""}>▲</button>
-               <button class="down" data-k="${r._k}" title="Move down" ${
+               <button class="up" data-k="${top._k}" title="Move up" ${gi === 0 ? "disabled" : ""}>▲</button>
+               <button class="down" data-k="${top._k}" title="Move down" ${
                  gi === groups.length - 1 ? "disabled" : ""}>▼</button>
-             </span>`}${
-        group.length > 1
-          ? `<button class="exp" data-gs="${this._esc(sig)}" title="${
-              expanded ? "Hide the spool's second tag" : "Show the spool's second tag"}">${
-              expanded ? "▾" : "▸"}</button>`
-          : ""}</td>`;
+             </span>`}<button class="exp" data-gs="${this._esc(sig)}" title="${
+          expanded ? "Hide the spool's tags" : `Show the spool's tag${group.length > 1 ? "s" : ""}`}">${
+          expanded ? "▾" : "▸"}</button></td>`;
 
-      const cells = cols.map(c => this._cell(c, r, bg)).join("");
-      const cls = [r.disabled ? "dis" : "", group.length > 1 ? "paired" : "",
-                   group.length > 1 && ri === 0 ? "pairtop" : "",
-                   group.length > 1 && ri === 0 && !expanded ? "collapsed" : ""]
-        .filter(Boolean).join(" ");
-      return `<tr data-k="${r._k}" data-g="${gi}" data-gs="${this._esc(sig)}" data-s="${this._esc(key)}"${
-        r.disabled ? ' data-dis="1"' : ""}${ri > 0 ? ' data-p2="1"' : ""}${
-        cls ? ` class="${cls}"` : ""}>
+      const cells = cols.map(c => this._cell(c, top, bg, expanded)).join("");
+      const cls = [top.disabled ? "dis" : "", "sp"].filter(Boolean).join(" ");
+      const parent = `<tr data-k="${top._k}" data-g="${gi}" data-gs="${this._esc(sig)}" data-s="${this._esc(key)}"${
+        top.disabled ? ' data-dis="1"' : ""} class="${cls}">
         ${handle}${cells}
-        <td class="togcell"><button class="tog${r.disabled ? " isoff" : ""}" data-k="${r._k}"
-              title="${r.disabled ? "Disabled — click to enable" : "Enabled — click to disable"}"
-              >${r.disabled ? "OFF" : "ON"}</button></td>
-        <td><button class="del" data-k="${r._k}" title="Delete row">✕</button></td>
+        <td class="togcell"><button class="tog${top.disabled ? " isoff" : ""}" data-k="${top._k}"
+              title="${top.disabled ? "Disabled — click to enable" : "Enabled — click to disable"}"
+              >${top.disabled ? "OFF" : "ON"}</button></td>
+        <td><button class="del" data-scope="spool" data-k="${top._k}" title="Delete the spool${
+          group.length > 1 ? " (both tags)" : ""}">✕</button></td>
       </tr>`;
-    }).join("")).join("") || `<tr><td colspan="${cols.length + 3}"
+
+      const children = group.map((r, ri) => {
+        const ckey = `${r.serial} ${r.serial_2}`.toLowerCase().replace(/"/g, "");
+        // The chip marks the tag the tray actually read — one side, not both.
+        const slot = this._showLoaded ? this._slotOfOwn(r) : null;
+        return `<tr class="child${r.disabled ? " dis" : ""}" data-child="1" data-ck="${r._k}"
+          data-g="${gi}" data-gs="${this._esc(sig)}" data-cs="${this._esc(ckey)}"${
+          r.disabled ? ' data-dis="1"' : ""}>
+          <td></td>
+          <td colspan="${cols.length}" class="tagline">
+            <span class="taglabel">Tag ${ri + 1}</span>
+            <input class="cell ser" type="text" data-k="${r._k}" data-f="serial"
+              placeholder="serial" value="${this._esc(r.serial)}">${
+            group.length === 1
+              ? `<input class="cell ser" type="text" data-k="${r._k}" data-f="serial_2"
+                  placeholder="other side — typing it pairs the rows" value="${this._esc(r.serial_2 || "")}">`
+              : ""}${
+            slot === null ? "" : `<span class="ldchip" style="background:${this._amsColor(slot)}"
+              title="This tag is the one in the AMS — slot ${this._esc(slot)}">${this._esc(slot)}</span>`}
+          </td>
+          <td></td>
+          <td><button class="del" data-scope="tag" data-k="${r._k}" title="Delete this tag">✕</button></td>
+        </tr>`;
+      }).join("");
+
+      return parent + children;
+    }).join("") || `<tr><td colspan="${cols.length + 3}"
       style="text-align:center;padding:24px;opacity:.5">
       No tags — press “+ Row” to add one</td></tr>`;
 
@@ -624,7 +713,14 @@ class BambuCostsTagsEditor extends HTMLElement {
     tbody.querySelectorAll("button.del").forEach(b => {
       b.addEventListener("click", e => {
         const k = Number(e.currentTarget.dataset.k);
-        this._rows = this._rows.filter(r => r._k !== k);
+        if (e.currentTarget.dataset.scope === "spool") {
+          const group = this._groupOf(k);
+          if (group.length > 1 && !confirm("Delete this spool — both of its tags?")) return;
+          const gone = new Set(group.map(r => r._k));
+          this._rows = this._rows.filter(r => !gone.has(r._k));
+        } else {
+          this._rows = this._rows.filter(r => r._k !== k);
+        }
         this._dirty = true;
         this._paint();
       });
@@ -818,8 +914,11 @@ class BambuCostsTagsEditor extends HTMLElement {
           `Show disabled${dis ? ` (${dis})` : ""}`,
           "Disabled rows appear washed out")
         + toggleRow("expand", this._expandDefault,
-          `Expand related by default${pairs ? ` (${pairs} pairs)` : ""}`,
-          "A spool's second tag as a child row; ▸ on the row overrides")
+          `Expand tags by default${pairs ? ` (${pairs} pairs)` : ""}`,
+          "Each spool's tag serials as child rows; ▸ on the row overrides")
+        + toggleRow("showloaded", this._showLoaded,
+          "Show loaded slots",
+          "A chip beside the filament name, coloured per AMS")
         + `<div class="bte-target">
             <span class="bte-target-label">
               <span class="bte-target-name">Table height</span>
@@ -878,6 +977,10 @@ class BambuCostsTagsEditor extends HTMLElement {
           if (which === "showdis") {
             this._showDisabled = !this._showDisabled;
             this._applyFilter();
+          } else if (which === "showloaded") {
+            this._showLoaded = !this._showLoaded;
+            this._saveCols();
+            this._paint();
           } else {
             this._expandDefault = !this._expandDefault;
             // The new default applies everywhere: per-spool overrides were
@@ -968,15 +1071,22 @@ class BambuCostsTagsEditor extends HTMLElement {
     this._paint();
   }
 
-  _cell(col, r, bg) {
+  _cell(col, r, bg, expanded = false) {
     const k = r._k;
     switch (col.key) {
       case "swatch":
         return `<td><input class="sw" type="color" data-k="${k}" data-f="color_code"
                 value="${this._esc(this._norm(r.color_code))}"></td>`;
-      case "filament":
-        return `<td><input class="cell" type="text" data-k="${k}" data-f="filament"
-                value="${this._esc(r.filament)}"></td>`;
+      case "filament": {
+        // Expanded, the chip moves down to the tag that is actually in the
+        // tray; collapsed, the spool row carries it.
+        const slot = this._showLoaded && !expanded ? this._slotOf(r) : null;
+        return `<td class="flcell"><input class="cell" type="text" data-k="${k}" data-f="filament"
+                value="${this._esc(r.filament)}">${slot === null ? "" :
+          `<span class="ldchip" style="background:${this._amsColor(slot)}"
+             title="This spool is in the AMS now — slot ${this._esc(slot)}">${
+             this._esc(slot)}</span>`}</td>`;
+      }
       case "hex":
         return `<td><input class="cell hx" type="text" data-k="${k}" data-f="hex"
                 value="${this._esc(this._norm(r.color_code))}"
@@ -1170,8 +1280,10 @@ class BambuCostsTagsEditor extends HTMLElement {
       hx.value = this._norm(r.color_code);
       hx.style.color = this._textFor(r.color_code, bg);
     }
-    tr.dataset.s = `${r.filament} ${r.color_name} ${r.color_code} ${r.serial} ${r.serial_2} ${r.tray_uuid}`
-      .toLowerCase().replace(/"/g, "");
+    // The spool row's search key covers every tag in the group.
+    tr.dataset.s = this._groupOf(r._k).map(x =>
+      `${x.filament} ${x.color_name} ${x.color_code} ${x.serial} ${x.serial_2} ${x.tray_uuid}`
+    ).join(" ").toLowerCase().replace(/"/g, "");
   }
 
   _drag(ev, grip) {
@@ -1189,7 +1301,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     const move = e => {
       e.preventDefault();
       const y = e.clientY;
-      const rows = [...tbody.querySelectorAll("tr[data-k]")]
+      const rows = [...tbody.querySelectorAll("tr[data-g]")]
         .filter(x => !moving.includes(x) && x.style.display !== "none");
       if (!rows.length) return;
 
@@ -1225,13 +1337,14 @@ class BambuCostsTagsEditor extends HTMLElement {
       document.removeEventListener("pointerup", up);
       document.removeEventListener("pointercancel", up);
       moving.forEach(row => row.classList.remove("dragging"));
-      const keys = [...tbody.querySelectorAll("tr[data-k]")].map(x => Number(x.dataset.k));
-      const same = keys.every((k, i) => this._rows[i] && this._rows[i]._k === k);
+      const keys = [...tbody.querySelectorAll("tr.sp")].map(x => Number(x.dataset.k));
+      const next = keys.map(k => this._groupOf(k)).flat();
+      const same = next.length === this._rows.length
+        && next.every((r, i) => this._rows[i] === r);
       if (!same) {
-        this._rows = keys.map(k => this._row(k)).filter(Boolean);
-        // Repaint so the group indexes and pair borders match the new order.
-        this._rows = this._grouped();
+        this._rows = next;
         this._dirty = true;
+        // Repaint so the group indexes match the new order.
         this._paint();
       }
     };
@@ -1243,62 +1356,54 @@ class BambuCostsTagsEditor extends HTMLElement {
 
   _applyFilter() {
     const qs = this._filter;
-    const rows = [...this.querySelectorAll("tbody tr[data-s]")];
+    const parents = [...this.querySelectorAll("tbody tr[data-s]")];
+    const children = [...this.querySelectorAll("tbody tr[data-child]")];
     let hiddenDis = 0;
-    let hiddenRel = 0;
 
-    for (const tr of rows) {
+    for (const tr of parents) {
       const isDis = tr.dataset.dis === "1";
-      // A collapsed spool shows only its first row — unless the filter is
-      // searching, when a child that matches must not hide from it.
-      const collapsedChild = tr.dataset.p2 === "1" && !this._isExpanded(tr.dataset.gs) && !qs;
-      const hit = (!qs || tr.dataset.s.includes(qs))
-        && (this._showDisabled || !isDis)
-        && !collapsedChild;
+      const hit = (!qs || tr.dataset.s.includes(qs)) && (this._showDisabled || !isDis);
       tr.style.display = hit ? "" : "none";
       if (!hit && isDis && !this._showDisabled) hiddenDis++;
-      else if (!hit && collapsedChild) hiddenRel++;
     }
 
-    // The handle cell lives on the first row and spans the pair. A child row
-    // shown without its parent would render one cell short and shift left, so
-    // a visible child always brings its parent, and the span always matches
-    // what is actually visible.
-    for (const child of rows) {
-      if (child.dataset.p2 !== "1" || child.style.display === "none") continue;
-      const parent = rows.find(p => p.dataset.gs === child.dataset.gs && p.dataset.p2 !== "1");
-      if (parent && parent.style.display === "none") parent.style.display = "";
-    }
-    for (const parent of rows) {
-      if (parent.dataset.p2 === "1") continue;
-      const td = parent.querySelector("td[rowspan]");
-      if (!td) continue;
-      const child = rows.find(c => c.dataset.gs === parent.dataset.gs && c.dataset.p2 === "1");
-      const childVisible = !!child && child.style.display !== "none";
-      td.setAttribute("rowspan", childVisible ? 2 : 1);
-      parent.classList.toggle("collapsed",
-        parent.classList.contains("pairtop") && !childVisible);
+    for (const tr of children) {
+      const parent = parents.find(p => p.dataset.gs === tr.dataset.gs);
+      const parentShown = !!parent && parent.style.display !== "none";
+      // Children follow their spool: shown when it is expanded, or when the
+      // filter names one of their serials specifically.
+      const serialHit = qs && tr.dataset.cs.includes(qs);
+      const show = parentShown && (this._isExpanded(tr.dataset.gs) || serialHit);
+      tr.style.display = show ? "" : "none";
     }
 
-    this._shown = rows.filter(tr => tr.style.display !== "none").length;
+    // The expand arrow mirrors what is actually visible.
+    for (const parent of parents) {
+      const btn = parent.querySelector("button.exp");
+      if (!btn) continue;
+      const anyChild = children.some(c =>
+        c.dataset.gs === parent.dataset.gs && c.style.display !== "none");
+      btn.textContent = anyChild ? "▾" : "▸";
+    }
+
+    this._shown = parents.filter(tr => tr.style.display !== "none").length;
     this._hiddenDis = hiddenDis;
-    this._hiddenRel = hiddenRel;
     this._updateFoot();
   }
+
 
   _updateFoot() {
     const c = this.querySelector(".bte-count");
     if (c) {
-      const shown = this._shown === undefined ? this._rows.length : this._shown;
       // Counted from the rows as edited, so the figures track unsaved changes
       // the same way the table does. A pair is one spool; a spool is active
       // while any of its rows is still enabled.
       const groups = this._groups();
       const active = groups.filter(g => g.some(r => !r.disabled)).length;
-      c.textContent = `${shown} of ${this._rows.length} rows`
-        + ` · ${groups.length} spools (${active} active)`
+      const shown = this._shown === undefined ? groups.length : this._shown;
+      c.textContent = `${shown} of ${groups.length} spools (${active} active)`
+        + ` · ${this._rows.length} tags`
         + (this._hiddenDis ? ` · ${this._hiddenDis} disabled hidden` : "")
-        + (this._hiddenRel ? ` · ${this._hiddenRel} second tags collapsed` : "")
         + (this._dirty ? " · unsaved changes" : "");
     }
 

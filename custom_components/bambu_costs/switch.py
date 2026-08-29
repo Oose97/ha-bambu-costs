@@ -22,10 +22,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: BambuCostsCoordinator = hass.data[DOMAIN][entry.entry_id]
+    entities: list[SwitchEntity] = [MaintenanceModeSwitch(coordinator)]
     # Pointless without a camera to snapshot. Adding one later reloads the
     # entry, which lands back here and creates the switch.
     if coordinator.entity_of(CONF_CAMERA):
-        async_add_entities([CameraCoverSwitch(coordinator)])
+        entities.append(CameraCoverSwitch(coordinator))
+    async_add_entities(entities)
 
 
 class CameraCoverSwitch(
@@ -66,4 +68,48 @@ class CameraCoverSwitch(
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         self.coordinator.use_camera_cover = False
+        self.async_write_ha_state()
+
+
+class MaintenanceModeSwitch(
+    CoordinatorEntity[BambuCostsCoordinator], SwitchEntity, RestoreEntity
+):
+    """Log upkeep prints as electricity only.
+
+    Calibration lines, flow tests, a cleaning blob — runs whose filament is
+    not worth billing to any spool. While this is on, a logged job carries
+    the name "Maintenance", its duration, energy and electricity, and
+    nothing else: no filament figures, no per-slot rows, no picture.
+    Everything live — slot prices, tag scanning, the session sensors — keeps
+    working; only what reaches the log changes.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Maintenance mode"
+    _attr_icon = "mdi:wrench-clock"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: BambuCostsCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_maintenance_mode"
+        self._attr_device_info = coordinator.device_info
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None:
+            self.coordinator.maintenance = last.state == "on"
+        self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.maintenance
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        self.coordinator.maintenance = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        self.coordinator.maintenance = False
         self.async_write_ha_state()

@@ -387,6 +387,9 @@ class TagLibrarySensor(BambuCostsSensor):
             # service call, so several entries (a second printer, a test
             # entry) can be loaded without the calls becoming ambiguous.
             "entry_id": self.coordinator.entry.entry_id,
+            # Which tag sits in which slot right now, for the card's loaded
+            # chips: serial -> slot label.
+            "loaded": self.coordinator.loaded_spools(),
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
             "currency": self.coordinator.currency,
             "price_targets": self._price_targets(),
@@ -456,6 +459,9 @@ class CurrentJobSensor(BambuCostsSensor):
         return {
             "row": row,
             "edited": self.coordinator.overlay_fields(),
+            # The card renders a maintenance run honestly: wrench instead of
+            # the render, and only what will actually reach the log.
+            "maintenance": self.coordinator.maintenance,
             "mins_planned": draft["mins_planned"],
             "cost_predicted": draft["cost_predicted"],
             "p_cost_predicted": draft["p_cost_predicted"],
