@@ -11,7 +11,7 @@ startup for you to add by hand.
 
 `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library.
 
-![The filament tag library: colour swatches, names with Bambu codes, both RFID serials and the price per spool](images/filaments_full_table.jpg)
+![The filament tag library: swatches, palette names, the remaining ring, both RFID serials, the learned spool ids and the price per spool](images/filaments_full_table.jpg)
 
 - A spool's two tags render as one row, the second tag a child row behind a **▸** on the
   spool's handle — collapsed by default, with the default changeable in settings.
