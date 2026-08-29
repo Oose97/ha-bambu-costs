@@ -37,6 +37,9 @@ startup for you to add by hand.
   not a constraint — anything you type is accepted as-is.
 
   ![The colour-name combo: the full palette on focus, filtering as you type](images/filament_color_drop_down.jpg)
+- A spool sitting in the AMS right now wears a small **slot chip** on its handle —
+  `A1`, `HT` — one per spool, whichever of its two tags the tray read. Switchable
+  off in the settings.
 - Pairs share one handle and move as a unit, and reordering works with rows hidden — it
   steps over what is not shown. Filtering finds collapsed second tags and surfaces them
   with their spool.

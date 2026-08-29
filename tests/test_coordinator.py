@@ -714,6 +714,17 @@ def test_nothing_is_remembered_between_prints():
     assert c.slot_memory == {}
 
 
+def test_loaded_spools_maps_serials_to_slot_labels():
+    c = _one_tagged_slot(make())
+    assert c.loaded_spools() == {"AAA": "A1"}
+
+    # No readable tag, or no printer at all: the map claims nothing.
+    c._tray = {"available": True, "empty": False, "tag_uid": "0000000000000000"}
+    assert c.loaded_spools() == {}
+    c._tray = {"available": False}
+    assert c.loaded_spools() == {}
+
+
 def test_job_row_names_each_material_once():
     c = make()
     slots = [

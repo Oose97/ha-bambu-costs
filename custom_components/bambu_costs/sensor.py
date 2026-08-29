@@ -387,6 +387,9 @@ class TagLibrarySensor(BambuCostsSensor):
             # service call, so several entries (a second printer, a test
             # entry) can be loaded without the calls becoming ambiguous.
             "entry_id": self.coordinator.entry.entry_id,
+            # Which tag sits in which slot right now, for the card's loaded
+            # chips: serial -> slot label.
+            "loaded": self.coordinator.loaded_spools(),
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
             "currency": self.coordinator.currency,
             "price_targets": self._price_targets(),

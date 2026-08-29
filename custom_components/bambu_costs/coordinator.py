@@ -298,6 +298,23 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 updated[slot.label] = price
         return updated
 
+    def loaded_spools(self) -> dict[str, str]:
+        """Which tag is in which slot right now: serial -> slot label.
+
+        Only trays with a readable tag appear — an empty slot, a generic
+        spool, or a printer that is switched off contribute nothing, so the
+        tags card's loaded chips never claim more than the AMS reported.
+        """
+        out: dict[str, str] = {}
+        for slot in self.slots:
+            tray = self.tray_info(slot)
+            if not tray.get("available"):
+                continue
+            serial = str(tray.get("tag_uid") or "").strip()
+            if serial and serial.lower() not in EMPTY_TAG_UIDS:
+                out[serial] = slot.label
+        return out
+
     def tray_info(self, slot: SlotDef) -> dict[str, Any]:
         """Colour, material and RFID serial for a slot, if a tray is mapped."""
         if not slot.entity:
