@@ -13,15 +13,18 @@ startup for you to add by hand.
 
 ![The filament tag library: swatches, palette names, the remaining ring, both RFID serials, the learned spool ids and the price per spool](images/filaments_full_table.jpg)
 
-- A spool's two tags render as one row, the second tag a child row behind a **▸** on the
-  spool's handle — collapsed by default, with the default changeable in settings.
+- Every spool is **one row** carrying what its sides share — filament, colour, spool
+  id, remaining, price. The tag serials live underneath: **▸** on the handle unfolds
+  them as child rows, two for a paired spool, one otherwise — collapsed by default,
+  with the default changeable in settings.
 
-  ![A paired spool collapsed to one row](images/filaments_group_collapsed.jpg)
-  ![The same spool expanded, its second tag as a child row](images/filaments_group_expanded.jpg)
-- Editing a pair's filament, colour or price applies to both rows, and so does the
-  **ON/OFF** toggle — a spool is one physical thing, retired whole. Serials stay
-  per-row, since they are what tell the two tags apart. Typing a spool's second serial
-  pairs the rows on the spot.
+  ![A spool collapsed to one row](images/filaments_group_collapsed.jpg)
+  ![The same spool expanded, its tag serials as child rows](images/filaments_group_expanded.jpg)
+- Edits on the spool row apply to both of its tags, and so does the **ON/OFF**
+  toggle — a spool is one physical thing, retired whole. Serials stay per-tag, since
+  they are what tell the two sides apart. An unpaired spool's tag row offers a second
+  serial field: typing it pairs the rows on the spot. The spool row's **✕** deletes
+  the spool with every tag it has; a tag row's **✕** takes just that tag.
 - The **Spool ID** column is the printer cloud's per-spool id, [learned by
   itself](filament.md#the-spool-id-learns-itself) whenever the spool is loaded — and
   the reason freshly scanned second sides pair up on their own. Editable like
@@ -39,10 +42,12 @@ startup for you to add by hand.
   ![The colour-name combo: the full palette on focus, filtering as you type](images/filament_color_drop_down.jpg)
 - A spool sitting in the AMS right now wears a **slot chip beside its filament
   name** — `A1`, `HT` — coloured per AMS unit, so one glance separates the machines.
-  Either of the spool's two tags identifies it; the chips switch off in the settings.
-- Pairs share one handle and move as a unit, and reordering works with rows hidden — it
-  steps over what is not shown. Filtering finds collapsed second tags and surfaces them
-  with their spool.
+  Expanded, the chip steps down to the tag row whose serial the tray actually read —
+  a paired spool's two sides are two tags, and only one of them is in the machine.
+  The chips switch off in the settings.
+- A spool moves as one block, tag rows and all, and reordering works with rows
+  hidden — it steps over what is not shown. Filtering searches the whole spool,
+  serials included, and surfaces the matching tag rows with it.
 - **⚙** opens the table settings: show-disabled, expand-by-default, sorting, the table
   height, and the column layout (display only — a save always writes every field in
   canonical order).
@@ -51,10 +56,10 @@ startup for you to add by hand.
 - By default the table is bounded to 70% of the screen and scrolls inside its own box,
   which keeps the header row pinned while a long library scrolls under it. "Unlimited"
   in the settings grows the card with the page instead.
-- The footer counts rows and **spools** — a pair is one spool — with the active count
-  beside it, tracking unsaved edits live. The saved figures are also published as the
-  `spools` and `active_spools` [sensors](entities.md#sensors), ready for a badge or an
-  automation.
+- The footer counts **spools** — a pair is one spool — with the active count beside
+  it and the tag total after, tracking unsaved edits live. The saved figures are also
+  published as the `spools` and `active_spools` [sensors](entities.md#sensors), ready
+  for a badge or an automation.
 - Each row's **SET** button opens a picker listing every filament price entity — the
   default first, then one per configured slot — so a tag's price can be pushed into
   whichever slot has that spool loaded. The list is resolved from the entity registry,
