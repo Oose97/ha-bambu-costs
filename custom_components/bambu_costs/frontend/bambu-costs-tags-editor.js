@@ -9,7 +9,6 @@ const BTE_COLS = [
   { key: "serial_2",   label: "Serial 2", width: "150px" },
   { key: "tray_uuid",  label: "Spool ID", width: "150px" },
   { key: "remaining",  label: "Left",     width: "44px",  tight: true },
-  { key: "loaded",     label: "Slot",     width: "56px",  tight: true },
   { key: "price",      label: "PRICE",    width: "120px", tight: true },
 ];
 const BTE_DEFAULT_ORDER = BTE_COLS.map(c => c.key);
@@ -29,6 +28,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     this._justSaved = false;
     this._filter = "";
     this._showDisabled = false;
+    this._showLoaded = true;
     // A pair renders as one spool row with its second tag as a child row.
     // The default state is a persisted setting; per-spool toggles are kept as
     // deviations from it, so a newly formed pair follows the default.
@@ -149,6 +149,19 @@ class BambuCostsTagsEditor extends HTMLElement {
     return id ? Object.assign({ entry_id: id }, data) : data;
   }
 
+  // One colour per AMS unit, so A1..A4 read as one device and HT as
+  // another at a glance. Units are the labels with their tray digits
+  // stripped, coloured in sorted order so the mapping never shuffles.
+  _amsColor(label) {
+    const palette = ["#2196F3", "#F44336", "#4CAF50", "#9C27B0", "#FF9800", "#00BCD4"];
+    const unitOf = l => String(l).replace(/\s*\d+$/, "").trim().toUpperCase() || String(l);
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    const loaded = (st && st.attributes && st.attributes.loaded) || {};
+    const units = [...new Set(Object.values(loaded).map(unitOf))].sort();
+    const i = units.indexOf(unitOf(label));
+    return palette[(i >= 0 ? i : 0) % palette.length];
+  }
+
   // Which slot this row's spool sits in right now, if any — the sensor
   // publishes {serial: slot label} for every tray with a readable tag, and
   // either of a pair's serials identifies the spool.
@@ -202,6 +215,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       }
       if (Array.isArray(s.hidden)) this._hidden = new Set(s.hidden);
       if (typeof s.expandDefault === "boolean") this._expandDefault = s.expandDefault;
+      if (typeof s.showLoaded === "boolean") this._showLoaded = s.showLoaded;
       if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
@@ -210,7 +224,8 @@ class BambuCostsTagsEditor extends HTMLElement {
     try {
       localStorage.setItem(this._colsKey(),
         JSON.stringify({ order: this._order, hidden: [...this._hidden],
-                         expandDefault: this._expandDefault, maxh: this._maxH }));
+                         expandDefault: this._expandDefault, maxh: this._maxH,
+                         showLoaded: this._showLoaded }));
     } catch (e) { /* private mode — layout just will not persist */ }
   }
 
@@ -458,12 +473,14 @@ class BambuCostsTagsEditor extends HTMLElement {
           table.bte tr.paired td { border-bottom-color:transparent; }
           /* …unless the pair is collapsed — then the first row is the block. */
           table.bte tr.pairtop.collapsed td { border-bottom-color:var(--divider-color); }
-          /* The spool is in the AMS right now — the chip names the slot. */
-          td.ldcell { text-align:center; }
-          .ldchip { display:inline-block; background:var(--primary-color);
-            color:var(--text-primary-color); border-radius:9px; font-size:9.5px;
-            font-weight:600; letter-spacing:.3px; padding:2px 7px;
-            vertical-align:middle; white-space:nowrap; }
+          /* The spool is in the AMS right now — the chip names the slot,
+             coloured per AMS unit, sitting beside the filament name. */
+          td.flcell { white-space:nowrap; }
+          td.flcell input.cell { width:calc(100% - 46px); min-width:9ch; }
+          td.flcell:not(:has(.ldchip)) input.cell { width:100%; }
+          .ldchip { display:inline-block; color:#fff; border-radius:9px;
+            font-size:9.5px; font-weight:600; letter-spacing:.3px; padding:2px 7px;
+            margin-left:4px; vertical-align:middle; white-space:nowrap; }
           .exp { background:none; border:1px solid var(--divider-color); border-radius:6px;
             color:var(--secondary-text-color); font-size:10px; line-height:1;
             width:20px; height:20px; padding:0; cursor:pointer; margin-left:2px;
@@ -844,6 +861,9 @@ class BambuCostsTagsEditor extends HTMLElement {
         + toggleRow("expand", this._expandDefault,
           `Expand related by default${pairs ? ` (${pairs} pairs)` : ""}`,
           "A spool's second tag as a child row; ▸ on the row overrides")
+        + toggleRow("showloaded", this._showLoaded,
+          "Show loaded slots",
+          "A chip beside the filament name, coloured per AMS")
         + `<div class="bte-target">
             <span class="bte-target-label">
               <span class="bte-target-name">Table height</span>
@@ -902,6 +922,10 @@ class BambuCostsTagsEditor extends HTMLElement {
           if (which === "showdis") {
             this._showDisabled = !this._showDisabled;
             this._applyFilter();
+          } else if (which === "showloaded") {
+            this._showLoaded = !this._showLoaded;
+            this._saveCols();
+            this._paint();
           } else {
             this._expandDefault = !this._expandDefault;
             // The new default applies everywhere: per-spool overrides were
@@ -998,9 +1022,14 @@ class BambuCostsTagsEditor extends HTMLElement {
       case "swatch":
         return `<td><input class="sw" type="color" data-k="${k}" data-f="color_code"
                 value="${this._esc(this._norm(r.color_code))}"></td>`;
-      case "filament":
-        return `<td><input class="cell" type="text" data-k="${k}" data-f="filament"
-                value="${this._esc(r.filament)}"></td>`;
+      case "filament": {
+        const slot = this._showLoaded ? this._slotOf(r) : null;
+        return `<td class="flcell"><input class="cell" type="text" data-k="${k}" data-f="filament"
+                value="${this._esc(r.filament)}">${slot === null ? "" :
+          `<span class="ldchip" style="background:${this._amsColor(slot)}"
+             title="This spool is in the AMS now — slot ${this._esc(slot)}">${
+             this._esc(slot)}</span>`}</td>`;
+      }
       case "hex":
         return `<td><input class="cell hx" type="text" data-k="${k}" data-f="hex"
                 value="${this._esc(this._norm(r.color_code))}"
@@ -1023,12 +1052,6 @@ class BambuCostsTagsEditor extends HTMLElement {
                 value="${this._esc(r.tray_uuid || "")}"></td>`;
       case "remaining":
         return `<td class="remcell">${this._remainingWheel(r)}</td>`;
-      case "loaded": {
-        const slot = this._slotOf(r);
-        return `<td class="ldcell">${slot === null ? "" :
-          `<span class="ldchip" title="This spool is in the AMS now — slot ${
-            this._esc(slot)}">${this._esc(slot)}</span>`}</td>`;
-      }
       case "price":
         return `<td><span class="pricecell">
                   <input class="cell p" type="number" step="0.01" min="0" data-k="${k}"

@@ -37,9 +37,9 @@ startup for you to add by hand.
   not a constraint — anything you type is accepted as-is.
 
   ![The colour-name combo: the full palette on focus, filtering as you type](images/filament_color_drop_down.jpg)
-- The **Slot** column marks the spools sitting in the AMS right now with a chip
-  naming the slot — `A1`, `HT` — whichever of the spool's two tags the tray read.
-  Hidden like any other column, in the settings' Columns list.
+- A spool sitting in the AMS right now wears a **slot chip beside its filament
+  name** — `A1`, `HT` — coloured per AMS unit, so one glance separates the machines.
+  Either of the spool's two tags identifies it; the chips switch off in the settings.
 - Pairs share one handle and move as a unit, and reordering works with rows hidden — it
   steps over what is not shown. Filtering finds collapsed second tags and surfaces them
   with their spool.
