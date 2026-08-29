@@ -216,6 +216,10 @@ logged as, editable while it prints.
 - One caveat: a price edited here changes the **logged row only**. The live session
   sensors keep following the slot price numbers — the [SET picker](#tags-editor) is
   the tool when the slot itself has the wrong price.
+- With the [maintenance-mode switch](entities.md#switches) on, the card shows what
+  will actually be logged: a wrench where the render would be, the name
+  **Maintenance**, the measured energy and electricity as the whole bill — and no
+  filament fields, since none survive to the log.
 - When the printer is idle the card just says so; history is the
   [jobs table](#jobs-table)'s business.
 

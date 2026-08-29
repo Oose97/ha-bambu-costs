@@ -456,6 +456,9 @@ class CurrentJobSensor(BambuCostsSensor):
         return {
             "row": row,
             "edited": self.coordinator.overlay_fields(),
+            # The card renders a maintenance run honestly: wrench instead of
+            # the render, and only what will actually reach the log.
+            "maintenance": self.coordinator.maintenance,
             "mins_planned": draft["mins_planned"],
             "cost_predicted": draft["cost_predicted"],
             "p_cost_predicted": draft["p_cost_predicted"],
