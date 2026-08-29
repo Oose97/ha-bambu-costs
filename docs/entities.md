@@ -42,6 +42,13 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 
 ## Switches
 
+- `switch.<name>_maintenance_mode` — while on, a logged job is electricity only:
+  the name reads **Maintenance**, the duration, energy and power cost are recorded,
+  and nothing else — no filament figures, no per-slot rows, no picture. For
+  calibration lines, flow tests and cleaning runs whose filament is not worth
+  billing to any spool. Everything live (slot prices, tag scanning, the session
+  sensors) keeps working; only what reaches the log changes. Outranks the
+  Printing-now card's edits and `log_job` overrides alike.
 - `switch.<name>_use_camera_snapshot` — created when a printer camera is configured.
   While on, each logged job's picture is a camera frame grabbed the moment the printer
   reports finish — the part still on the plate — instead of the slicer's render. If the

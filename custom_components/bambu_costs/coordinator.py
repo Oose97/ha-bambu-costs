@@ -126,6 +126,10 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Whether job covers come from the camera instead of the slicer's
         # render. Owned by the "Use camera snapshot" switch, which restores it.
         self.use_camera_cover: bool = False
+        # Log upkeep prints as electricity only — name "Maintenance", energy
+        # and duration, no filament figures, no picture. Owned by the
+        # "Maintenance mode" switch, which restores it.
+        self.maintenance: bool = False
         self._tag_write_lock = asyncio.Lock()
         # Jobs have the same read-modify-write hazard: a card save landing
         # while a finished print is being appended must queue, not interleave.
@@ -1062,7 +1066,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         row = self.build_job_row(overrides or {})
 
-        if capture_cover:
+        if capture_cover and not self.maintenance:
             stamp = str(row["timestamp"]).replace("-", "").replace(":", "").replace(" ", "-")
             row["cover"] = await self.async_capture_cover(stamp)
 
@@ -1152,7 +1156,29 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         # The card's mid-print edits land last — but an explicit service
         # override outranks them, so log_job stays the final word.
-        return self._overlaid_csv(row, set(overrides))
+        row = self._overlaid_csv(row, set(overrides))
+
+        # Maintenance mode outranks everything: an upkeep run bills its
+        # electricity and nothing else. The filament figures the printer
+        # reports for it are a plan for material not worth billing to any
+        # spool, so they are blanked rather than logged.
+        if self.maintenance:
+            row.update(
+                {
+                    "job": "Maintenance",
+                    "layers": 0.0,
+                    "weight_g": 0.0,
+                    "length_m": 0.0,
+                    "nozzle_size": "",
+                    "nozzle_type": "",
+                    "filament_cost": 0.0,
+                    "total_cost": round(as_float(row.get("power_cost")), 4),
+                    "cover": "",
+                    "trays": [],
+                    "filament_type": "",
+                }
+            )
+        return row
 
     def _overlaid_csv(self, row: dict[str, Any], explicit: set[str]) -> dict[str, Any]:
         """Apply the overlay to a CSV-shape row, minding explicit overrides."""
