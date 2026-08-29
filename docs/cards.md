@@ -35,6 +35,9 @@ startup for you to add by hand.
   [filament inventory sensor](filament.md#remaining-grams-from-the-cloud-inventory)
   configured, the value keeps itself current. Shared across a pair, like everything
   else describing the spool.
+
+  ![The ring's tooltip: grams left, the percentage, and the click-to-edit hint](images/filaments_table_filament_left_hover.jpg)
+  ![The ring clicked into a plain grams field](images/filaments_table_filament_left_edit.jpg)
 - The colour-name cell is a combo over the whole Bambu palette: click it and the full
   list drops down, scrollable; start typing and it filters. The list is a convenience,
   not a constraint — anything you type is accepted as-is.
