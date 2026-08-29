@@ -9,6 +9,7 @@ const BTE_COLS = [
   { key: "serial_2",   label: "Serial 2", width: "150px" },
   { key: "tray_uuid",  label: "Spool ID", width: "150px" },
   { key: "remaining",  label: "Left",     width: "44px",  tight: true },
+  { key: "loaded",     label: "Slot",     width: "56px",  tight: true },
   { key: "price",      label: "PRICE",    width: "120px", tight: true },
 ];
 const BTE_DEFAULT_ORDER = BTE_COLS.map(c => c.key);
@@ -28,7 +29,6 @@ class BambuCostsTagsEditor extends HTMLElement {
     this._justSaved = false;
     this._filter = "";
     this._showDisabled = false;
-    this._showLoaded = true;
     // A pair renders as one spool row with its second tag as a child row.
     // The default state is a persisted setting; per-spool toggles are kept as
     // deviations from it, so a newly formed pair follows the default.
@@ -149,20 +149,19 @@ class BambuCostsTagsEditor extends HTMLElement {
     return id ? Object.assign({ entry_id: id }, data) : data;
   }
 
-  // Which slot a spool's tag sits in right now, if any — the sensor
-  // publishes {serial: slot label} for every tray with a readable tag.
-  _loadedLabel(group) {
+  // Which slot this row's spool sits in right now, if any — the sensor
+  // publishes {serial: slot label} for every tray with a readable tag, and
+  // either of a pair's serials identifies the spool.
+  _slotOf(r) {
     const st = this._hass && this._hass.states[this._cfg.entity];
     const loaded = (st && st.attributes && st.attributes.loaded) || {};
     const bySerial = {};
     for (const [serial, label] of Object.entries(loaded)) {
       bySerial[serial.toLowerCase()] = label;
     }
-    for (const r of group) {
-      for (const key of ["serial", "serial_2"]) {
-        const serial = String(r[key] || "").trim().toLowerCase();
-        if (serial && bySerial[serial] !== undefined) return bySerial[serial];
-      }
+    for (const key of ["serial", "serial_2"]) {
+      const serial = String(r[key] || "").trim().toLowerCase();
+      if (serial && bySerial[serial] !== undefined) return bySerial[serial];
     }
     return null;
   }
@@ -203,7 +202,6 @@ class BambuCostsTagsEditor extends HTMLElement {
       }
       if (Array.isArray(s.hidden)) this._hidden = new Set(s.hidden);
       if (typeof s.expandDefault === "boolean") this._expandDefault = s.expandDefault;
-      if (typeof s.showLoaded === "boolean") this._showLoaded = s.showLoaded;
       if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
@@ -212,8 +210,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     try {
       localStorage.setItem(this._colsKey(),
         JSON.stringify({ order: this._order, hidden: [...this._hidden],
-                         expandDefault: this._expandDefault, maxh: this._maxH,
-                         showLoaded: this._showLoaded }));
+                         expandDefault: this._expandDefault, maxh: this._maxH }));
     } catch (e) { /* private mode — layout just will not persist */ }
   }
 
@@ -462,9 +459,10 @@ class BambuCostsTagsEditor extends HTMLElement {
           /* …unless the pair is collapsed — then the first row is the block. */
           table.bte tr.pairtop.collapsed td { border-bottom-color:var(--divider-color); }
           /* The spool is in the AMS right now — the chip names the slot. */
+          td.ldcell { text-align:center; }
           .ldchip { display:inline-block; background:var(--primary-color);
-            color:var(--text-primary-color); border-radius:9px; font-size:9px;
-            font-weight:600; letter-spacing:.3px; padding:2px 6px; margin:2px 0 0 2px;
+            color:var(--text-primary-color); border-radius:9px; font-size:9.5px;
+            font-weight:600; letter-spacing:.3px; padding:2px 7px;
             vertical-align:middle; white-space:nowrap; }
           .exp { background:none; border:1px solid var(--divider-color); border-radius:6px;
             color:var(--secondary-text-color); font-size:10px; line-height:1;
@@ -622,12 +620,7 @@ class BambuCostsTagsEditor extends HTMLElement {
           ? `<button class="exp" data-gs="${this._esc(sig)}" title="${
               expanded ? "Hide the spool's second tag" : "Show the spool's second tag"}">${
               expanded ? "▾" : "▸"}</button>`
-          : ""}${(() => {
-            if (!this._showLoaded) return "";
-            const slot = this._loadedLabel(group);
-            return slot === null ? "" : `<span class="ldchip" title="This spool is in the AMS now — slot ${
-              this._esc(slot)}">${this._esc(slot)}</span>`;
-          })()}</td>`;
+          : ""}</td>`;
 
       const cells = cols.map(c => this._cell(c, r, bg)).join("");
       const cls = [r.disabled ? "dis" : "", group.length > 1 ? "paired" : "",
@@ -851,9 +844,6 @@ class BambuCostsTagsEditor extends HTMLElement {
         + toggleRow("expand", this._expandDefault,
           `Expand related by default${pairs ? ` (${pairs} pairs)` : ""}`,
           "A spool's second tag as a child row; ▸ on the row overrides")
-        + toggleRow("showloaded", this._showLoaded,
-          "Show loaded slots",
-          "A chip on spools sitting in the AMS right now, naming the slot")
         + `<div class="bte-target">
             <span class="bte-target-label">
               <span class="bte-target-name">Table height</span>
@@ -912,10 +902,6 @@ class BambuCostsTagsEditor extends HTMLElement {
           if (which === "showdis") {
             this._showDisabled = !this._showDisabled;
             this._applyFilter();
-          } else if (which === "showloaded") {
-            this._showLoaded = !this._showLoaded;
-            this._saveCols();
-            this._paint();
           } else {
             this._expandDefault = !this._expandDefault;
             // The new default applies everywhere: per-spool overrides were
@@ -1037,6 +1023,12 @@ class BambuCostsTagsEditor extends HTMLElement {
                 value="${this._esc(r.tray_uuid || "")}"></td>`;
       case "remaining":
         return `<td class="remcell">${this._remainingWheel(r)}</td>`;
+      case "loaded": {
+        const slot = this._slotOf(r);
+        return `<td class="ldcell">${slot === null ? "" :
+          `<span class="ldchip" title="This spool is in the AMS now — slot ${
+            this._esc(slot)}">${this._esc(slot)}</span>`}</td>`;
+      }
       case "price":
         return `<td><span class="pricecell">
                   <input class="cell p" type="number" step="0.01" min="0" data-k="${k}"
