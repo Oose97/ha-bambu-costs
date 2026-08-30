@@ -725,6 +725,23 @@ def test_loaded_spools_maps_serials_to_slot_labels():
     assert c.loaded_spools() == {}
 
 
+def test_printing_slots_lists_fed_trays_only_while_a_print_runs():
+    c = _one_tagged_slot(make())
+    # Idle: the leftover per-slot weights claim nothing.
+    assert c.printing_slots() == []
+
+    c.mark_print_start(new_job=True)
+    assert c.printing_slots() == ["A1"]
+
+    # A loaded slot the job does not draw from stays quiet.
+    c._attrs = lambda key: {"AMS 1 Tray 1": 0.0}
+    assert c.printing_slots() == []
+
+    c._attrs = lambda key: {"AMS 1 Tray 1": 40.0}
+    c.mark_print_end()
+    assert c.printing_slots() == []
+
+
 def test_job_row_names_each_material_once():
     c = make()
     slots = [

@@ -160,6 +160,24 @@ class BambuCostsTagsEditor extends HTMLElement {
     return palette[(i >= 0 ? i : 0) % palette.length];
   }
 
+  // The slots the running print is drawing from right now — their chips
+  // carry a live dot on top of the slot colour. Empty while idle.
+  _printingSlots() {
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    return (st && st.attributes && st.attributes.printing) || [];
+  }
+
+  // One chip: the slot label on its AMS colour, plus the pulsing dot when
+  // the current print is feeding from that slot. `lead` opens the tooltip
+  // ("This spool…" on the spool row, "This tag…" on a tag row).
+  _chipHtml(slot, lead) {
+    const busy = this._printingSlots().includes(slot);
+    return `<span class="ldchip${busy ? " busy" : ""}" style="background:${this._amsColor(slot)}"
+       title="${lead} — slot ${this._esc(slot)}${
+         busy ? ", printing from it right now" : ""}">${this._esc(slot)}${
+       busy ? '<span class="live"></span>' : ""}</span>`;
+  }
+
   // The slot holding THIS tag — own serial only, so an expanded pair chips
   // exactly the side the tray read. Falls back to serial_2 when no row owns
   // the read serial (a one-sided pairing typed by hand).
@@ -509,6 +527,13 @@ class BambuCostsTagsEditor extends HTMLElement {
           .ldchip { display:inline-block; color:#fff; border-radius:9px;
             font-size:9.5px; font-weight:600; letter-spacing:.3px; padding:2px 7px;
             margin-left:4px; vertical-align:middle; white-space:nowrap; }
+          /* The current print is feeding from this slot: a live dot on the
+             chip, pulsing so “in use now” reads apart from merely loaded. */
+          .ldchip .live { display:inline-block; width:5px; height:5px;
+            border-radius:50%; background:#fff; margin-left:4px;
+            vertical-align:1px; animation:bteLive 1.4s ease-in-out infinite; }
+          @keyframes bteLive { 0%,100% { opacity:1; } 50% { opacity:.2; } }
+          td.flcell:has(.ldchip.busy) input.cell { width:calc(100% - 56px); }
           .exp { background:none; border:1px solid var(--divider-color); border-radius:6px;
             color:var(--secondary-text-color); font-size:10px; line-height:1;
             width:20px; height:20px; padding:0; cursor:pointer; margin-left:2px;
@@ -692,8 +717,7 @@ class BambuCostsTagsEditor extends HTMLElement {
               ? `<input class="cell ser" type="text" data-k="${r._k}" data-f="serial_2"
                   placeholder="other side — typing it pairs the rows" value="${this._esc(r.serial_2 || "")}">`
               : ""}${
-            slot === null ? "" : `<span class="ldchip" style="background:${this._amsColor(slot)}"
-              title="This tag is the one in the AMS — slot ${this._esc(slot)}">${this._esc(slot)}</span>`}
+            slot === null ? "" : this._chipHtml(slot, "This tag is the one in the AMS")}
           </td>
           <td></td>
           <td><button class="del" data-scope="tag" data-k="${r._k}" title="Delete this tag">✕</button></td>
@@ -918,7 +942,8 @@ class BambuCostsTagsEditor extends HTMLElement {
           "Each spool's tag serials as child rows; ▸ on the row overrides")
         + toggleRow("showloaded", this._showLoaded,
           "Show loaded slots",
-          "A chip beside the filament name, coloured per AMS")
+          "A chip beside the filament name, coloured per AMS; "
+          + "a pulsing dot marks the slots the running print uses")
         + `<div class="bte-target">
             <span class="bte-target-label">
               <span class="bte-target-name">Table height</span>
@@ -1083,9 +1108,7 @@ class BambuCostsTagsEditor extends HTMLElement {
         const slot = this._showLoaded && !expanded ? this._slotOf(r) : null;
         return `<td class="flcell"><input class="cell" type="text" data-k="${k}" data-f="filament"
                 value="${this._esc(r.filament)}">${slot === null ? "" :
-          `<span class="ldchip" style="background:${this._amsColor(slot)}"
-             title="This spool is in the AMS now — slot ${this._esc(slot)}">${
-             this._esc(slot)}</span>`}</td>`;
+          this._chipHtml(slot, "This spool is in the AMS now")}</td>`;
       }
       case "hex":
         return `<td><input class="cell hx" type="text" data-k="${k}" data-f="hex"
@@ -1094,12 +1117,6 @@ class BambuCostsTagsEditor extends HTMLElement {
       case "color_name":
         return `<td><input class="cell" type="text" data-k="${k}" data-f="color_name"
                 value="${this._esc(r.color_name)}"></td>`;
-      case "serial":
-        return `<td><input class="cell ser" type="text" data-k="${k}" data-f="serial"
-                value="${this._esc(r.serial)}"></td>`;
-      case "serial_2":
-        return `<td><input class="cell ser" type="text" data-k="${k}" data-f="serial_2"
-                placeholder="other side" value="${this._esc(r.serial_2 || "")}"></td>`;
       case "tray_uuid":
         // The printer cloud's per-spool id, learned when the spool is
         // loaded. Shared by a pair like every descriptive field: one spool,

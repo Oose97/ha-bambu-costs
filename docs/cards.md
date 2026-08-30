@@ -47,7 +47,8 @@ startup for you to add by hand.
   name** — `A1`, `HT` — coloured per AMS unit, so one glance separates the machines.
   Expanded, the chip steps down to the tag row whose serial the tray actually read —
   a paired spool's two sides are two tags, and only one of them is in the machine.
-  The chips switch off in the settings.
+  While a print runs, the chips of the slots it draws from add a **pulsing dot**:
+  in use right now, not merely loaded. The chips switch off in the settings.
 - A spool moves as one block, tag rows and all, and reordering works with rows
   hidden — it steps over what is not shown. Filtering searches the whole spool,
   serials included, and surfaces the matching tag rows with it.

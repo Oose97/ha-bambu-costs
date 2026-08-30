@@ -315,6 +315,22 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 out[serial] = slot.label
         return out
 
+    def printing_slots(self) -> list[str]:
+        """Slot labels the running print is drawing from.
+
+        Read straight off the per-slot planned weights — the same figures the
+        breakdown prices — and only while a print is actually running, so an
+        idle printer's leftover weights claim nothing.
+        """
+        if not self.print_running:
+            return []
+        attrs = self._attrs(CONF_PRINT_WEIGHT)
+        return [
+            slot.label
+            for slot in self.slots
+            if as_float(attrs.get(slot.attribute)) > 0
+        ]
+
     def tray_info(self, slot: SlotDef) -> dict[str, Any]:
         """Colour, material and RFID serial for a slot, if a tray is mapped."""
         if not slot.entity:
