@@ -83,6 +83,22 @@ class BambuCostsTagsEditor extends HTMLElement {
 
   getCardSize() { return 12; }
 
+  static getConfigElement() {
+    return document.createElement("bambu-costs-tags-card-editor");
+  }
+
+  // Found by what the sensor carries rather than by its entity id, so adding
+  // the card from the picker lands on a working entity even where the sensor
+  // was renamed or a second entry is loaded.
+  static getStubConfig(hass) {
+    const states = (hass && hass.states) || {};
+    const hit = Object.keys(states).find(id => {
+      const a = states[id].attributes || {};
+      return id.startsWith("sensor.") && Array.isArray(a.data) && Array.isArray(a.color_names);
+    });
+    return { entity: hit || "sensor.bambu_costs_tag_library" };
+  }
+
   // ── data ─────────────────────────────────────────────────
   _sensorData() {
     const st = this._hass && this._hass.states[this._cfg.entity];
@@ -1512,3 +1528,104 @@ if (!window.customCards.some(c => c.type === "bambu-costs-tags-editor")) window.
   name: "Bambu Costs: Tags Editor",
   description: "Editable, reorderable filament tag library",
 });
+// ── visual editor ────────────────────────────────────────────
+// A schema-driven <ha-form>, so the card can be set up from the dashboard's
+// own card editor instead of by hand in YAML. Only what the YAML decides is
+// here: the visible columns, their order and the table height are per-browser
+// view settings and stay in the card's own ⚙ sheet.
+const BTE_SCHEMA = [
+  {
+    name: "entity",
+    required: true,
+    selector: { entity: { filter: [{ integration: "bambu_costs", domain: "sensor" }] } },
+  },
+  { name: "title", selector: { text: {} } },
+  { name: "unit", selector: { text: {} } },
+  {
+    name: "default_price_entity",
+    selector: { entity: { filter: [{ integration: "bambu_costs", domain: "number" }] } },
+  },
+  { name: "save_service", selector: { text: {} } },
+];
+
+const BTE_LABELS = {
+  entity: "Tag library sensor",
+  title: "Title",
+  unit: "Price unit",
+  default_price_entity: "Default price entity",
+  save_service: "Save service",
+};
+
+const BTE_HELPERS = {
+  entity: "The Bambu Costs sensor carrying the filament tag library.",
+  title: "Card heading.",
+  unit: "Shown under the PRICE header — EUR/kg, USD/kg. Leave empty to follow "
+    + "the currency the integration is configured with.",
+  default_price_entity: "The number entity a row with no price of its own falls back to.",
+  save_service: "The service the Save button calls. Only worth changing if you "
+    + "have put something else in front of the writer.",
+};
+
+class BambuCostsTagsCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = Object.assign({}, config);
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this._form) this._form.hass = hass;
+  }
+
+  // What the card falls back to when the option is absent. Shown in the form
+  // so the fields read as the card actually behaves rather than as blanks —
+  // and stripped again on the way out, so an untouched default never lands
+  // in the YAML. `unit` is empty on purpose: unset means "ask the
+  // integration", which is not a value the form can show.
+  _defaults() {
+    return {
+      entity: "sensor.bambu_costs_tag_library",
+      title: "Filament tags",
+      unit: "",
+      default_price_entity: "number.bambu_costs_default_filament_price",
+      save_service: "bambu_costs.write_tags",
+    };
+  }
+
+  _emit(value) {
+    const defaults = this._defaults();
+    const out = this._config.type ? { type: this._config.type } : {};
+    for (const [k, v] of Object.entries(value || {})) {
+      if (k === "type") continue;
+      // A cleared field comes back as "" — leaving it out lets the card's own
+      // default apply again instead of writing a blank into the YAML.
+      if (v === "" || v === undefined || v === null) continue;
+      if (k !== "entity" && JSON.stringify(v) === JSON.stringify(defaults[k])) continue;
+      out[k] = v;
+    }
+    this._config = out;
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: out }, bubbles: true, composed: true,
+    }));
+  }
+
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = s => BTE_LABELS[s.name] || s.name;
+      this._form.computeHelper = s => BTE_HELPERS[s.name] || "";
+      this._form.addEventListener("value-changed", ev => {
+        ev.stopPropagation();
+        this._emit(ev.detail.value);
+      });
+      this.appendChild(this._form);
+    }
+    if (this._hass) this._form.hass = this._hass;
+    this._form.schema = BTE_SCHEMA;
+    this._form.data = Object.assign(this._defaults(), this._config);
+  }
+}
+
+if (!customElements.get("bambu-costs-tags-card-editor")) {
+  customElements.define("bambu-costs-tags-card-editor", BambuCostsTagsCardEditor);
+}

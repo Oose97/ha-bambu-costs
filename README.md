@@ -131,6 +131,8 @@ Go to [Cards](docs/cards.md) for more details.
   what the finished job logs. Survives restarts; reset takes it all back.
 - **Cost calculator** — quotes from your real spool prices plus runtime, margin and
   VAT. All four register themselves as Lovelace resources.
+- **Visual editor** — every card is set up from the dashboard's own card editor: entity
+  picker, rate, margin, VAT, page size and currency as form fields, no YAML to write.
 
 ### Data on disk
 

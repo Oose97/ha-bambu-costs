@@ -7,6 +7,13 @@ Settings → Dashboards → Resources, and are removed when the last config entr
 deleted. In YAML-mode Lovelace the files are still served — the URLs are logged at
 startup for you to add by hand.
 
+Every card has a **visual editor**: picking one from the card picker, or clicking the
+pencil on a card already on a dashboard, opens a form covering every option the YAML
+below accepts. The fields start on the card's own defaults, and an option left at its
+default is not written — so the editor and a hand-written card come out the same. What
+a card's own ⚙ sheet holds (visible columns, their order, page size, table height) is a
+per-browser view setting rather than card configuration, and stays there.
+
 ## Tags editor
 
 `custom:bambu-costs-tags-editor` — editable, reorderable filament tag library.

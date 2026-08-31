@@ -48,6 +48,22 @@ class BambuCostsCalculator extends HTMLElement {
 
   getCardSize() { return 8; }
 
+  static getConfigElement() {
+    return document.createElement("bambu-costs-calculator-editor");
+  }
+
+  // Found by what the sensor carries rather than by its entity id, so adding
+  // the card from the picker lands on a working entity even where the sensor
+  // was renamed or a second entry is loaded.
+  static getStubConfig(hass) {
+    const states = (hass && hass.states) || {};
+    const hit = Object.keys(states).find(id => {
+      const a = states[id].attributes || {};
+      return id.startsWith("sensor.") && Array.isArray(a.data) && Array.isArray(a.color_names);
+    });
+    return { entity: hit || "sensor.bambu_costs_tag_library" };
+  }
+
   disconnectedCallback() { this._closeDrop(); }
 
   // ── data ─────────────────────────────────────────────────
@@ -584,3 +600,120 @@ if (!window.customCards.some(c => c.type === "bambu-costs-calculator")) window.c
   name: "Bambu Costs: Cost Calculator",
   description: "Manual print-cost estimate from the filament tag list, runtime, margin and VAT",
 });
+
+// ── visual editor ────────────────────────────────────────────
+// A schema-driven <ha-form>, so the card can be set up from the dashboard's
+// own card editor instead of by hand in YAML. Rate, margin and VAT are the
+// values the card opens with — they stay editable on the card itself, and a
+// change there is a one-off quote, not a change to the dashboard.
+const BCC_SCHEMA = [
+  {
+    name: "entity",
+    required: true,
+    selector: { entity: { filter: [{ integration: "bambu_costs", domain: "sensor" }] } },
+  },
+  { name: "title", selector: { text: {} } },
+  { name: "currency", selector: { text: {} } },
+  { name: "rate_per_minute", selector: { number: { min: 0, step: "any", mode: "box" } } },
+  {
+    name: "",
+    type: "grid",
+    schema: [
+      {
+        name: "margin_percent",
+        selector: { number: { min: 0, max: 100, step: "any", mode: "box", unit_of_measurement: "%" } },
+      },
+      {
+        name: "vat_percent",
+        selector: { number: { min: 0, max: 100, step: "any", mode: "box", unit_of_measurement: "%" } },
+      },
+    ],
+  },
+  { name: "remember", selector: { boolean: {} } },
+];
+
+const BCC_LABELS = {
+  entity: "Tag library sensor",
+  title: "Title",
+  currency: "Currency symbol",
+  rate_per_minute: "Machine rate per minute",
+  margin_percent: "Margin",
+  vat_percent: "VAT",
+  remember: "Remember the last quote",
+};
+
+const BCC_HELPERS = {
+  entity: "The filament tag library the row dropdowns are filled from.",
+  title: "Card heading.",
+  currency: "Shown beside every amount — € or $, whatever the prices are in.",
+  rate_per_minute: "Charged per minute of print time, before margin and VAT. "
+    + "It stays editable on the card.",
+  margin_percent: "The margin the card opens with.",
+  vat_percent: "The VAT rate the card opens with.",
+  remember: "Keep the last quote in this browser and bring it back on reload.",
+};
+
+class BambuCostsCalculatorEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = Object.assign({}, config);
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this._form) this._form.hass = hass;
+  }
+
+  // What the card falls back to when the option is absent. Shown in the form
+  // so the fields read as the card actually behaves rather than as blanks —
+  // and stripped again on the way out, so an untouched default never lands
+  // in the YAML.
+  _defaults() {
+    return {
+      entity: "sensor.bambu_costs_tag_library",
+      title: "Print cost calculator",
+      currency: "€",
+      rate_per_minute: 0.0008,
+      margin_percent: 30,
+      vat_percent: 21,
+      remember: true,
+    };
+  }
+
+  _emit(value) {
+    const defaults = this._defaults();
+    const out = this._config.type ? { type: this._config.type } : {};
+    for (const [k, v] of Object.entries(value || {})) {
+      if (k === "type") continue;
+      // A cleared field comes back as "" — leaving it out lets the card's own
+      // default apply again instead of writing a blank into the YAML.
+      if (v === "" || v === undefined || v === null) continue;
+      if (k !== "entity" && JSON.stringify(v) === JSON.stringify(defaults[k])) continue;
+      out[k] = v;
+    }
+    this._config = out;
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: out }, bubbles: true, composed: true,
+    }));
+  }
+
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = s => BCC_LABELS[s.name] || s.name;
+      this._form.computeHelper = s => BCC_HELPERS[s.name] || "";
+      this._form.addEventListener("value-changed", ev => {
+        ev.stopPropagation();
+        this._emit(ev.detail.value);
+      });
+      this.appendChild(this._form);
+    }
+    if (this._hass) this._form.hass = this._hass;
+    this._form.schema = BCC_SCHEMA;
+    this._form.data = Object.assign(this._defaults(), this._config);
+  }
+}
+
+if (!customElements.get("bambu-costs-calculator-editor")) {
+  customElements.define("bambu-costs-calculator-editor", BambuCostsCalculatorEditor);
+}

@@ -141,6 +141,22 @@ class BambuCostsJobsTable extends HTMLElement {
 
   getCardSize() { return 12; }
 
+  static getConfigElement() {
+    return document.createElement("bambu-costs-jobs-table-editor");
+  }
+
+  // Found by what the sensor carries rather than by its entity id, so adding
+  // the card from the picker lands on a working entity even where the sensor
+  // was renamed or a second entry is loaded.
+  static getStubConfig(hass) {
+    const states = (hass && hass.states) || {};
+    const hit = Object.keys(states).find(id => {
+      const a = states[id].attributes || {};
+      return id.startsWith("sensor.") && Array.isArray(a.data) && Array.isArray(a.type_names);
+    });
+    return { entity: hit || "sensor.bambu_costs_job_log" };
+  }
+
   // ── data ─────────────────────────────────────────────────
   _sensorData() {
     const st = this._hass && this._hass.states[this._cfg.entity];
@@ -1726,3 +1742,122 @@ if (!window.customCards.some(c => c.type === "bambu-costs-jobs-table")) window.c
   name: "Bambu Costs: Jobs Table",
   description: "Editable print job history with configurable columns",
 });
+
+// ── visual editor ────────────────────────────────────────────
+// A schema-driven <ha-form>, so the card can be set up from the dashboard's
+// own card editor instead of by hand in YAML. Only what the YAML decides is
+// here: which columns show, how they are ordered and how tall the table is
+// are per-browser view settings and stay in the card's own ⚙ sheet.
+const BCJT_SCHEMA = [
+  {
+    name: "entity",
+    required: true,
+    selector: { entity: { filter: [{ integration: "bambu_costs", domain: "sensor" }] } },
+  },
+  { name: "title", selector: { text: {} } },
+  {
+    name: "page_size",
+    selector: {
+      select: {
+        mode: "dropdown",
+        options: BCJT_PAGE_SIZES.map(n => ({ value: String(n), label: `${n} rows` })),
+      },
+    },
+  },
+  { name: "currency", selector: { text: {} } },
+  { name: "save_service", selector: { text: {} } },
+  { name: "image_base", selector: { text: {} } },
+];
+
+const BCJT_LABELS = {
+  entity: "Job log sensor",
+  title: "Title",
+  page_size: "Rows per page",
+  currency: "Currency symbol",
+  save_service: "Save service",
+  image_base: "Legacy cover folder",
+};
+
+const BCJT_HELPERS = {
+  entity: "The Bambu Costs sensor carrying the print history.",
+  title: "Card heading.",
+  page_size: "Where the pager starts. Each browser can change it from the card's ⚙ sheet.",
+  currency: "Leave empty to follow the currency the integration is configured with.",
+  save_service: "The service the Save button calls. Only worth changing if you "
+    + "have put something else in front of the writer.",
+  image_base: "Where covers logged before the integration served them itself are "
+    + "looked up. Rows written since carry their own URL.",
+};
+
+// The select above hands back strings; the card reads this one as a number.
+const BCJT_NUMBERS = new Set(["page_size"]);
+
+class BambuCostsJobsTableEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = Object.assign({}, config);
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this._form) this._form.hass = hass;
+  }
+
+  // What the card falls back to when the option is absent. Shown in the form
+  // so the fields read as the card actually behaves rather than as blanks —
+  // and stripped again on the way out, so an untouched default never lands
+  // in the YAML. `currency` is empty on purpose: unset means "ask the
+  // integration", which is not a value the form can show.
+  _defaults() {
+    return {
+      entity: "sensor.bambu_costs_job_log",
+      title: "Print jobs",
+      page_size: 20,
+      currency: "",
+      save_service: "bambu_costs.write_jobs",
+      image_base: "/bambu-costs-covers/",
+    };
+  }
+
+  _emit(value) {
+    const defaults = this._defaults();
+    const out = this._config.type ? { type: this._config.type } : {};
+    for (const [k, raw] of Object.entries(value || {})) {
+      if (k === "type") continue;
+      // A cleared field comes back as "" — leaving it out lets the card's own
+      // default apply again instead of writing a blank into the YAML.
+      if (raw === "" || raw === undefined || raw === null) continue;
+      const v = BCJT_NUMBERS.has(k) ? Number(raw) : raw;
+      if (BCJT_NUMBERS.has(k) && !Number.isFinite(v)) continue;
+      if (k !== "entity" && JSON.stringify(v) === JSON.stringify(defaults[k])) continue;
+      out[k] = v;
+    }
+    this._config = out;
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: out }, bubbles: true, composed: true,
+    }));
+  }
+
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = s => BCJT_LABELS[s.name] || s.name;
+      this._form.computeHelper = s => BCJT_HELPERS[s.name] || "";
+      this._form.addEventListener("value-changed", ev => {
+        ev.stopPropagation();
+        this._emit(ev.detail.value);
+      });
+      this.appendChild(this._form);
+    }
+    if (this._hass) this._form.hass = this._hass;
+    this._form.schema = BCJT_SCHEMA;
+    // The select works in strings; the stored value is a number.
+    const data = Object.assign(this._defaults(), this._config);
+    data.page_size = String(data.page_size);
+    this._form.data = data;
+  }
+}
+
+if (!customElements.get("bambu-costs-jobs-table-editor")) {
+  customElements.define("bambu-costs-jobs-table-editor", BambuCostsJobsTableEditor);
+}
