@@ -129,6 +129,18 @@ costing keeps using measured print weights. And a clone-tagged spool shares its 
 identity with its source, so its remaining figure describes the cloud's merged
 bookkeeping, not the physical spool.
 
+### The tray's own figure, on load
+
+The tray itself also reports a remaining **percentage** the moment it reads a spool.
+With **no inventory sensor configured** that is the only remaining figure there is,
+so loading a spool always writes it — as grams of an assumed **1 kg spool** — to
+every row of the pair. With an inventory configured, the on-load figure is opt-in
+via the **Always take remaining on load** switch (only offered then): the inventory
+moves on the cloud's own bookkeeping events, while a fresh load is information right
+now, so the switch writes the tray's estimate immediately — and the next inventory
+reading overwrites it. The cloud stays the source of truth either way. A tray that
+does not know (a spool without usable tag data reports −1) writes nothing.
+
 ## When a spool runs out mid-print
 
 A spool that empties part-way through a job gets replaced, and the replacement is

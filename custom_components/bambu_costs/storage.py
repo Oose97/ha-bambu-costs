@@ -293,6 +293,26 @@ class BambuCostsStore:
             self.write_tags(tags)
         return changed
 
+    def set_remaining(self, serial: str, grams: float) -> int:
+        """Update remaining grams on every row carrying this serial.
+
+        The tray only names the tag it read, but what remains describes the
+        spool — so a pair's two rows move together, matched the same way a
+        price push matches. Only actual differences write the file.
+        """
+        tags = self.read_tags()
+        wanted = serial.strip().lower()
+        remaining = f"{as_float(grams):.0f}"
+        changed = 0
+        for tag in tags:
+            if wanted in self._serials(tag):
+                if str(tag.get("remaining_g", "")).strip() != remaining:
+                    tag["remaining_g"] = remaining
+                    changed += 1
+        if changed:
+            self.write_tags(tags)
+        return changed
+
     def add_tag_if_new(self, tag: dict[str, Any]) -> bool:
         """Append a scanned tag when its serial is not already known.
 

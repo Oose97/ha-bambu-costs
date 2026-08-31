@@ -140,6 +140,18 @@ Go to [Data on disk](docs/data.md) for more details.
   headerless files tolerated, `.bak` written before any whole-file save.
 - Bulky attributes are excluded from the recorder automatically.
 
+### Local by design
+
+- The integration itself needs **no internet access**: it works on local files and
+  Home Assistant state, and never phones anywhere.
+- The one exception is the optional **online colour-name lookup** (a setup option) —
+  one HTTPS request when a scanned colour is not in the bundled palette. Switch it
+  off and nothing leaves the machine.
+- The sensors it *reads* may be another story: the printer integration supplying
+  them can use its own cloud connection — the filament inventory in particular is
+  the cloud's bookkeeping. That connection belongs to that integration, not this
+  one.
+
 ### Releasing
 
 Go to [Releasing](docs/releasing.md) for more details.

@@ -468,6 +468,14 @@ def _async_track_trays(
                 _LOGGER.debug(
                     "Learned spool id for the tag in %s", slot.label
                 )
+            # After the learn, so a pairing it just made gets both rows.
+            grams = await coordinator.async_apply_load_remaining(slot)
+            if grams is not None:
+                _LOGGER.debug(
+                    "Remaining for the spool in %s set from the tray: %.0f g",
+                    slot.label,
+                    grams,
+                )
 
         entry.async_create_task(hass, _add())
 
