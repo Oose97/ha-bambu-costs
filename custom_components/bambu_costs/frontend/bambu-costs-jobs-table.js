@@ -77,8 +77,6 @@ class BambuCostsJobsTable extends HTMLElement {
       title: "Print jobs",
       page_size: 20,
       save_service: "bambu_costs.write_jobs",
-      // Only used when a row predates cover_url; the integration serves covers itself.
-      image_base: "/bambu-costs-covers/",
       currency: null,  // null → take it from the integration
     }, cfg);
     this._sort = { key: "ts", dir: -1 };   // newest first
@@ -1287,9 +1285,11 @@ class BambuCostsJobsTable extends HTMLElement {
       // resize between pages; centred with its own padding so the slack sits
       // on BOTH sides of the button instead of all after it.
       const w = `style="min-width:${col.min || 11}ch"`;
+      // The integration serves every cover it holds and publishes the URL on
+      // the row itself, so a filename without one has no image behind it.
       const f = r.cover;
-      if (!f || f === "—") return `<td class="nw cvr" ${w}><span class="muted">—</span></td>`;
-      const src = r.cover_url || (this._cfg.image_base + f);
+      const src = r.cover_url;
+      if (!f || f === "—" || !src) return `<td class="nw cvr" ${w}><span class="muted">—</span></td>`;
       return `<td class="nw cvr" ${w}><button class="cbtn" data-src="${this._esc(src)}"
         data-cap="${this._esc(r.job || f)}" title="${this._esc(f)}">🖼 View</button></td>`;
     }
@@ -1766,7 +1766,6 @@ const BCJT_SCHEMA = [
   },
   { name: "currency", selector: { text: {} } },
   { name: "save_service", selector: { text: {} } },
-  { name: "image_base", selector: { text: {} } },
 ];
 
 const BCJT_LABELS = {
@@ -1775,7 +1774,6 @@ const BCJT_LABELS = {
   page_size: "Rows per page",
   currency: "Currency symbol",
   save_service: "Save service",
-  image_base: "Legacy cover folder",
 };
 
 const BCJT_HELPERS = {
@@ -1785,8 +1783,6 @@ const BCJT_HELPERS = {
   currency: "Leave empty to follow the currency the integration is configured with.",
   save_service: "The service the Save button calls. Only worth changing if you "
     + "have put something else in front of the writer.",
-  image_base: "Where covers logged before the integration served them itself are "
-    + "looked up. Rows written since carry their own URL.",
 };
 
 // The select above hands back strings; the card reads this one as a number.
@@ -1815,7 +1811,6 @@ class BambuCostsJobsTableEditor extends HTMLElement {
       page_size: 20,
       currency: "",
       save_service: "bambu_costs.write_jobs",
-      image_base: "/bambu-costs-covers/",
     };
   }
 
