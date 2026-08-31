@@ -61,8 +61,28 @@ class BambuCostsTagsEditor extends HTMLElement {
     if (Array.isArray(names)) this._colorNames = names;
     if (!this._built) { this._load(); this._render(); return; }
     if (this._busy) return;
+
+    // The chips ride the sensor's live attributes — which slot holds which
+    // tag, and which slots the running print feeds from — not the tag data.
+    // Track them separately, or a print starting would never light a dot.
+    const live = JSON.stringify([
+      (st && st.attributes && st.attributes.loaded) || {},
+      (st && st.attributes && st.attributes.printing) || [],
+    ]);
+    // A repaint renders the in-memory rows, so unsaved edits survive it —
+    // but it would steal the caret from a cell mid-keystroke, so a focused
+    // card defers instead. The signature is only committed when a paint
+    // happens, so a deferred change is retried on the next update rather
+    // than lost.
+    const chipRepaint = () => {
+      if (live === this._liveSig) return;
+      if (this.contains(document.activeElement)) return;
+      this._liveSig = live;
+      this._paint();
+    };
+
     const sig = JSON.stringify(this._sensorData());
-    if (sig === this._baseSig) return;
+    if (sig === this._baseSig) { chipRepaint(); return; }
 
     if (this._justSaved) {
       // Our own write coming back from the sensor, not an external change:
@@ -70,11 +90,13 @@ class BambuCostsTagsEditor extends HTMLElement {
       // data, so there is nothing to revert to or flash through.
       this._justSaved = false;
       this._baseSig = sig;
-      if (!this._dirty) { this._load(); this._paint(); }
+      if (!this._dirty) { this._liveSig = live; this._load(); this._paint(); }
+      else chipRepaint();
       return;
     }
 
-    if (this._dirty) return;
+    if (this._dirty) { chipRepaint(); return; }
+    this._liveSig = live;
     this._load();
     // Repaint rather than rebuild: a full render would wipe the filter box
     // and any status banner just because a tag was scanned in the background.

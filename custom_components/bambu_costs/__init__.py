@@ -55,6 +55,7 @@ from .const import (
     URL_COVERS,
 )
 from .coordinator import BambuCostsCoordinator
+from .storage import as_float
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -379,6 +380,11 @@ def _async_track_print_status(
         if updated:
             _LOGGER.info("Slot prices synced from tags: %s", updated)
 
+        # The tag library publishes which slots the running print draws
+        # from — push that out now rather than on the next timed refresh,
+        # so the card's live dots track the print, not the poll.
+        coordinator.async_update_listeners()
+
     entry.async_on_unload(
         async_track_state_change_event(hass, [status_entity], _status_changed)
     )
@@ -434,11 +440,38 @@ def _async_track_trays(
         # every one of those would hammer the CSV for no reason.
         serial = str(new_state.attributes.get("tag_uid") or "").strip()
         before = str((old_state.attributes.get("tag_uid") if old_state else "") or "").strip()
-        if not serial or serial == before or serial.lower() in EMPTY_TAG_UIDS:
+        if not serial or serial.lower() in EMPTY_TAG_UIDS:
             return
 
         slot = by_entity.get(event.data["entity_id"])
         if slot is None:
+            return
+
+        if serial == before:
+            # Same tag as before — not a scan. The one thing still worth
+            # reacting to is the remaining % arriving late: the AMS reads the
+            # tag first and works out the fill level seconds afterwards, so
+            # the load event fires with remain still -1. Catch the moment it
+            # becomes real; steady-state remain updates never land here,
+            # because their previous value is already valid.
+            now_r = as_float(new_state.attributes.get("remain"), -1.0)
+            was_r = as_float(
+                (old_state.attributes.get("remain") if old_state else None), -1.0
+            )
+            if not 0.0 <= now_r <= 100.0 or 0.0 <= was_r <= 100.0:
+                return
+
+            async def _late() -> None:
+                grams = await coordinator.async_apply_load_remaining(slot)
+                if grams is not None:
+                    _LOGGER.debug(
+                        "Remaining for the spool in %s set from the tray"
+                        " (late read): %.0f g",
+                        slot.label,
+                        grams,
+                    )
+
+            entry.async_create_task(hass, _late())
             return
 
         async def _add() -> None:
