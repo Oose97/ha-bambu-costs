@@ -61,8 +61,28 @@ class BambuCostsTagsEditor extends HTMLElement {
     if (Array.isArray(names)) this._colorNames = names;
     if (!this._built) { this._load(); this._render(); return; }
     if (this._busy) return;
+
+    // The chips ride the sensor's live attributes — which slot holds which
+    // tag, and which slots the running print feeds from — not the tag data.
+    // Track them separately, or a print starting would never light a dot.
+    const live = JSON.stringify([
+      (st && st.attributes && st.attributes.loaded) || {},
+      (st && st.attributes && st.attributes.printing) || [],
+    ]);
+    // A repaint renders the in-memory rows, so unsaved edits survive it —
+    // but it would steal the caret from a cell mid-keystroke, so a focused
+    // card defers instead. The signature is only committed when a paint
+    // happens, so a deferred change is retried on the next update rather
+    // than lost.
+    const chipRepaint = () => {
+      if (live === this._liveSig) return;
+      if (this.contains(document.activeElement)) return;
+      this._liveSig = live;
+      this._paint();
+    };
+
     const sig = JSON.stringify(this._sensorData());
-    if (sig === this._baseSig) return;
+    if (sig === this._baseSig) { chipRepaint(); return; }
 
     if (this._justSaved) {
       // Our own write coming back from the sensor, not an external change:
@@ -70,11 +90,13 @@ class BambuCostsTagsEditor extends HTMLElement {
       // data, so there is nothing to revert to or flash through.
       this._justSaved = false;
       this._baseSig = sig;
-      if (!this._dirty) { this._load(); this._paint(); }
+      if (!this._dirty) { this._liveSig = live; this._load(); this._paint(); }
+      else chipRepaint();
       return;
     }
 
-    if (this._dirty) return;
+    if (this._dirty) { chipRepaint(); return; }
+    this._liveSig = live;
     this._load();
     // Repaint rather than rebuild: a full render would wipe the filter box
     // and any status banner just because a tag was scanned in the background.
@@ -82,6 +104,22 @@ class BambuCostsTagsEditor extends HTMLElement {
   }
 
   getCardSize() { return 12; }
+
+  static getConfigElement() {
+    return document.createElement("bambu-costs-tags-card-editor");
+  }
+
+  // Found by what the sensor carries rather than by its entity id, so adding
+  // the card from the picker lands on a working entity even where the sensor
+  // was renamed or a second entry is loaded.
+  static getStubConfig(hass) {
+    const states = (hass && hass.states) || {};
+    const hit = Object.keys(states).find(id => {
+      const a = states[id].attributes || {};
+      return id.startsWith("sensor.") && Array.isArray(a.data) && Array.isArray(a.color_names);
+    });
+    return { entity: hit || "sensor.bambu_costs_tag_library" };
+  }
 
   // ── data ─────────────────────────────────────────────────
   _sensorData() {
@@ -158,6 +196,24 @@ class BambuCostsTagsEditor extends HTMLElement {
     const units = [...new Set(Object.values(loaded).map(unitOf))].sort();
     const i = units.indexOf(unitOf(label));
     return palette[(i >= 0 ? i : 0) % palette.length];
+  }
+
+  // The slots the running print is drawing from right now — their chips
+  // carry a live dot on top of the slot colour. Empty while idle.
+  _printingSlots() {
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    return (st && st.attributes && st.attributes.printing) || [];
+  }
+
+  // One chip: the slot label on its AMS colour, plus the pulsing dot when
+  // the current print is feeding from that slot. `lead` opens the tooltip
+  // ("This spool…" on the spool row, "This tag…" on a tag row).
+  _chipHtml(slot, lead) {
+    const busy = this._printingSlots().includes(slot);
+    return `<span class="ldchip${busy ? " busy" : ""}" style="background:${this._amsColor(slot)}"
+       title="${lead} — slot ${this._esc(slot)}${
+         busy ? ", printing from it right now" : ""}">${this._esc(slot)}${
+       busy ? '<span class="live"></span>' : ""}</span>`;
   }
 
   // The slot holding THIS tag — own serial only, so an expanded pair chips
@@ -509,6 +565,13 @@ class BambuCostsTagsEditor extends HTMLElement {
           .ldchip { display:inline-block; color:#fff; border-radius:9px;
             font-size:9.5px; font-weight:600; letter-spacing:.3px; padding:2px 7px;
             margin-left:4px; vertical-align:middle; white-space:nowrap; }
+          /* The current print is feeding from this slot: a live dot on the
+             chip, pulsing so “in use now” reads apart from merely loaded. */
+          .ldchip .live { display:inline-block; width:5px; height:5px;
+            border-radius:50%; background:#fff; margin-left:4px;
+            vertical-align:1px; animation:bteLive 1.4s ease-in-out infinite; }
+          @keyframes bteLive { 0%,100% { opacity:1; } 50% { opacity:.2; } }
+          td.flcell:has(.ldchip.busy) input.cell { width:calc(100% - 56px); }
           .exp { background:none; border:1px solid var(--divider-color); border-radius:6px;
             color:var(--secondary-text-color); font-size:10px; line-height:1;
             width:20px; height:20px; padding:0; cursor:pointer; margin-left:2px;
@@ -692,8 +755,7 @@ class BambuCostsTagsEditor extends HTMLElement {
               ? `<input class="cell ser" type="text" data-k="${r._k}" data-f="serial_2"
                   placeholder="other side — typing it pairs the rows" value="${this._esc(r.serial_2 || "")}">`
               : ""}${
-            slot === null ? "" : `<span class="ldchip" style="background:${this._amsColor(slot)}"
-              title="This tag is the one in the AMS — slot ${this._esc(slot)}">${this._esc(slot)}</span>`}
+            slot === null ? "" : this._chipHtml(slot, "This tag is the one in the AMS")}
           </td>
           <td></td>
           <td><button class="del" data-scope="tag" data-k="${r._k}" title="Delete this tag">✕</button></td>
@@ -918,7 +980,8 @@ class BambuCostsTagsEditor extends HTMLElement {
           "Each spool's tag serials as child rows; ▸ on the row overrides")
         + toggleRow("showloaded", this._showLoaded,
           "Show loaded slots",
-          "A chip beside the filament name, coloured per AMS")
+          "A chip beside the filament name, coloured per AMS; "
+          + "a pulsing dot marks the slots the running print uses")
         + `<div class="bte-target">
             <span class="bte-target-label">
               <span class="bte-target-name">Table height</span>
@@ -1083,9 +1146,7 @@ class BambuCostsTagsEditor extends HTMLElement {
         const slot = this._showLoaded && !expanded ? this._slotOf(r) : null;
         return `<td class="flcell"><input class="cell" type="text" data-k="${k}" data-f="filament"
                 value="${this._esc(r.filament)}">${slot === null ? "" :
-          `<span class="ldchip" style="background:${this._amsColor(slot)}"
-             title="This spool is in the AMS now — slot ${this._esc(slot)}">${
-             this._esc(slot)}</span>`}</td>`;
+          this._chipHtml(slot, "This spool is in the AMS now")}</td>`;
       }
       case "hex":
         return `<td><input class="cell hx" type="text" data-k="${k}" data-f="hex"
@@ -1094,12 +1155,6 @@ class BambuCostsTagsEditor extends HTMLElement {
       case "color_name":
         return `<td><input class="cell" type="text" data-k="${k}" data-f="color_name"
                 value="${this._esc(r.color_name)}"></td>`;
-      case "serial":
-        return `<td><input class="cell ser" type="text" data-k="${k}" data-f="serial"
-                value="${this._esc(r.serial)}"></td>`;
-      case "serial_2":
-        return `<td><input class="cell ser" type="text" data-k="${k}" data-f="serial_2"
-                placeholder="other side" value="${this._esc(r.serial_2 || "")}"></td>`;
       case "tray_uuid":
         // The printer cloud's per-spool id, learned when the spool is
         // loaded. Shared by a pair like every descriptive field: one spool,
@@ -1495,3 +1550,104 @@ if (!window.customCards.some(c => c.type === "bambu-costs-tags-editor")) window.
   name: "Bambu Costs: Tags Editor",
   description: "Editable, reorderable filament tag library",
 });
+// ── visual editor ────────────────────────────────────────────
+// A schema-driven <ha-form>, so the card can be set up from the dashboard's
+// own card editor instead of by hand in YAML. Only what the YAML decides is
+// here: the visible columns, their order and the table height are per-browser
+// view settings and stay in the card's own ⚙ sheet.
+const BTE_SCHEMA = [
+  {
+    name: "entity",
+    required: true,
+    selector: { entity: { filter: [{ integration: "bambu_costs", domain: "sensor" }] } },
+  },
+  { name: "title", selector: { text: {} } },
+  { name: "unit", selector: { text: {} } },
+  {
+    name: "default_price_entity",
+    selector: { entity: { filter: [{ integration: "bambu_costs", domain: "number" }] } },
+  },
+  { name: "save_service", selector: { text: {} } },
+];
+
+const BTE_LABELS = {
+  entity: "Tag library sensor",
+  title: "Title",
+  unit: "Price unit",
+  default_price_entity: "Default price entity",
+  save_service: "Save service",
+};
+
+const BTE_HELPERS = {
+  entity: "The Bambu Costs sensor carrying the filament tag library.",
+  title: "Card heading.",
+  unit: "Shown under the PRICE header — EUR/kg, USD/kg. Leave empty to follow "
+    + "the currency the integration is configured with.",
+  default_price_entity: "The number entity a row with no price of its own falls back to.",
+  save_service: "The service the Save button calls. Only worth changing if you "
+    + "have put something else in front of the writer.",
+};
+
+class BambuCostsTagsCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = Object.assign({}, config);
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this._form) this._form.hass = hass;
+  }
+
+  // What the card falls back to when the option is absent. Shown in the form
+  // so the fields read as the card actually behaves rather than as blanks —
+  // and stripped again on the way out, so an untouched default never lands
+  // in the YAML. `unit` is empty on purpose: unset means "ask the
+  // integration", which is not a value the form can show.
+  _defaults() {
+    return {
+      entity: "sensor.bambu_costs_tag_library",
+      title: "Filament tags",
+      unit: "",
+      default_price_entity: "number.bambu_costs_default_filament_price",
+      save_service: "bambu_costs.write_tags",
+    };
+  }
+
+  _emit(value) {
+    const defaults = this._defaults();
+    const out = this._config.type ? { type: this._config.type } : {};
+    for (const [k, v] of Object.entries(value || {})) {
+      if (k === "type") continue;
+      // A cleared field comes back as "" — leaving it out lets the card's own
+      // default apply again instead of writing a blank into the YAML.
+      if (v === "" || v === undefined || v === null) continue;
+      if (k !== "entity" && JSON.stringify(v) === JSON.stringify(defaults[k])) continue;
+      out[k] = v;
+    }
+    this._config = out;
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: out }, bubbles: true, composed: true,
+    }));
+  }
+
+  _render() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = s => BTE_LABELS[s.name] || s.name;
+      this._form.computeHelper = s => BTE_HELPERS[s.name] || "";
+      this._form.addEventListener("value-changed", ev => {
+        ev.stopPropagation();
+        this._emit(ev.detail.value);
+      });
+      this.appendChild(this._form);
+    }
+    if (this._hass) this._form.hass = this._hass;
+    this._form.schema = BTE_SCHEMA;
+    this._form.data = Object.assign(this._defaults(), this._config);
+  }
+}
+
+if (!customElements.get("bambu-costs-tags-card-editor")) {
+  customElements.define("bambu-costs-tags-card-editor", BambuCostsTagsCardEditor);
+}

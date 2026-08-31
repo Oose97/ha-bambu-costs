@@ -37,6 +37,7 @@ def make(power_sensors=True, price=0.23):
     c.slot_memory = {}
     c.overlay = {}
     c.maintenance = False
+    c.load_remaining = False
     # the pieces that would need hass, pinned per test instead
     c.hass = SimpleNamespace(async_add_executor_job=lambda fn, *a: fn(*a))
     c.async_update_listeners = lambda: None
@@ -723,6 +724,66 @@ def test_loaded_spools_maps_serials_to_slot_labels():
     assert c.loaded_spools() == {}
     c._tray = {"available": False}
     assert c.loaded_spools() == {}
+
+
+def test_printing_slots_lists_fed_trays_only_while_a_print_runs():
+    c = _one_tagged_slot(make())
+    # Idle: the leftover per-slot weights claim nothing.
+    assert c.printing_slots() == []
+
+    c.mark_print_start(new_job=True)
+    assert c.printing_slots() == ["A1"]
+
+    # A loaded slot the job does not draw from stays quiet.
+    c._attrs = lambda key: {"AMS 1 Tray 1": 0.0}
+    assert c.printing_slots() == []
+
+    c._attrs = lambda key: {"AMS 1 Tray 1": 40.0}
+    c.mark_print_end()
+    assert c.printing_slots() == []
+
+
+def test_load_remaining_takes_tray_percent_as_grams_of_a_kilo():
+    import asyncio
+
+    c = _one_tagged_slot(make())
+    c._tray["remain"] = 71
+    calls = []
+    c.store = SimpleNamespace(
+        set_remaining=lambda serial, grams: calls.append((serial, grams)) or 1
+    )
+
+    async def _refresh():
+        return None
+
+    c.async_request_refresh = _refresh
+
+    # The factory's executor stub is synchronous; this path awaits it.
+    async def _job(fn, *a):
+        return fn(*a)
+
+    c.hass.async_add_executor_job = _job
+
+    def apply():
+        # A fresh lock per run: asyncio primitives bind to their first loop.
+        c._tag_write_lock = asyncio.Lock()
+        return asyncio.run(c.async_apply_load_remaining(c.slots[0]))
+
+    # No inventory sensor: the tray's % is the only figure, taken always.
+    assert apply() == 710.0
+    assert calls == [("AAA", 710.0)]
+
+    # With an inventory configured it is opt-in via the switch.
+    c.entry.options = {"filament_inventory": "sensor.inv"}
+    assert apply() is None
+    c.load_remaining = True
+    assert apply() == 710.0
+
+    # A tray that does not know (-1, or no attribute) stays silent.
+    c._tray["remain"] = -1
+    assert apply() is None
+    del c._tray["remain"]
+    assert apply() is None
 
 
 def test_job_row_names_each_material_once():

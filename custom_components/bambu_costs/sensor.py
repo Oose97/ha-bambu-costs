@@ -390,6 +390,9 @@ class TagLibrarySensor(BambuCostsSensor):
             # Which tag sits in which slot right now, for the card's loaded
             # chips: serial -> slot label.
             "loaded": self.coordinator.loaded_spools(),
+            # The slots the running print draws from — the chips add a live
+            # dot for these. Empty while the printer is idle.
+            "printing": self.coordinator.printing_slots(),
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
             "currency": self.coordinator.currency,
             "price_targets": self._price_targets(),

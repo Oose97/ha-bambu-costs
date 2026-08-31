@@ -130,6 +130,13 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # and duration, no filament figures, no picture. Owned by the
         # "Maintenance mode" switch, which restores it.
         self.maintenance: bool = False
+        # With a cloud inventory configured, whether loading a spool still
+        # takes the tray's own remaining % (as grams of a 1 kg spool) as a
+        # stopgap until the next inventory reading. Owned by the "Always
+        # take remaining on load" switch, which restores it. Without an
+        # inventory sensor the on-load figure is taken unconditionally —
+        # it is the only remaining figure there is.
+        self.load_remaining: bool = False
         self._tag_write_lock = asyncio.Lock()
         # Jobs have the same read-modify-write hazard: a card save landing
         # while a finished print is being appended must queue, not interleave.
@@ -315,6 +322,22 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 out[serial] = slot.label
         return out
 
+    def printing_slots(self) -> list[str]:
+        """Slot labels the running print is drawing from.
+
+        Read straight off the per-slot planned weights — the same figures the
+        breakdown prices — and only while a print is actually running, so an
+        idle printer's leftover weights claim nothing.
+        """
+        if not self.print_running:
+            return []
+        attrs = self._attrs(CONF_PRINT_WEIGHT)
+        return [
+            slot.label
+            for slot in self.slots
+            if as_float(attrs.get(slot.attribute)) > 0
+        ]
+
     def tray_info(self, slot: SlotDef) -> dict[str, Any]:
         """Colour, material and RFID serial for a slot, if a tray is mapped."""
         if not slot.entity:
@@ -341,6 +364,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # The cloud's per-spool id — the bridge between the tag the AMS
             # read and the printer's filament inventory.
             "tray_uuid": attrs.get("tray_uuid"),
+            # The tray's own estimate of how full the spool is, in percent.
+            # -1 (or absence) means the tray does not know.
+            "remain": attrs.get("remain"),
         }
 
     # ── tag scanning ─────────────────────────────────────────────────────────
@@ -483,6 +509,39 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if changed:
             await self.async_request_refresh()
         return changed
+
+    async def async_apply_load_remaining(self, slot: SlotDef) -> float | None:
+        """Take the tray's own remaining % as the spool's grams, on load.
+
+        The AMS reports how full the spool it just read looks. With no cloud
+        inventory configured this is the only remaining figure there is, so
+        it is always taken; with one, it is a stopgap the user opts into via
+        the "Always take remaining on load" switch — worth having because the
+        inventory only moves on cloud bookkeeping events, while a fresh load
+        is information right now. Either way the estimate assumes a 1 kg
+        spool, and the next inventory reading overwrites it: the cloud stays
+        the source of truth.
+
+        Returns the grams written, or None when nothing was.
+        """
+        if self.entity_of(CONF_FILAMENT_INVENTORY) and not self.load_remaining:
+            return None
+        tray = self.tray_info(slot)
+        serial = str(tray.get("tag_uid") or "").strip()
+        if not serial or serial.lower() in EMPTY_TAG_UIDS:
+            return None
+        remain = as_float(tray.get("remain"), -1.0)
+        if not 0.0 <= remain <= 100.0:
+            return None
+        grams = remain * 10.0  # percent of the assumed 1 kg spool
+        async with self._tag_write_lock:
+            changed = await self.hass.async_add_executor_job(
+                self.store.set_remaining, serial, grams
+            )
+        if not changed:
+            return None
+        await self.async_request_refresh()
+        return grams
 
     async def _async_resolved_color_name(
         self, color_code: str, material: str | None = None, product: str | None = None

@@ -54,6 +54,13 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
   reports finish — the part still on the plate — instead of the slicer's render. If the
   frame grab fails, the render is captured instead, so the job still gets a picture.
   A switch rather than an option because it is worth flipping per job.
+- `switch.<name>_always_take_remaining_on_load` — created when a filament inventory
+  sensor is configured. While on, loading a spool writes the tray's own remaining %
+  (as grams of an assumed 1 kg spool) to the library right away, and the next
+  inventory reading overwrites it — the cloud stays the source of truth. Without an
+  inventory sensor there is no switch: the on-load figure is taken unconditionally,
+  being the only one there is. See
+  [the tray's own figure, on load](filament.md#the-trays-own-figure-on-load).
 
 ## Services
 

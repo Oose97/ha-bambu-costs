@@ -50,6 +50,14 @@ def test_either_serial_prices_the_spool(store):
     assert store.read_tags()[0]["cost_per_kg"] == 16.0
 
 
+def test_remaining_reaches_both_sides_of_a_pair(store):
+    store.write_tags([tag("AAA", serial_2="BBB"), tag("BBB", serial_2="AAA")])
+    assert store.set_remaining("bbb", 710.0) == 2
+    assert [t["remaining_g"] for t in store.read_tags()] == ["710", "710"]
+    # The same value again changes nothing — and writes nothing.
+    assert store.set_remaining("AAA", 710.0) == 0
+
+
 def test_scanning_the_far_side_of_a_pair_is_not_new(store):
     store.write_tags([tag("AAA", serial_2="BBB")])
     assert store.add_tag_if_new(tag("BBB")) is False

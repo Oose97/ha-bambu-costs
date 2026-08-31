@@ -131,6 +131,8 @@ Go to [Cards](docs/cards.md) for more details.
   what the finished job logs. Survives restarts; reset takes it all back.
 - **Cost calculator** — quotes from your real spool prices plus runtime, margin and
   VAT. All four register themselves as Lovelace resources.
+- **Visual editor** — every card is set up from the dashboard's own card editor: entity
+  picker, rate, margin, VAT, page size and currency as form fields, no YAML to write.
 
 ### Data on disk
 
@@ -139,6 +141,18 @@ Go to [Data on disk](docs/data.md) for more details.
 - Two CSVs and the cover images per entry, under `config/bambu_costs/`; hand-editable,
   headerless files tolerated, `.bak` written before any whole-file save.
 - Bulky attributes are excluded from the recorder automatically.
+
+### Local by design
+
+- The integration itself needs **no internet access**: it works on local files and
+  Home Assistant state, and never phones anywhere.
+- The one exception is the optional **online colour-name lookup** (a setup option) —
+  one HTTPS request when a scanned colour is not in the bundled palette. Switch it
+  off and nothing leaves the machine.
+- The sensors it *reads* may be another story: the printer integration supplying
+  them can use its own cloud connection — the filament inventory in particular is
+  the cloud's bookkeeping. That connection belongs to that integration, not this
+  one.
 
 ### Releasing
 
