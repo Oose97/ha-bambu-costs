@@ -56,6 +56,10 @@ JOB_FIELDS = [
     # files from before the column read unchanged.
     "layers_done",
     "status",
+    # The printer's finish estimate as it stood when the job began, in the
+    # timestamp column's own format — so a row can say how far the actual
+    # finish drifted from the plan. Blank for jobs logged before it existed.
+    "finish_estimate",
 ]
 
 
@@ -521,6 +525,7 @@ class BambuCostsStore:
                     "types": (raw.get("filament_type") or "").strip(),
                     "layers_done": as_float(raw.get("layers_done")),
                     "status": job_status(raw.get("status")),
+                    "finish_est": (raw.get("finish_estimate") or "").strip(),
                 }
             )
         return rows[-limit:] if limit else rows
@@ -641,6 +646,7 @@ class BambuCostsStore:
             "filament_type": str(row.get("types") or "").strip(),
             "layers_done": as_float(row.get("layers_done")),
             "status": job_status(row.get("status")),
+            "finish_estimate": str(row.get("finish_est") or "").strip(),
         }
 
     # ── covers ───────────────────────────────────────────────────────────────
