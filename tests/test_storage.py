@@ -360,6 +360,22 @@ def test_job_round_trip_carries_the_filament_type(store):
     assert rows[0]["trays"][0]["type"] == "PLA Basic, PETG HF"
 
 
+def test_finish_estimate_round_trips_and_edits_carry_it(store):
+    row = job_row("2026-08-07 10:12:00")
+    row["finish_estimate"] = "2026-08-07 10:00:00"
+    store.append_job(row)
+    assert store.read_jobs()[0]["finish_est"] == "2026-08-07 10:00:00"
+
+    # A card edit names it in the sensor's shape and it lands back in the file.
+    store.update_jobs([edit_for(row, finish_est="2026-08-07 09:58:00")])
+    assert store.read_jobs()[0]["finish_est"] == "2026-08-07 09:58:00"
+
+    # Rows from before the column read as blank, not as an error.
+    plain = job_row("2026-08-07 11:00:00")
+    store.append_job(plain)
+    assert store.read_jobs()[1]["finish_est"] == ""
+
+
 def test_appending_to_an_old_header_upgrades_the_file(store, tmp_path):
     # A file from before filament_type existed: narrower header, one row.
     old_fields = JOB_FIELDS[:-1]

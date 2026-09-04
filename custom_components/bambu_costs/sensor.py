@@ -46,9 +46,16 @@ class BreakdownSnapshot(ExtraStoredData):
 
     snapshot: dict[str, Any] | None
     slots: dict[str, Any] | None = None
+    # The printer's finish estimate pinned at the job's start, so the row
+    # logged after a restart still knows what the plan was.
+    finish_estimate: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {"snapshot": self.snapshot, "slots": self.slots}
+        return {
+            "snapshot": self.snapshot,
+            "slots": self.slots,
+            "finish_estimate": self.finish_estimate,
+        }
 
 
 async def async_setup_entry(
@@ -107,7 +114,9 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
     def extra_restore_state_data(self) -> BreakdownSnapshot:
         """Persist the last real per-slot split across restarts."""
         return BreakdownSnapshot(
-            self.coordinator.last_good, self.coordinator.slot_memory
+            self.coordinator.last_good,
+            self.coordinator.slot_memory,
+            self.coordinator.finish_estimate,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -124,6 +133,9 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
             slots = data.get("slots")
             if isinstance(slots, dict):
                 self.coordinator.slot_memory = slots
+            estimate = data.get("finish_estimate")
+            if isinstance(estimate, str) and estimate:
+                self.coordinator.finish_estimate = estimate
 
         # The breakdown is derived from another entity's attributes, so it has
         # to follow that entity as well as the coordinator's price changes.

@@ -84,6 +84,7 @@ class BambuCostsJobsTable extends HTMLElement {
     this._maxH = 70;
     this._hideFailed = true;
     this._showTotals = true;
+    this._showShift = true;
     this._page = 0;
     this._filter = "";
     // Compiled from the filter box; null means "everything matches".
@@ -212,6 +213,7 @@ class BambuCostsJobsTable extends HTMLElement {
       if (s.maxh !== undefined) this._maxH = Number(s.maxh) || 0;
       if (typeof s.hideFailed === "boolean") this._hideFailed = s.hideFailed;
       if (typeof s.showTotals === "boolean") this._showTotals = s.showTotals;
+      if (typeof s.showShift === "boolean") this._showShift = s.showShift;
     } catch (e) { /* corrupt or unavailable — fall back to defaults */ }
   }
 
@@ -221,6 +223,7 @@ class BambuCostsJobsTable extends HTMLElement {
         order: this._order, hidden: [...this._hidden],
         sortKey: this._sort.key, sortDir: this._sort.dir, pageSize: this._pageSize,
         maxh: this._maxH, hideFailed: this._hideFailed, showTotals: this._showTotals,
+        showShift: this._showShift,
       }));
     } catch (e) { /* private mode — layout just will not persist */ }
   }
@@ -1033,6 +1036,19 @@ class BambuCostsJobsTable extends HTMLElement {
             color:var(--primary-color); border-radius:7px; padding:4px 8px;
             font-size:11.5px; cursor:pointer; white-space:nowrap; }
           button.cbtn:hover { border-color:var(--primary-color); }
+          /* The finish-shift clock beside the date: amber ran late, green
+             finished early. Tooltip on hover, a tap opens the same text. */
+          button.shift { background:none; border:none; padding:0 2px; margin-left:2px;
+            cursor:pointer; vertical-align:middle; line-height:0; }
+          .grow.shifted { grid-template-columns:auto auto; }
+          .grow.shifted button.shift { grid-area:1/2; align-self:center; }
+          button.shift svg { width:14px; height:14px; }
+          button.shift.late { color:var(--warning-color,#ff9800); }
+          button.shift.early { color:var(--success-color,#4caf50); }
+          .bcjt-tip { position:fixed; z-index:100000; padding:6px 10px; font-size:12px;
+            background:var(--card-background-color); color:var(--primary-text-color);
+            border:1px solid var(--divider-color); border-radius:8px; white-space:nowrap;
+            box-shadow:0 6px 24px rgba(0,0,0,.25); }
           .bcjt-foot { display:flex; justify-content:space-between; align-items:center;
             margin-top:12px; font-size:12px; color:var(--secondary-text-color); gap:12px;
             flex-wrap:wrap; }
@@ -1184,6 +1200,8 @@ class BambuCostsJobsTable extends HTMLElement {
         }
         return;
       }
+      const shift = e.target.closest("button.shift");
+      if (shift) { this._toggleShiftTip(shift); return; }
       const trays = e.target.closest("button.trbtn");
       if (trays) {
         const row = this._row(trays.dataset.k);
@@ -1339,10 +1357,95 @@ class BambuCostsJobsTable extends HTMLElement {
       if (short !== v) title = v;  // the tooltip keeps the full stored value
       v = short;
     }
-    return `<td class="${cls}"><span class="grow" data-v="${this._twin(col, v)}"
-      style="min-width:${col.min || 4}ch"><input class="cell"
+    // The date cell wears the finish-shift clock, when there is one to wear
+    // — inside the sizing grid as a second column, so the column is measured
+    // with it rather than the clock spilling into the next cell.
+    const shift = col.k === "ts" ? this._shiftIcon(r) : "";
+    return `<td class="${cls}"><span class="grow${shift ? " shifted" : ""}" data-v="${
+      this._twin(col, v)}" style="min-width:${col.min || 4}ch"><input class="cell"
       type="text" data-k="${r._k}" data-f="${col.k}" value="${this._esc(v)}"${
-      title ? ` title="${this._esc(title)}"` : ""}></span></td>`;
+      title ? ` title="${this._esc(title)}"` : ""}>${shift}</span></td>`;
+  }
+
+  // ── finish-time shift ────────────────────────────────────────────────────
+  _parseTs(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(
+      String(s || "").trim());
+    if (!m) return null;
+    return new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+  }
+
+  // How far the actual finish drifted from the printer's estimate at the
+  // start, in minutes — positive is late. Null without an estimate, or when
+  // the drift is within a minute: that is on time, not worth a mark.
+  _shiftOf(r) {
+    const est = this._parseTs(r.finish_est);
+    const ts = this._parseTs(r.ts);
+    if (est === null || ts === null) return null;
+    const mins = (ts - est) / 60000;
+    if (Math.abs(mins) <= 1) return null;
+    return { mins, est: String(r.finish_est).trim().slice(0, 16) };
+  }
+
+  _shiftText(sh) {
+    const abs = Math.abs(sh.mins);
+    const span = abs >= 60
+      ? `${Math.floor(abs / 60)} h ${Math.round(abs % 60)} min`
+      : `${Math.round(abs)} min`;
+    return `Estimated at start: ${sh.est} · finished ${span} ${sh.mins > 0 ? "late" : "early"}`;
+  }
+
+  _shiftIcon(r) {
+    if (!this._showShift) return "";
+    const sh = this._shiftOf(r);
+    if (!sh) return "";
+    return `<button class="shift ${sh.mins > 0 ? "late" : "early"}" data-k="${r._k}"
+      title="${this._esc(this._shiftText(sh))}" aria-label="Finish-time shift"><svg
+      viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12,20A8,8 0 0,0
+      20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0
+      0,1 12,22C6.47,22 2,17.5 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z"
+      /></svg></button>`;
+  }
+
+  // A tap opens the same text the tooltip carries — touch has no hover.
+  // Fixed-positioned inside the card so it escapes the scroll box yet keeps
+  // the card's styles; a click elsewhere, Escape or a scroll closes it.
+  _toggleShiftTip(btn) {
+    if (this._tip && this._tip.dataset.k === btn.dataset.k) { this._closeTip(); return; }
+    this._closeTip();
+    const tip = document.createElement("div");
+    tip.className = "bcjt-tip";
+    tip.dataset.k = btn.dataset.k;
+    tip.textContent = btn.title;
+    this.appendChild(tip);
+    const r = btn.getBoundingClientRect();
+    tip.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - tip.offsetWidth - 8))}px`;
+    tip.style.top = `${r.bottom + 6}px`;
+    this._tip = tip;
+    const off = e => {
+      if (e.type === "keydown" && e.key !== "Escape") return;
+      if (e.type === "click" && e.composedPath().includes(btn)) return;
+      this._closeTip();
+    };
+    this._tipOff = off;
+    setTimeout(() => {
+      document.addEventListener("click", off, true);
+      document.addEventListener("keydown", off);
+      document.addEventListener("scroll", off, true);
+    }, 0);
+  }
+
+  _closeTip() {
+    if (!this._tip) return;
+    this._tip.remove();
+    this._tip = null;
+    const off = this._tipOff;
+    if (off) {
+      document.removeEventListener("click", off, true);
+      document.removeEventListener("keydown", off);
+      document.removeEventListener("scroll", off, true);
+    }
+    this._tipOff = null;
   }
 
   // What the hidden twin measures. Capped at the column's maximum characters
@@ -1526,6 +1629,14 @@ class BambuCostsJobsTable extends HTMLElement {
         <button class="tog${this._showTotals ? "" : " isoff"}" data-totals>${
           this._showTotals ? "ON" : "OFF"}</button>
       </div>
+      <div class="bcjt-target">
+        <span class="bcjt-target-label">
+          <span class="bcjt-target-name">Finish-time shift</span>
+          <span class="bcjt-target-cur">A clock by the date when a print ran over or under the printer's estimate by more than a minute</span>
+        </span>
+        <button class="tog${this._showShift ? "" : " isoff"}" data-shift>${
+          this._showShift ? "ON" : "OFF"}</button>
+      </div>
       <div class="bcjt-target"><span class="bcjt-target-label">
         <span class="bcjt-target-name" style="font-weight:600">Columns</span>
         <span class="bcjt-target-cur">Display only — a save always writes every field.</span>
@@ -1591,6 +1702,10 @@ class BambuCostsJobsTable extends HTMLElement {
         this._showTotals = !this._showTotals;
         this._saveSettings(); render(); this._paint();
       });
+      body.querySelector("[data-shift]").addEventListener("click", () => {
+        this._showShift = !this._showShift;
+        this._saveSettings(); render(); this._paint();
+      });
       body.querySelectorAll("[data-toggle]").forEach(b => {
         b.addEventListener("click", e => {
           const key = e.currentTarget.dataset.toggle;
@@ -1624,6 +1739,7 @@ class BambuCostsJobsTable extends HTMLElement {
       this._maxH = 70;
       this._hideFailed = true;
       this._showTotals = true;
+      this._showShift = true;
       this._page = 0;
       this._saveSettings(); render(); this._paint(); this._applyScrollMode();
     });
@@ -1677,6 +1793,7 @@ class BambuCostsJobsTable extends HTMLElement {
       trays: Array.isArray(r.trays) ? r.trays : [],
       layers_done: Number(r.layers_done) || 0,
       status: String(r.status || "success"),
+      finish_est: String(r.finish_est || ""),
     }));
   }
 

@@ -38,6 +38,7 @@ def make(power_sensors=True, price=0.23):
     c.overlay = {}
     c.maintenance = False
     c.load_remaining = False
+    c.finish_estimate = None
     # the pieces that would need hass, pinned per test instead
     c.hass = SimpleNamespace(async_add_executor_job=lambda fn, *a: fn(*a))
     c.async_update_listeners = lambda: None
@@ -784,6 +785,32 @@ def test_load_remaining_takes_tray_percent_as_grams_of_a_kilo():
     assert apply() is None
     del c._tray["remain"]
     assert apply() is None
+
+
+def test_finish_estimate_is_pinned_at_the_first_valid_reading():
+    from datetime import datetime, timezone
+
+    c = make()
+    utc = timezone.utc
+    # At the start transition the end-time sensor still shows the previous
+    # job's finish — in the past, so nothing is pinned yet.
+    ends = {"end_time": datetime(2026, 8, 7, 9, 30, tzinfo=utc)}
+    c._ts = lambda key: ends.get(key)
+    c.mark_print_start(now=datetime(2026, 8, 7, 10, 0, tzinfo=utc), new_job=True)
+    assert c.finish_estimate is None
+
+    ends["end_time"] = datetime(2026, 8, 7, 12, 15, tzinfo=utc)
+    assert c.capture_finish_estimate() == "2026-08-07 12:15:00"
+
+    # The printer re-estimates as it goes; the first reading is the plan.
+    ends["end_time"] = datetime(2026, 8, 7, 12, 40, tzinfo=utc)
+    assert c.capture_finish_estimate() == "2026-08-07 12:15:00"
+    assert _loggable_row(c).build_job_row({})["finish_estimate"] == "2026-08-07 12:15:00"
+
+    # The next job starts clean.
+    c.mark_print_end(now=datetime(2026, 8, 7, 12, 30, tzinfo=utc))
+    c.mark_print_start(now=datetime(2026, 8, 7, 13, 0, tzinfo=utc), new_job=True)
+    assert c.finish_estimate is None
 
 
 def test_job_row_names_each_material_once():

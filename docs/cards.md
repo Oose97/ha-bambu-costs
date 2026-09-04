@@ -161,14 +161,21 @@ says so.
 - A failed print's row wears the faintest red wash, and its **Layers** cell shows
   `finished/total` — both halves editable. **Hide failed prints** in the settings is on
   by default; the footer counts what is hidden.
+- A print that finished more than a minute off the printer's own estimate wears a
+  small **clock beside its date** — amber when it ran late, green when it finished
+  early. Hover it (or tap it, on a touchscreen) for the estimate and the shift. On
+  time, nothing shows. The estimate is pinned the moment a job starts — the
+  printer re-estimates as it goes, so the first reading is the plan — and logged
+  with the row; rows from before it existed simply carry no clock. It switches off
+  in the settings.
 - A **totals row** sits under the table, summing every numeric column on screen —
   print time, weight, length, energy and the three costs — over **everything the
   filter kept**, not just the page in view. It pins itself to the bottom of the box
   the way the header pins to the top, and switches off in the settings.
 - **⚙** opens the table settings: column order and visibility, the default sort column
-  and direction, the rows per page, the table height, and whether failed prints and
-  the totals row are shown — all remembered per browser. Display only; a save always
-  writes every field.
+  and direction, the rows per page, the table height, and whether failed prints, the
+  totals row and the finish-shift clock are shown — all remembered per browser.
+  Display only; a save always writes every field.
 
   ![The jobs table's settings sheet](images/print_history_table_settings.jpg)
 - By default the table is bounded to 70% of the screen and scrolls inside its own box:

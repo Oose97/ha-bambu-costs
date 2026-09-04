@@ -32,6 +32,7 @@ from .const import (
     ATTR_SERIAL,
     ATTR_TAGS,
     CONF_CAMERA,
+    CONF_END_TIME,
     CONF_FILAMENT_INVENTORY,
     CONF_PRINT_STATUS,
     DISCONNECTED_STATES,
@@ -304,6 +305,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_track_print_status(hass, entry, coordinator)
+    _async_track_finish_estimate(hass, entry, coordinator)
     _async_track_trays(hass, entry, coordinator)
     _async_track_inventory(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
@@ -399,6 +401,34 @@ def _async_track_print_status(
     if current is not None and current.state.lower() in RUNNING_STATES:
         coordinator.mark_print_start(new_job=False)
         _LOGGER.info("A print is already running; resuming its meters")
+
+
+@callback
+def _async_track_finish_estimate(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: BambuCostsCoordinator
+) -> None:
+    """Pin the printer's finish estimate once it reports one for the job.
+
+    The start transition usually comes before the end-time sensor has
+    caught up — it still shows the previous job's finish, or nothing — so
+    the capture at start often finds nothing to pin. Following the sensor
+    itself closes that gap; the capture is a no-op once the job has one.
+    """
+    entity = coordinator.entity_of(CONF_END_TIME)
+    if not entity:
+        return
+
+    @callback
+    def _changed(event: Event[EventStateChangedData]) -> None:
+        if event.data.get("new_state") is None or coordinator.finish_estimate:
+            return
+        pinned = coordinator.capture_finish_estimate()
+        if pinned:
+            _LOGGER.debug("Finish estimate pinned for the running job: %s", pinned)
+
+    entry.async_on_unload(
+        async_track_state_change_event(hass, [entity], _changed)
+    )
 
 
 @callback

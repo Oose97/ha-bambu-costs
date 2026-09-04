@@ -137,6 +137,12 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # inventory sensor the on-load figure is taken unconditionally —
         # it is the only remaining figure there is.
         self.load_remaining: bool = False
+        # The printer's finish estimate as it stood when the current job
+        # began — local "YYYY-MM-DD HH:MM:SS", the timestamp column's format.
+        # Pinned once per job (the printer re-estimates as it goes) and
+        # persisted with the breakdown snapshot, so the logged row can say
+        # how far the actual finish drifted from the plan.
+        self.finish_estimate: str | None = None
         self._tag_write_lock = asyncio.Lock()
         # Jobs have the same read-modify-write hazard: a card save landing
         # while a finished print is being appended must queue, not interleave.
@@ -731,6 +737,10 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.hass.async_add_executor_job(self.store.write_overlay, {})
         self._print_started_at = now or dt_util.utcnow()
         self._print_ended_at = None
+        # A fresh job, a fresh estimate — taken now if the printer already
+        # reports one, else the moment its end-time sensor does.
+        self.finish_estimate = None
+        self.capture_finish_estimate()
         # The whole window since the last real print end — read before
         # banking, which moves the marker the fallback leans on.
         idle = self._idle_window_spend()
@@ -742,6 +752,31 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # already configured.
         self.set_value("energy_at_print_start", self.energy_now())
         return idle
+
+    @callback
+    def capture_finish_estimate(self) -> str | None:
+        """Pin the printer's finish estimate as it stood when the job began.
+
+        Taken once per job — the first time the end-time sensor reports a
+        finish later than the start — and held until the next job. At the
+        start transition the sensor may still show the previous job's
+        finish (in the past) or nothing at all, so a stale reading is
+        skipped rather than pinned, and the tracker on the sensor tries
+        again when it moves. The printer re-estimates as the print goes on,
+        which is exactly why the first reading is the one worth keeping.
+        """
+        if self.finish_estimate is not None or not self._saw_print_start:
+            return self.finish_estimate
+        end = self._ts(CONF_END_TIME)
+        if end is None:
+            return None
+        if end.tzinfo is None:
+            end = dt_util.as_utc(end)
+        floor = self._print_started_at or dt_util.utcnow()
+        if end <= floor:
+            return None
+        self.finish_estimate = dt_util.as_local(end).strftime("%Y-%m-%d %H:%M:%S")
+        return self.finish_estimate
 
     @callback
     def mark_print_end(self, now: datetime | None = None) -> float | None:
@@ -1229,6 +1264,9 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             or distinct_filaments(breakdown["slots"]),
             "layers_done": as_float(overrides.get("layers_done")),
             "status": overrides.get("status") or "success",
+            "finish_estimate": overrides.get("finish_estimate")
+            or self.finish_estimate
+            or "",
         }
         # The card's mid-print edits land last — but an explicit service
         # override outranks them, so log_job stays the final word.
@@ -1435,6 +1473,7 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "types": distinct_filaments(breakdown["slots"]),
             "trays": self._sensor_trays(breakdown),
             "status": "failed",
+            "finish_est": self.finish_estimate or "",
         }
         # The card's mid-print edits carry into everything drafted from this
         # job — the Printing-now view, and the failed/finished forms alike.
