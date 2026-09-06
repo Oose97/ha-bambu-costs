@@ -113,6 +113,7 @@ _JOB_ROW_SCHEMA = vol.Schema(
         vol.Optional("trays"): list,
         vol.Optional("layers_done"): vol.Coerce(float),
         vol.Optional("status"): cv.string,
+        vol.Optional("finish_est"): cv.string,
         # Remove the matched row instead of replacing it.
         vol.Optional("delete"): cv.boolean,
     },
@@ -148,6 +149,7 @@ _ADD_JOB_ROW_SCHEMA = vol.Schema(
         vol.Optional("trays"): list,
         vol.Optional("layers_done"): vol.Coerce(float),
         vol.Optional("status"): cv.string,
+        vol.Optional("finish_est"): cv.string,
     },
     extra=vol.REMOVE_EXTRA,
 )
