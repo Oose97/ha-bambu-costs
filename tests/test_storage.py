@@ -481,3 +481,23 @@ def test_rows_from_before_the_status_column_read_as_successes(store):
 )
 def test_status_is_lenient_like_the_disabled_column(value, expected):
     assert job_status(value) == expected
+
+
+def test_service_row_schemas_name_every_sensor_field(store):
+    """The write_jobs and add_job schemas use REMOVE_EXTRA, so any read_jobs
+    key they forget to name is stripped on save and the CSV mapper blanks it —
+    exactly how finish_est went missing. Every sensor-shape key must survive."""
+    from custom_components.bambu_costs import _ADD_JOB_ROW_SCHEMA, _JOB_ROW_SCHEMA
+
+    row = job_row("2026-08-07 10:12:00")
+    row["finish_estimate"] = "2026-08-07 10:00:00"
+    store.append_job(row)
+    sensor_row = store.read_jobs()[0]
+
+    edit = dict(sensor_row, orig_ts=sensor_row["ts"])
+    kept = _JOB_ROW_SCHEMA(edit)
+    assert set(sensor_row) <= set(kept), f"write_jobs drops {set(sensor_row) - set(kept)}"
+    assert kept["finish_est"] == "2026-08-07 10:00:00"
+
+    added = _ADD_JOB_ROW_SCHEMA(dict(sensor_row))
+    assert set(sensor_row) <= set(added), f"add_job drops {set(sensor_row) - set(added)}"

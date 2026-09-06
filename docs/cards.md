@@ -168,6 +168,8 @@ says so.
   printer re-estimates as it goes, so the first reading is the plan — and logged
   with the row; rows from before it existed simply carry no clock. It switches off
   in the settings.
+
+  ![A print that ran late: the amber clock beside its date, its tooltip giving the estimate at start and the shift](images/filament_late.jpg)
 - A **totals row** sits under the table, summing every numeric column on screen —
   print time, weight, length, energy and the three costs — over **everything the
   filter kept**, not just the page in view. It pins itself to the bottom of the box
