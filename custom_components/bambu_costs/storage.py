@@ -63,6 +63,18 @@ JOB_FIELDS = [
 ]
 
 
+# What a second-serial cell says when the spool has only one tag. Typed by
+# hand into the tags card, so it is matched loosely — case and spacing do not
+# matter — and it is never treated as a serial: it links nothing, counts as
+# no tag, and tells the spool-id pairing to leave the row alone for good.
+NO_OTHER_SIDE = "NO OTHER SIDE"
+
+
+def is_no_other_side(value: Any) -> bool:
+    """Whether a second-serial value declares the spool single-tagged."""
+    return " ".join(str(value or "").split()).lower() == NO_OTHER_SIDE.lower()
+
+
 def job_status(value: Any) -> str:
     """Normalise the status column: only an explicit "failed" is a failure."""
     return "failed" if str(value or "").strip().lower() == "failed" else "success"
@@ -152,7 +164,7 @@ def count_spools(tags: list[dict[str, Any]]) -> int:
             for s in (
                 str(tag.get(k) or "").strip().lower() for k in ("serial", "serial_2")
             )
-            if s
+            if s and not is_no_other_side(s)
         ]
         if not serials:
             bare += 1
@@ -255,11 +267,17 @@ class BambuCostsStore:
 
     @staticmethod
     def _serials(tag: dict[str, Any]) -> set[str]:
-        """Both tags on a spool, lowercased, blanks dropped."""
+        """Both tags on a spool, lowercased, blanks dropped.
+
+        A declared NO OTHER SIDE is not a tag, so it is dropped too — else
+        every single-tagged spool would share one phantom serial and match
+        each other on it.
+        """
         return {
-            str(tag.get(k, "")).strip().lower()
-            for k in ("serial", "serial_2")
-        } - {""}
+            s
+            for s in (str(tag.get(k, "")).strip().lower() for k in ("serial", "serial_2"))
+            if s and not is_no_other_side(s)
+        }
 
     def write_tags(self, tags: list[dict[str, Any]]) -> int:
         """Replace the whole tag library, keeping the previous copy as .bak."""
@@ -463,16 +481,28 @@ class BambuCostsStore:
             # A different id on file — an edit, or a clone collision. Theirs.
             return None
 
+        # A row declared NO OTHER SIDE has decided the matter: no partner to
+        # fill in, and no pairing however many spools share its cloud id.
+        second = str(row.get("serial_2") or "").strip()
+        if is_no_other_side(second):
+            second = ""
+            declared_single = True
+        else:
+            declared_single = False
+
         # One spool, one id: a row already paired shares the spool with its
         # partner, so a blank on the other side is filled along with it.
-        if row.get("serial_2"):
-            other = str(row["serial_2"]).strip().lower()
+        if second:
+            other = second.lower()
             for t in tags:
                 if t is not row and other in self._serials(t) and not t.get("tray_uuid"):
                     t["tray_uuid"] = uuid
                     changed["learned_partner"] = t.get("serial", "")
 
-        if not row.get("serial_2"):
+        if not second and not declared_single:
+            # Candidates must have an EMPTY second slot: a row that names its
+            # other side is taken, and one declaring NO OTHER SIDE is off
+            # limits by its own word.
             partner = next(
                 (
                     t

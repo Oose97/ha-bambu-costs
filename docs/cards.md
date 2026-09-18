@@ -30,8 +30,10 @@ per-browser view setting rather than card configuration, and stays there.
 - Edits on the spool row apply to both of its tags, and so does the **ON/OFF**
   toggle — a spool is one physical thing, retired whole. Serials stay per-tag, since
   they are what tell the two sides apart. An unpaired spool's tag row offers a second
-  serial field: typing it pairs the rows on the spot. The spool row's **✕** deletes
-  the spool with every tag it has; a tag row's **✕** takes just that tag.
+  serial field: typing it pairs the rows on the spot — or type **NO OTHER SIDE** to
+  declare a one-tag spool that the [spool-id pairing](filament.md#the-spool-id-learns-itself)
+  must leave alone. The spool row's **✕** deletes the spool with every tag it has;
+  a tag row's **✕** takes just that tag.
 - The **Spool ID** column is the printer cloud's per-spool id, [learned by
   itself](filament.md#the-spool-id-learns-itself) whenever the spool is loaded — and
   the reason freshly scanned second sides pair up on their own. Editable like

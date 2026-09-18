@@ -108,6 +108,12 @@ safe, since several physical clones can share one cloud id without being stitche
 together, each pairing only to its own other side. A newly scanned spool records its
 id from the very first read.
 
+A spool that genuinely has only one tag — a clone-tagged third-party spool, say —
+can say so: type **NO OTHER SIDE** into its second-serial field in the tags card
+and the pairing leaves that row alone for good, however many other spools turn up
+carrying the same cloud id. The phrase is not a serial: it links nothing, counts
+as no tag, and is matched regardless of case or spacing.
+
 ## Remaining grams from the cloud inventory
 
 Point the optional **filament inventory sensor** (found by discovery when the printer
