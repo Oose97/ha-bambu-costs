@@ -193,6 +193,47 @@ def test_a_half_paired_row_is_not_matched_by_id(store):
     assert store.read_tags()[1]["serial_2"] == ""
 
 
+def test_no_other_side_is_a_declaration_not_a_serial(store):
+    """Two single-tagged spools both saying NO OTHER SIDE share a phrase, not
+    a tag: they count as two spools, and nothing matches rows on the phrase."""
+    from custom_components.bambu_costs.storage import is_no_other_side
+
+    assert is_no_other_side("NO OTHER SIDE")
+    assert is_no_other_side(" no  other side ")
+    assert not is_no_other_side("BBB") and not is_no_other_side("")
+
+    store.write_tags([tag("AAA", serial_2="NO OTHER SIDE"), tag("BBB", serial_2="no other side")])
+    assert count_spools(store.read_tags()) == 2
+    assert store.set_tag_price("no other side", 9.0) == 0, "the phrase prices nothing"
+    assert store.set_tag_price("bbb", 9.0) == 1
+
+
+def test_a_declared_single_spool_is_left_alone_by_the_spool_id(store):
+    """Clone-tagged spools share one cloud id. A row declared NO OTHER SIDE
+    must neither be paired when a new clone scans in, nor spread its id onto
+    the other declared rows when it is loaded itself."""
+    a = tag("AAA", serial_2="NO OTHER SIDE")
+    a["tray_uuid"] = "UUID-ONE"
+    store.write_tags([a, tag("CCC", serial_2="NO OTHER SIDE"), tag("BBB")])
+
+    # A new spool with the same cloud id scans in: it learns the id, nobody pairs.
+    assert store.learn_tray_uuid("BBB", "UUID-ONE") == {"learned": "UUID-ONE"}
+    rows = store.read_tags()
+    assert rows[0]["serial_2"] == "NO OTHER SIDE" and rows[2]["serial_2"] == ""
+
+    # The declared spool is loaded: nothing to learn, nothing to pair — and
+    # the other declared row does not inherit its id as a phantom partner.
+    assert store.learn_tray_uuid("AAA", "UUID-ONE") is None
+    assert store.read_tags()[1]["tray_uuid"] == ""
+
+    # The new spool, declared single later, stays single too.
+    rows = store.read_tags()
+    rows[2]["serial_2"] = "no other side"
+    store.write_tags(rows)
+    assert store.learn_tray_uuid("BBB", "UUID-ONE") is None
+    assert count_spools(store.read_tags()) == 3
+
+
 def _spool(uuid, remaining, name="PLA Basic", color="#00AE42"):
     return {
         "tray_uuid": uuid, "remaining_g": remaining,

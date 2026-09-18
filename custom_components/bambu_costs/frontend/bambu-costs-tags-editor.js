@@ -150,6 +150,13 @@ class BambuCostsTagsEditor extends HTMLElement {
   // A spool carries a tag on each side. When one row names the other's serial
   // they are two halves of the same spool, and are kept adjacent and moved
   // together so they cannot drift apart in the list.
+  // "NO OTHER SIDE" in the second-serial field declares a one-tag spool:
+  // not a serial, never a link, and the backend's spool-id pairing leaves
+  // the row alone. Matched loosely — case and spacing do not matter.
+  _isNoOtherSide(v) {
+    return String(v || "").split(/\s+/).join(" ").trim().toLowerCase() === "no other side";
+  }
+
   _groups() {
     const bySerial = new Map();
     for (const r of this._rows) {
@@ -163,7 +170,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       seen.add(r._k);
       const group = [r];
       const other = String(r.serial_2 || "").trim().toLowerCase();
-      const partner = other ? bySerial.get(other) : null;
+      const partner = other && !this._isNoOtherSide(other) ? bySerial.get(other) : null;
       if (partner && partner !== r && !seen.has(partner._k)) {
         seen.add(partner._k);
         group.push(partner);
@@ -229,7 +236,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     const own = String(r.serial || "").trim().toLowerCase();
     if (own && bySerial[own] !== undefined) return bySerial[own];
     const other = String(r.serial_2 || "").trim().toLowerCase();
-    if (other && bySerial[other] !== undefined
+    if (other && !this._isNoOtherSide(other) && bySerial[other] !== undefined
         && !this._rows.some(x => String(x.serial || "").trim().toLowerCase() === other)) {
       return bySerial[other];
     }
@@ -556,7 +563,7 @@ class BambuCostsTagsEditor extends HTMLElement {
             text-transform:uppercase; letter-spacing:.4px; margin-right:6px; }
           td.tagline input.ser { width:150px; margin-right:6px; }
           /* Room for the “typing it pairs the rows” hint to read in full. */
-          td.tagline input.ser[data-f="serial_2"] { width:260px; }
+          td.tagline input.ser[data-f="serial_2"] { width:400px; max-width:60vw; }
           /* The spool is in the AMS right now — the chip names the slot,
              coloured per AMS unit, sitting beside the filament name. */
           td.flcell { white-space:nowrap; }
@@ -753,7 +760,9 @@ class BambuCostsTagsEditor extends HTMLElement {
               placeholder="serial" value="${this._esc(r.serial)}">${
             group.length === 1
               ? `<input class="cell ser" type="text" data-k="${r._k}" data-f="serial_2"
-                  placeholder="other side — typing it pairs the rows" value="${this._esc(r.serial_2 || "")}">`
+                  placeholder="other side — typing it pairs the rows · NO OTHER SIDE keeps it single"
+                  title="The spool's other tag serial, to pair the rows — or NO OTHER SIDE for a one-tag spool the spool-id pairing must leave alone"
+                  value="${this._esc(r.serial_2 || "")}">`
               : ""}${
             slot === null ? "" : this._chipHtml(slot, "This tag is the one in the AMS")}
           </td>

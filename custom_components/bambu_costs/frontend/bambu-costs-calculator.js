@@ -93,7 +93,10 @@ class BambuCostsCalculator extends HTMLElement {
     for (const r of this._sensorData()) {
       const a = String(r.serial || "").trim().toLowerCase();
       const b = String(r.serial_2 || "").trim().toLowerCase();
-      if (a && b) { partnerOf.set(a, b); partnerOf.set(b, a); }
+      // "NO OTHER SIDE" declares a one-tag spool — a phrase, not a partner.
+      if (a && b && b.split(/\s+/).join(" ") !== "no other side") {
+        partnerOf.set(a, b); partnerOf.set(b, a);
+      }
     }
 
     const map = new Map();
