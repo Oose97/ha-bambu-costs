@@ -163,7 +163,8 @@ says so.
 - A failed print's row wears the faintest red wash, and its **Layers** cell shows
   `finished/total` — both halves editable. **Hide failed prints** in the settings is on
   by default; the footer counts what is hidden.
-- A print that finished more than a minute off the printer's own estimate wears a
+- A print that finished off the printer's own estimate by more than 5 % of its planned
+  time — never less than three minutes, so a short print is not flagged for noise — wears a
   small **clock beside its date** — amber when it ran late, green when it finished
   early. Hover it (or tap it, on a touchscreen) for the estimate and the shift. On
   time, nothing shows. The estimate is pinned the moment a job starts — the

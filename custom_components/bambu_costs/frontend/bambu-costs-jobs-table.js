@@ -1383,7 +1383,12 @@ class BambuCostsJobsTable extends HTMLElement {
     const ts = this._parseTs(r.ts);
     if (est === null || ts === null) return null;
     const mins = (ts - est) / 60000;
-    if (Math.abs(mins) <= 1) return null;
+    // The bar is 5 % of the planned duration and never under 3 minutes: a
+    // long print may drift a quarter-hour and still be on plan, and a short
+    // one should not be flagged for a minute of noise either. The plan is
+    // the logged duration less the drift — what the estimate had in mind.
+    const planned = Math.max(0, (parseFloat(r.mins) || 0) - mins);
+    if (Math.abs(mins) <= Math.max(3, planned * 0.05)) return null;
     return { mins, est: String(r.finish_est).trim().slice(0, 16) };
   }
 
@@ -1632,7 +1637,7 @@ class BambuCostsJobsTable extends HTMLElement {
       <div class="bcjt-target">
         <span class="bcjt-target-label">
           <span class="bcjt-target-name">Finish-time shift</span>
-          <span class="bcjt-target-cur">A clock by the date when a print ran over or under the printer's estimate by more than a minute</span>
+          <span class="bcjt-target-cur">A clock by the date when a print ran over or under the printer's estimate by more than 5 % of its planned time (at least 3 minutes)</span>
         </span>
         <button class="tog${this._showShift ? "" : " isoff"}" data-shift>${
           this._showShift ? "ON" : "OFF"}</button>
