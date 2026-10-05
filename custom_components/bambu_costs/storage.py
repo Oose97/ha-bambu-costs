@@ -592,6 +592,20 @@ class BambuCostsStore:
             )
         return rows[-limit:] if limit else rows
 
+    def count_jobs(self) -> int:
+        """Every logged job on file — the whole file, not the read window.
+
+        ``read_jobs`` hands the sensor the newest 200 rows; its state must
+        still be the true count, or it pins at 200 once the log grows past
+        the window and anything watching it for "a job was logged" goes
+        silent.
+        """
+        return sum(
+            1
+            for raw in self._read_rows(self.jobs_path, JOB_FIELDS)
+            if (raw.get("timestamp") or "").strip()
+        )
+
     def append_job(self, row: dict[str, Any]) -> None:
         payload = {field: row.get(field, "") for field in JOB_FIELDS}
         if isinstance(payload.get("trays"), (list, dict)):

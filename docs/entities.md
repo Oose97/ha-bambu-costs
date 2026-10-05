@@ -19,7 +19,7 @@ are possible shapes in one install.
 | `sensor.<name>_cost_rate` | What the machine is costing per hour right now — power × price. |
 | `sensor.<name>_cost_total` | **Electricity only.** Everything it has cost to run, printing or idle. Restored across restarts. |
 | `sensor.<name>_total_spend` | **The whole bill** — filament, electricity and standby. Metering source; see [Costs per month](costing.md#costs-per-month). |
-| `sensor.<name>_job_log` | Logged jobs. State is the row count; `data` holds the rows. |
+| `sensor.<name>_job_log` | Logged jobs. State is the total row count; `data` holds the newest 200 rows. A state increase means a job was logged — an automation can trigger on it. |
 | `sensor.<name>_current_job` | The job on the printer now — `printing`/`idle`. `row` is the live draft with the Printing-now card's edits applied; `edited` names the touched fields. |
 
 ## Numbers

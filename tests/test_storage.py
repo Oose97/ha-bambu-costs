@@ -557,3 +557,21 @@ def test_one_spool_at_a_time_is_external(store):
     # An empty serial clears it; the column survives a round trip as text.
     assert store.set_external("") == 1
     assert not any(t["external"] for t in store.read_tags())
+
+
+def test_the_job_count_is_the_whole_file_not_the_window(store):
+    for i in range(203):
+        store.append_job(job_row(f"2026-08-{1 + i // 24:02d} {i % 24:02d}:00:00", job=f"Job {i}"))
+    assert len(store.read_jobs()) == 200, "the cards get a window"
+    assert store.count_jobs() == 203, "the sensor must still see every row"
+
+
+def test_the_external_mark_survives_a_round_trip(store):
+    row = tag("AAA")
+    row["external"] = True
+    store.write_tags([row, tag("BBB")])
+    rows = store.read_tags()
+    assert [t["external"] for t in rows] == [True, False]
+    # A card save sends the rows back in the sensor's shape, mark included.
+    store.write_tags(rows)
+    assert [t["external"] for t in store.read_tags()] == [True, False]

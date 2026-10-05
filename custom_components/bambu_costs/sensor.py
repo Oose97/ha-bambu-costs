@@ -540,7 +540,10 @@ class JobLogSensor(BambuCostsSensor):
 
     @property
     def native_value(self) -> int:
-        return len(self.coordinator.data.get("jobs", []))
+        # The true count: the rows attribute is a window of the newest 200,
+        # and a state capped at 200 would never increase again.
+        data = self.coordinator.data
+        return int(data.get("jobs_total", len(data.get("jobs", []))))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

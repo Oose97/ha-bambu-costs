@@ -1639,7 +1639,13 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         def _load() -> dict[str, Any]:
             self.store.ensure()
-            return {"tags": self.store.read_tags(), "jobs": self.store.read_jobs()}
+            return {
+                "tags": self.store.read_tags(),
+                # The newest rows for the cards, and the true count for the
+                # sensor's state — the two part ways past 200 jobs.
+                "jobs": self.store.read_jobs(),
+                "jobs_total": self.store.count_jobs(),
+            }
 
         return await self.hass.async_add_executor_job(_load)
 
