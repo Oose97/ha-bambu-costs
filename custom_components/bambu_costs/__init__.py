@@ -76,6 +76,8 @@ _TAG_SCHEMA = vol.Schema(
         vol.Optional("tray_uuid"): cv.string,
         # And the synced grams left. Blank means unknown, so both shapes pass.
         vol.Optional("remaining_g"): vol.Any(vol.Coerce(float), cv.string),
+        # And which spool is on the external holder — a save must keep it.
+        vol.Optional("external"): vol.Any(cv.boolean, cv.string),
         vol.Optional("cost_per_kg"): vol.Coerce(float),
         vol.Optional("disabled"): vol.Any(cv.boolean, cv.string),
     },

@@ -544,6 +544,22 @@ def test_service_row_schemas_name_every_sensor_field(store):
     assert set(sensor_row) <= set(added), f"add_job drops {set(sensor_row) - set(added)}"
 
 
+def test_the_tag_schema_names_every_sensor_field(store):
+    """write_tags whitelists keys with REMOVE_EXTRA: any read_tags key it does
+    not name is stripped on a card save — which is how a mark can vanish."""
+    from custom_components.bambu_costs import _TAG_SCHEMA
+
+    row = tag("AAA", serial_2="BBB")
+    row["external"] = True
+    row["tray_uuid"] = "UUID-ONE"
+    row["remaining_g"] = "710"
+    store.write_tags([row])
+    sensor_row = store.read_tags()[0]
+    kept = _TAG_SCHEMA(dict(sensor_row))
+    assert set(sensor_row) <= set(kept), f"write_tags drops {set(sensor_row) - set(kept)}"
+    assert kept["external"] is True
+
+
 def test_one_spool_at_a_time_is_external(store):
     store.write_tags([tag("AAA", serial_2="BBB"), tag("BBB", serial_2="AAA"), tag("CCC")])
     assert store.set_external("bbb") == 2, "both rows of the pair take the mark"

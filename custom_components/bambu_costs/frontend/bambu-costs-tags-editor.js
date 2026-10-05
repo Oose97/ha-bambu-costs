@@ -142,6 +142,8 @@ class BambuCostsTagsEditor extends HTMLElement {
       remaining_g: r.remaining_g === undefined ? "" : String(r.remaining_g),
       cost_per_kg: Number(r.cost_per_kg) || 0,
       disabled: this._isDisabled(r.disabled),
+      // Not edited here (SET declares it) but carried, so a save keeps it.
+      external: !!r.external,
     }));
     this._rows = this._grouped();
     this._dirty = false;
@@ -293,6 +295,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       remaining_g: this._clean(String(r.remaining_g ?? "")),
       cost_per_kg: Number(r.cost_per_kg) || 0,
       disabled: !!r.disabled,
+      external: !!r.external,
     }));
   }
 
