@@ -68,6 +68,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     const live = JSON.stringify([
       (st && st.attributes && st.attributes.loaded) || {},
       (st && st.attributes && st.attributes.printing) || [],
+      (st && st.attributes && st.attributes.external) || "",
     ]);
     // A repaint renders the in-memory rows, so unsaved edits survive it —
     // but it would steal the caret from a cell mid-keystroke, so a focused
@@ -221,6 +222,23 @@ class BambuCostsTagsEditor extends HTMLElement {
        title="${lead} — slot ${this._esc(slot)}${
          busy ? ", printing from it right now" : ""}">${this._esc(slot)}${
        busy ? '<span class="live"></span>' : ""}</span>`;
+  }
+
+  // The spool declared to be on the external holder — a spool-level fact,
+  // so its chip stays on the spool row even when the tags are unfolded.
+  _externalSerial() {
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    return String((st && st.attributes && st.attributes.external) || "").trim().toLowerCase();
+  }
+
+  _isExternal(r) {
+    const ext = this._externalSerial();
+    if (!ext) return false;
+    return [r.serial, r.serial_2].some(s => String(s || "").trim().toLowerCase() === ext);
+  }
+
+  _extChipHtml() {
+    return `<span class="ldchip ext" title="This spool is on the external holder — every job's External row is named and priced from it">EXT</span>`;
   }
 
   // The slot holding THIS tag — own serial only, so an expanded pair chips
@@ -579,6 +597,10 @@ class BambuCostsTagsEditor extends HTMLElement {
             vertical-align:1px; animation:bteLive 1.4s ease-in-out infinite; }
           @keyframes bteLive { 0%,100% { opacity:1; } 50% { opacity:.2; } }
           td.flcell:has(.ldchip.busy) input.cell { width:calc(100% - 56px); }
+          /* The external holder's spool: a chip of its own, a colour that is
+             no AMS unit's, and room for it beside a slot chip. */
+          .ldchip.ext { background:#607D8B; }
+          td.flcell:has(.ldchip + .ldchip) input.cell { width:calc(100% - 96px); }
           .exp { background:none; border:1px solid var(--divider-color); border-radius:6px;
             color:var(--secondary-text-color); font-size:10px; line-height:1;
             width:20px; height:20px; padding:0; cursor:pointer; margin-left:2px;
@@ -990,7 +1012,8 @@ class BambuCostsTagsEditor extends HTMLElement {
         + toggleRow("showloaded", this._showLoaded,
           "Show loaded slots",
           "A chip beside the filament name, coloured per AMS; "
-          + "a pulsing dot marks the slots the running print uses")
+          + "a pulsing dot marks the slots the running print uses; "
+          + "EXT marks the spool on the external holder")
         + `<div class="bte-target">
             <span class="bte-target-label">
               <span class="bte-target-name">Table height</span>
@@ -1153,9 +1176,10 @@ class BambuCostsTagsEditor extends HTMLElement {
         // Expanded, the chip moves down to the tag that is actually in the
         // tray; collapsed, the spool row carries it.
         const slot = this._showLoaded && !expanded ? this._slotOf(r) : null;
+        const ext = this._showLoaded && this._isExternal(r);
         return `<td class="flcell"><input class="cell" type="text" data-k="${k}" data-f="filament"
                 value="${this._esc(r.filament)}">${slot === null ? "" :
-          this._chipHtml(slot, "This spool is in the AMS now")}</td>`;
+          this._chipHtml(slot, "This spool is in the AMS now")}${ext ? this._extChipHtml() : ""}</td>`;
       }
       case "hex":
         return `<td><input class="cell hx" type="text" data-k="${k}" data-f="hex"
@@ -1217,6 +1241,7 @@ class BambuCostsTagsEditor extends HTMLElement {
     if (!row) return;
     const val = Number(row.cost_per_kg) || 0;
     const targets = this._priceTargets();
+    const isExt = this._isExternal(row);
     const what = `${this._esc(row.filament || "this filament")}`
       + (row.color_name ? ` · ${this._esc(row.color_name)}` : "");
 
@@ -1232,10 +1257,16 @@ class BambuCostsTagsEditor extends HTMLElement {
           ${targets.map(t => `
             <div class="bte-target">
               <span class="bte-target-label">
-                <span class="bte-target-name">${this._esc(t.label)}</span>
+                <span class="bte-target-name">${this._esc(t.label)}${
+                  t.external && isExt ? " · this spool" : ""}</span>
                 <span class="bte-target-cur" data-cur="${this._esc(t.entity_id)}"></span>
-              </span>
-              <button class="setdef pick" data-ent="${this._esc(t.entity_id)}">SET</button>
+              </span>${
+              t.external && isExt
+                ? `<button class="setdef unset" title="Stop treating this spool as the external one — the price stays">UNSET</button>`
+                : ""}
+              <button class="setdef pick" data-ent="${this._esc(t.entity_id)}"${
+                t.external ? ' data-ext="1"' : ""}${
+                t.external ? ' title="Pushes the price AND declares this the spool on the external holder"' : ""}>SET</button>
             </div>`).join("")}
         </div>
         <div class="bte-sheet-foot">
@@ -1257,13 +1288,31 @@ class BambuCostsTagsEditor extends HTMLElement {
     ov.querySelectorAll("button.pick").forEach(b => {
       b.addEventListener("click", async e => {
         const ent = e.currentTarget.dataset.ent;
+        const external = !!e.currentTarget.dataset.ext;
         close();
         await this._applyPrice(ent, val, row);
+        // The default price is the external holder's: pushing a spool there
+        // also declares it the spool on the holder.
+        if (external) await this._setExternal(row);
       });
     });
+    const unset = ov.querySelector("button.unset");
+    if (unset) unset.addEventListener("click", async () => { close(); await this._setExternal(null); });
 
     document.addEventListener("keydown", esc);
     this.appendChild(ov);
+  }
+
+  async _setExternal(row) {
+    try {
+      await this._hass.callService("bambu_costs", "set_external_spool",
+        this._withEntry({ serial: row ? String(row.serial || "") : "" }));
+      this._msg(row
+        ? `${row.filament || "This spool"}${row.color_name ? " · " + row.color_name : ""} is now the external spool.`
+        : "No spool is marked external any more.");
+    } catch (err) {
+      this._msg("Could not set the external spool: " + err, "err");
+    }
   }
 
   async _applyPrice(entity_id, val, row) {

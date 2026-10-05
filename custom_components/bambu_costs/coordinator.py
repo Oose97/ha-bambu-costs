@@ -309,7 +309,24 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self.value(slot.price_key) != price:
                 self.set_value(slot.price_key, price)
                 updated[slot.label] = price
+
+        # The default price doubles as the external holder's: with a spool
+        # declared external, the number follows that spool's library price
+        # the way a slot's number follows what is loaded in it.
+        ext = self.external_tag()
+        if ext and ext.get("cost_per_kg"):
+            price = float(ext["cost_per_kg"])
+            if self.value(CONF_DEFAULT_FILAMENT_PRICE) != price:
+                self.set_value(CONF_DEFAULT_FILAMENT_PRICE, price)
+                updated["External"] = price
         return updated
+
+    def external_tag(self) -> dict[str, Any] | None:
+        """The library spool declared to be on the external holder, if any."""
+        for tag in (self.data or {}).get("tags", []):
+            if tag.get("external"):
+                return tag
+        return None
 
     def loaded_spools(self) -> dict[str, str]:
         """Which tag is in which slot right now: serial -> slot label.
@@ -995,19 +1012,25 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # silently under-counting mixed jobs.
         remainder = total_weight - slot_weight
         if remainder > EXTERNAL_TOLERANCE_G:
+            # The spool declared external names and prices the row — the
+            # job then logs what was actually on the holder. With none
+            # declared, the row is anonymous and takes the default price.
+            ext = self.external_tag() or {}
+            ext_priced = bool(ext.get("cost_per_kg"))
+            price = float(ext["cost_per_kg"]) if ext_priced else default_price
             rows.append(
                 {
                     "id": "external",
                     "label": "External",
                     "attribute": None,
-                    "name": "",
+                    "name": ext.get("color_name") or "",
                     "material": "",
-                    "filament": "",
-                    "color": "",
+                    "filament": ext.get("filament") or "",
+                    "color": ext.get("color_code") or "",
                     "weight": remainder,
-                    "price": default_price,
-                    "price_source": "default",
-                    "cost": remainder / 1000.0 * default_price,
+                    "price": price,
+                    "price_source": "external" if ext_priced else "default",
+                    "cost": remainder / 1000.0 * price,
                 }
             )
 
@@ -1636,6 +1659,21 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         if changed:
             await self.async_request_refresh()
+        return changed
+
+    async def async_set_external_spool(self, serial: str) -> int:
+        """Declare which library spool sits on the external holder.
+
+        An empty serial clears the declaration. The backup price follows
+        the spool at once, so the next job prices its External row right.
+        """
+        async with self._tag_write_lock:
+            changed = await self.hass.async_add_executor_job(
+                self.store.set_external, serial
+            )
+        if changed:
+            await self.async_request_refresh()
+            self.sync_slot_prices()
         return changed
 
     async def async_append_job(self, row: dict[str, Any]) -> None:

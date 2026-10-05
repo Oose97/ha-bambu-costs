@@ -48,6 +48,7 @@ from .const import (
     SERVICE_IMPORT_LEGACY,
     SERVICE_LOG_JOB,
     SERVICE_REFRESH,
+    SERVICE_SET_EXTERNAL_SPOOL,
     SERVICE_SET_TAG_PRICE,
     SERVICE_SYNC_SLOT_PRICES,
     SERVICE_UPDATE_CURRENT_JOB,
@@ -216,6 +217,15 @@ _SET_PRICE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_ENTRY_ID): cv.string,
         vol.Required(ATTR_SERIAL): cv.string,
         vol.Required(ATTR_PRICE): vol.Coerce(float),
+    }
+)
+
+# Which library spool sits on the external holder. An empty (or absent)
+# serial clears the declaration.
+_SET_EXTERNAL_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): cv.string,
+        vol.Optional(ATTR_SERIAL, default=""): cv.string,
     }
 )
 
@@ -650,6 +660,11 @@ def _async_register_services(hass: HomeAssistant) -> None:
         )
         return {"changed": changed}
 
+    async def _set_external_spool(call: ServiceCall) -> ServiceResponse:
+        coordinator = _resolve(hass, call)
+        changed = await coordinator.async_set_external_spool(call.data[ATTR_SERIAL])
+        return {"changed": changed}
+
     async def _log_job(call: ServiceCall) -> ServiceResponse:
         coordinator = _resolve(hass, call)
         overrides: dict[str, Any] = {
@@ -743,6 +758,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_SET_TAG_PRICE,
         _set_tag_price,
         schema=_SET_PRICE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_EXTERNAL_SPOOL,
+        _set_external_spool,
+        schema=_SET_EXTERNAL_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(

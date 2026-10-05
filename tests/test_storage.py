@@ -542,3 +542,18 @@ def test_service_row_schemas_name_every_sensor_field(store):
 
     added = _ADD_JOB_ROW_SCHEMA(dict(sensor_row))
     assert set(sensor_row) <= set(added), f"add_job drops {set(sensor_row) - set(added)}"
+
+
+def test_one_spool_at_a_time_is_external(store):
+    store.write_tags([tag("AAA", serial_2="BBB"), tag("BBB", serial_2="AAA"), tag("CCC")])
+    assert store.set_external("bbb") == 2, "both rows of the pair take the mark"
+    assert [t["external"] for t in store.read_tags()] == [True, True, False]
+
+    # Declaring another spool moves the mark; nothing is ever doubly external.
+    assert store.set_external("CCC") == 3
+    assert [t["external"] for t in store.read_tags()] == [False, False, True]
+    assert store.set_external("CCC") == 0, "re-declaring the same spool writes nothing"
+
+    # An empty serial clears it; the column survives a round trip as text.
+    assert store.set_external("") == 1
+    assert not any(t["external"] for t in store.read_tags())

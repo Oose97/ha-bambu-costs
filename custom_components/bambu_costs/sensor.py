@@ -405,6 +405,9 @@ class TagLibrarySensor(BambuCostsSensor):
             # The slots the running print draws from — the chips add a live
             # dot for these. Empty while the printer is idle.
             "printing": self.coordinator.printing_slots(),
+            # The spool declared to be on the external holder, by serial —
+            # the card marks it, and prices pushed to the default go with it.
+            "external": (self.coordinator.external_tag() or {}).get("serial", ""),
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
             "currency": self.coordinator.currency,
             "price_targets": self._price_targets(),
@@ -412,7 +415,7 @@ class TagLibrarySensor(BambuCostsSensor):
             "color_names": list(COLOR_NAME_OPTIONS),
         }
 
-    def _price_targets(self) -> list[dict[str, str]]:
+    def _price_targets(self) -> list[dict[str, Any]]:
         """Every number a filament price can be pushed into, default first.
 
         Resolved from the registry rather than guessed, so the card does not
@@ -421,16 +424,22 @@ class TagLibrarySensor(BambuCostsSensor):
         registry = er.async_get(self.hass)
         entry_id = self.coordinator.entry.entry_id
 
-        wanted: list[tuple[str, str]] = [
-            (CONF_DEFAULT_FILAMENT_PRICE, "Default price (backup)")
+        # The default price is the external holder's price too: pushing a
+        # spool there also declares it the external spool, so the card gets
+        # told which target that is rather than guessing from the label.
+        wanted: list[tuple[str, str, bool]] = [
+            (CONF_DEFAULT_FILAMENT_PRICE, "External spool (default price)", True)
         ]
-        wanted += [(slot.price_key, slot.label) for slot in self.coordinator.slots]
+        wanted += [(slot.price_key, slot.label, False) for slot in self.coordinator.slots]
 
-        targets: list[dict[str, str]] = []
-        for key, label in wanted:
+        targets: list[dict[str, Any]] = []
+        for key, label, external in wanted:
             entity_id = registry.async_get_entity_id("number", DOMAIN, f"{entry_id}_{key}")
             if entity_id:
-                targets.append({"entity_id": entity_id, "label": label})
+                target: dict[str, Any] = {"entity_id": entity_id, "label": label}
+                if external:
+                    target["external"] = True
+                targets.append(target)
         return targets
 
 

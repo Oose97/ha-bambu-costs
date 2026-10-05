@@ -813,6 +813,34 @@ def test_finish_estimate_is_pinned_at_the_first_valid_reading():
     assert c.finish_estimate is None
 
 
+def test_external_row_is_named_and_priced_from_the_declared_spool():
+    c = make()
+    c.slots = []
+    c._attrs = lambda key: {}
+    c._state = lambda key: "50"  # the printer counted 50 g no slot claimed
+    spool = {"serial": "EXT1", "serial_2": "", "filament": "SUNLU PETG",
+             "color_name": "Black (33102)", "color_code": "#000000",
+             "cost_per_kg": 12.0, "disabled": False, "external": True}
+    c.data = {"tags": [spool]}
+
+    row = c.breakdown(remember=False)["slots"][0]
+    assert row["id"] == "external" and row["label"] == "External"
+    assert (row["filament"], row["name"], row["color"]) == ("SUNLU PETG", "Black (33102)", "#000000")
+    assert row["price"] == 12.0 and row["price_source"] == "external"
+    assert row["cost"] == 50 / 1000.0 * 12.0
+
+    # The backup price follows the declared spool, like a slot follows its tray.
+    assert c.sync_slot_prices() == {"External": 12.0}
+    assert c.value("default_filament_price") == 12.0
+    assert c.sync_slot_prices() == {}, "already in step: nothing to write"
+
+    # No spool declared: the row is anonymous at the default price.
+    spool["external"] = False
+    row = c.breakdown(remember=False)["slots"][0]
+    assert row["filament"] == "" and row["price_source"] == "default"
+    assert row["price"] == c.value("default_filament_price")
+
+
 def test_job_row_names_each_material_once():
     c = make()
     slots = [

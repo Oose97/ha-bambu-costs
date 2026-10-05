@@ -149,6 +149,20 @@
         }
       }
     },
+    "set_external_spool": {
+      "name": "Set external spool",
+      "description": "Declare which library spool sits on the external holder: every job's External row is then priced and named from it, and the default price follows its library price. An empty serial clears the declaration.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Only needed with several entries."
+        },
+        "serial": {
+          "name": "Serial",
+          "description": "RFID serial of the spool on the external holder; empty to clear."
+        }
+      }
+    },
     "set_tag_price": {
       "name": "Set tag price",
       "description": "Update the price of every tag carrying a serial number.",

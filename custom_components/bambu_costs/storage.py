@@ -30,6 +30,10 @@ TAG_FIELDS = [
     # when one is configured. Blank means "not known", which is different
     # from 0 — an empty spool is knowledge too.
     "remaining_g",
+    # "true" on the spool declared to be on the external holder — the one
+    # every job's External row is priced and named from. At most one spool
+    # (both rows of a pair) carries it. Blank for everything else.
+    "external",
 ]
 
 # filament_type is appended for the same reason serial_2 is above: files
@@ -88,6 +92,13 @@ def is_disabled(value: Any) -> bool:
     Missing, blank or unrecognised means enabled — a tag is never hidden by
     accident just because the column was hand-edited into an odd shape.
     """
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in _TRUTHY
+
+
+def is_flag(value: Any) -> bool:
+    """A yes/no column read leniently, the way ``disabled`` is."""
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in _TRUTHY
@@ -261,6 +272,7 @@ class BambuCostsStore:
                     "serial_2": (raw.get("serial_2") or "").strip(),
                     "tray_uuid": (raw.get("tray_uuid") or "").strip(),
                     "remaining_g": (raw.get("remaining_g") or "").strip(),
+                    "external": is_flag(raw.get("external")),
                 }
             )
         return rows
@@ -294,6 +306,7 @@ class BambuCostsStore:
                 "remaining_g": ""
                 if str(t.get("remaining_g", "")).strip() == ""
                 else f"{as_float(t.get('remaining_g')):.0f}",
+                "external": "true" if is_flag(t.get("external")) else "",
             }
             for t in tags
         ]
@@ -331,6 +344,25 @@ class BambuCostsStore:
                 if str(tag.get("remaining_g", "")).strip() != remaining:
                     tag["remaining_g"] = remaining
                     changed += 1
+        if changed:
+            self.write_tags(tags)
+        return changed
+
+    def set_external(self, serial: str) -> int:
+        """Declare the spool on the external holder — this one, and only it.
+
+        Both rows of a pair take the mark, matched the way a price push
+        matches; every other row loses it. An empty serial clears the mark
+        everywhere. Returns the number of rows that changed.
+        """
+        tags = self.read_tags()
+        wanted = serial.strip().lower()
+        changed = 0
+        for tag in tags:
+            on = bool(wanted) and wanted in self._serials(tag)
+            if bool(tag.get("external")) != on:
+                tag["external"] = on
+                changed += 1
         if changed:
             self.write_tags(tags)
         return changed

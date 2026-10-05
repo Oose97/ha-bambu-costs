@@ -97,6 +97,7 @@ EXTERNAL_TOLERANCE_G: Final = 0.1
 SERVICE_WRITE_TAGS: Final = "write_tags"
 SERVICE_WRITE_JOBS: Final = "write_jobs"
 SERVICE_SET_TAG_PRICE: Final = "set_tag_price"
+SERVICE_SET_EXTERNAL_SPOOL: Final = "set_external_spool"
 SERVICE_LOG_JOB: Final = "log_job"
 SERVICE_ADD_JOB: Final = "add_job"
 SERVICE_DRAFT_JOB: Final = "draft_job"

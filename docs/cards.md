@@ -57,7 +57,9 @@ per-browser view setting rather than card configuration, and stays there.
   Expanded, the chip steps down to the tag row whose serial the tray actually read —
   a paired spool's two sides are two tags, and only one of them is in the machine.
   While a print runs, the chips of the slots it draws from add a **pulsing dot**:
-  in use right now, not merely loaded. The chips switch off in the settings.
+  in use right now, not merely loaded. The spool declared to be on the external holder
+  wears a grey `EXT` chip, on the spool row whether or not its tags are unfolded. The
+  chips switch off in the settings.
 - A spool moves as one block, tag rows and all, and reordering works with rows
   hidden — it steps over what is not shown. Filtering searches the whole spool,
   serials included, and surfaces the matching tag rows with it.
@@ -74,9 +76,13 @@ per-browser view setting rather than card configuration, and stays there.
   published as the `spools` and `active_spools` [sensors](entities.md#sensors), ready
   for a badge or an automation.
 - Each row's **SET** button opens a picker listing every filament price entity — the
-  default first, then one per configured slot — so a tag's price can be pushed into
-  whichever slot has that spool loaded. The list is resolved from the entity registry,
-  so it follows the slot configuration on its own.
+  external holder's (the default price) first, then one per configured slot — so a
+  tag's price can be pushed into whichever slot has that spool loaded. The list is
+  resolved from the entity registry, so it follows the slot configuration on its own.
+  Setting the external one does a little more: it **declares that spool the one on the
+  external holder**, so every job's External row is priced and named from it, and the
+  spool wears an `EXT` chip beside its name until another spool takes the holder or
+  **UNSET** clears it.
 
   ![The SET picker: every price target with its current value](images/filament_set_price_modal.jpg)
 

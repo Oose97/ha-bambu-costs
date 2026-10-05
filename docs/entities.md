@@ -74,6 +74,7 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 | `bambu_costs.write_jobs` | Applies edited log rows, matched into the file by the timestamp they were loaded with; a row carrying `delete: true` is removed instead. Previous file kept as `jobs.csv.bak`. |
 | `bambu_costs.write_tags` | Replaces the tag library. Previous file kept as `tags.csv.bak`. |
 | `bambu_costs.set_tag_price` | Updates the price on every tag with a given RFID serial. |
+| `bambu_costs.set_external_spool` | Declares the library spool (by RFID serial) sitting on the external holder: every job's External row is then priced and named from it, and the default price follows its library price. An empty serial clears the declaration. |
 | `bambu_costs.refresh` | Re-reads the CSVs from disk. |
 | `bambu_costs.sync_slot_prices` | Copies the loaded spool's tag price into each slot's price number. |
 
