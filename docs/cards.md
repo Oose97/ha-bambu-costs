@@ -58,8 +58,10 @@ per-browser view setting rather than card configuration, and stays there.
   a paired spool's two sides are two tags, and only one of them is in the machine.
   While a print runs, the chips of the slots it draws from add a **pulsing dot**:
   in use right now, not merely loaded. The spool declared to be on the external holder
-  wears a grey `EXT` chip, on the spool row whether or not its tags are unfolded. The
-  chips switch off in the settings.
+  wears a grey `EXT` chip, on the spool row whether or not its tags are unfolded — and,
+  with the printer's [external spool sensor](filament.md#how-a-slot-gets-its-price)
+  configured, only while the printer reports a spool on the holder. The chips switch
+  off in the settings.
 - A spool moves as one block, tag rows and all, and reordering works with rows
   hidden — it steps over what is not shown. Filtering searches the whole spool,
   serials included, and surfaces the matching tag rows with it.

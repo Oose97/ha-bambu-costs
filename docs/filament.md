@@ -97,6 +97,14 @@ the way a slot's price number follows what is loaded in it. With no spool declar
 the row stays anonymous at the default price — and the same declaration can be made
 or cleared from an automation with `bambu_costs.set_external_spool`.
 
+The declaration says which spool *belongs* on the holder; whether one is actually
+there is the printer's to say. Point the optional **external spool sensor** (found by
+discovery) at the printer's own, and the tags card wears the `EXT` chip only while the
+printer reports a spool on the holder — its sensor reads `?` when nothing is set. A
+printer switched off keeps the last answer, so the chip survives a power-down, and
+that answer is carried across a restart too. Without the sensor, the chip simply
+follows the declaration.
+
 ## The spool id learns itself
 
 Loading a spool is the one moment two identifiers are visible side by side: the RFID

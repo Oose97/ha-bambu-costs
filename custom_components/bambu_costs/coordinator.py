@@ -34,6 +34,7 @@ from .const import (
     CONF_ELECTRICITY_PRICE_ENTITY,
     CONF_CURRENT_LAYER,
     CONF_ENERGY_SENSORS,
+    CONF_EXTERNAL_SPOOL,
     CONF_FILAMENT_INVENTORY,
     CONF_LAYERS,
     CONF_LENGTH,
@@ -143,6 +144,11 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # persisted with the breakdown snapshot, so the logged row can say
         # how far the actual finish drifted from the plan.
         self.finish_estimate: str | None = None
+        # Whether the printer reports a spool on its external holder, as its
+        # external-spool sensor last said while it was reachable. None until
+        # it has been read once; a printer switched off keeps the last known
+        # answer, and the breakdown snapshot carries it across a restart.
+        self.external_loaded: bool | None = None
         self._tag_write_lock = asyncio.Lock()
         # Jobs have the same read-modify-write hazard: a card save landing
         # while a finished print is being appended must queue, not interleave.
@@ -320,6 +326,26 @@ class BambuCostsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.set_value(CONF_DEFAULT_FILAMENT_PRICE, price)
                 updated["External"] = price
         return updated
+
+    def observe_external_spool(self, state: str | None) -> bool | None:
+        """Note what the printer's external-spool sensor says.
+
+        Its state names the spool on the holder and reads "?" (or Empty)
+        when nothing is set. Unavailable and unknown keep the last known
+        answer: the printer being switched off is not the spool coming off.
+        """
+        text = str(state or "").strip()
+        if text.lower() in _BAD_STATES:
+            return self.external_loaded
+        self.external_loaded = text != "?" and text.lower() != "empty"
+        return self.external_loaded
+
+    @property
+    def external_spool_loaded(self) -> bool | None:
+        """Whether a spool is on the holder: None when no sensor is set up."""
+        if not self.entity_of(CONF_EXTERNAL_SPOOL):
+            return None
+        return bool(self.external_loaded)
 
     def external_tag(self) -> dict[str, Any] | None:
         """The library spool declared to be on the external holder, if any."""

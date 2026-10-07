@@ -33,6 +33,7 @@ from .const import (
     ATTR_TAGS,
     CONF_CAMERA,
     CONF_END_TIME,
+    CONF_EXTERNAL_SPOOL,
     CONF_FILAMENT_INVENTORY,
     CONF_PRINT_STATUS,
     DISCONNECTED_STATES,
@@ -320,6 +321,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_track_print_status(hass, entry, coordinator)
     _async_track_finish_estimate(hass, entry, coordinator)
+    _async_track_external_spool(hass, entry, coordinator)
     _async_track_trays(hass, entry, coordinator)
     _async_track_inventory(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
@@ -443,6 +445,39 @@ def _async_track_finish_estimate(
     entry.async_on_unload(
         async_track_state_change_event(hass, [entity], _changed)
     )
+
+
+@callback
+def _async_track_external_spool(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: BambuCostsCoordinator
+) -> None:
+    """Follow the printer's external-spool sensor, if one is configured.
+
+    The tags card shows the EXT chip only while the printer reports a spool
+    on the holder. Unavailable keeps the last answer (the restored one at
+    startup, when the printer is off), so the chip survives a power-down.
+    """
+    entity = coordinator.entity_of(CONF_EXTERNAL_SPOOL)
+    if not entity:
+        return
+
+    @callback
+    def _changed(event: Event[EventStateChangedData]) -> None:
+        new_state = event.data.get("new_state")
+        if new_state is None:
+            return
+        before = coordinator.external_loaded
+        if coordinator.observe_external_spool(new_state.state) != before:
+            coordinator.async_update_listeners()
+
+    entry.async_on_unload(
+        async_track_state_change_event(hass, [entity], _changed)
+    )
+
+    # Whatever the printer says right now outranks the restored answer.
+    current = hass.states.get(entity)
+    if current is not None:
+        coordinator.observe_external_spool(current.state)
 
 
 @callback

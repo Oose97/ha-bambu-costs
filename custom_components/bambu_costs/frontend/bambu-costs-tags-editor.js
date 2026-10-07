@@ -69,6 +69,7 @@ class BambuCostsTagsEditor extends HTMLElement {
       (st && st.attributes && st.attributes.loaded) || {},
       (st && st.attributes && st.attributes.printing) || [],
       (st && st.attributes && st.attributes.external) || "",
+      (st && st.attributes && st.attributes.external_loaded) ?? null,
     ]);
     // A repaint renders the in-memory rows, so unsaved edits survive it —
     // but it would steal the caret from a cell mid-keystroke, so a focused
@@ -237,6 +238,19 @@ class BambuCostsTagsEditor extends HTMLElement {
     const ext = this._externalSerial();
     if (!ext) return false;
     return [r.serial, r.serial_2].some(s => String(s || "").trim().toLowerCase() === ext);
+  }
+
+  // The chip is gated on the printer's own external-spool sensor when one
+  // is configured: false = the printer reports nothing on the holder, so
+  // the declaration stands but the chip stays off. Null = no sensor, no gate.
+  _externalLoaded() {
+    const st = this._hass && this._hass.states[this._cfg.entity];
+    const v = st && st.attributes ? st.attributes.external_loaded : null;
+    return v === undefined ? null : v;
+  }
+
+  _showsExternal(r) {
+    return this._isExternal(r) && this._externalLoaded() !== false;
   }
 
   _extChipHtml() {
@@ -1179,7 +1193,7 @@ class BambuCostsTagsEditor extends HTMLElement {
         // Expanded, the chip moves down to the tag that is actually in the
         // tray; collapsed, the spool row carries it.
         const slot = this._showLoaded && !expanded ? this._slotOf(r) : null;
-        const ext = this._showLoaded && this._isExternal(r);
+        const ext = this._showLoaded && this._showsExternal(r);
         return `<td class="flcell"><input class="cell" type="text" data-k="${k}" data-f="filament"
                 value="${this._esc(r.filament)}">${slot === null ? "" :
           this._chipHtml(slot, "This spool is in the AMS now")}${ext ? this._extChipHtml() : ""}</td>`;

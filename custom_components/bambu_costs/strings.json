@@ -25,13 +25,15 @@
           "cover_image": "Job cover image",
           "camera_entity": "Printer camera",
           "start_time": "Print start time sensor",
-          "end_time": "Print end time sensor"
+          "end_time": "Print end time sensor",
+          "external_spool": "External spool sensor"
         },
         "data_description": {
           "print_weight": "The sensor whose attributes hold the per-slot filament weight for the current job.",
           "cover_image": "Optional. Captured and stored with each logged job.",
           "camera_entity": "Optional. With the Use-camera-snapshot switch on, each job's picture is a camera frame taken the moment the print finishes, instead of the slicer's render.",
-          "start_time": "Optional. Only used to work out a job's duration when its start was never observed — a restart or an outage; normally the duration is measured live."
+          "start_time": "Optional. Only used to work out a job's duration when its start was never observed — a restart or an outage; normally the duration is measured live.",
+          "external_spool": "Optional. The printer's external-spool sensor. With it set, the tags card marks the declared external spool only while the printer reports a spool on the holder."
         }
       },
       "costs": {
@@ -86,12 +88,14 @@
           "cover_image": "Job cover image",
           "camera_entity": "Printer camera",
           "start_time": "Print start time sensor",
-          "end_time": "Print end time sensor"
+          "end_time": "Print end time sensor",
+          "external_spool": "External spool sensor"
         },
         "title": "Printer sensors",
         "data_description": {
           "camera_entity": "Optional. With the Use-camera-snapshot switch on, each job's picture is a camera frame taken the moment the print finishes, instead of the slicer's render.",
-          "start_time": "Optional. Only used to work out a job's duration when its start was never observed — a restart or an outage; normally the duration is measured live."
+          "start_time": "Optional. Only used to work out a job's duration when its start was never observed — a restart or an outage; normally the duration is measured live.",
+          "external_spool": "Optional. The printer's external-spool sensor. With it set, the tags card marks the declared external spool only while the printer reports a spool on the holder."
         }
       },
       "costs": {

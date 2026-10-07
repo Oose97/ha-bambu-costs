@@ -39,6 +39,7 @@ def make(power_sensors=True, price=0.23):
     c.maintenance = False
     c.load_remaining = False
     c.finish_estimate = None
+    c.external_loaded = None
     # the pieces that would need hass, pinned per test instead
     c.hass = SimpleNamespace(async_add_executor_job=lambda fn, *a: fn(*a))
     c.async_update_listeners = lambda: None
@@ -785,6 +786,24 @@ def test_load_remaining_takes_tray_percent_as_grams_of_a_kilo():
     assert apply() is None
     del c._tray["remain"]
     assert apply() is None
+
+
+def test_external_spool_report_keeps_the_last_known_answer():
+    c = make()
+    # No sensor configured: nothing to gate on, whatever was observed.
+    assert c.external_spool_loaded is None
+    c.entry.options = {"external_spool": "sensor.ext"}
+    assert c.external_spool_loaded is False, "configured but never read: not loaded"
+
+    assert c.observe_external_spool("?") is False
+    assert c.observe_external_spool("Generic PETG") is True
+    assert c.external_spool_loaded is True
+    # The printer going off is not the spool coming off.
+    assert c.observe_external_spool("unavailable") is True
+    assert c.observe_external_spool("unknown") is True
+    assert c.observe_external_spool("") is True
+    assert c.observe_external_spool("Empty") is False
+    assert c.observe_external_spool("?") is False
 
 
 def test_finish_estimate_is_pinned_at_the_first_valid_reading():

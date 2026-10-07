@@ -49,12 +49,16 @@ class BreakdownSnapshot(ExtraStoredData):
     # The printer's finish estimate pinned at the job's start, so the row
     # logged after a restart still knows what the plan was.
     finish_estimate: str | None = None
+    # Whether the printer last reported a spool on its external holder, so a
+    # restart with the printer switched off keeps the tags card's EXT chip.
+    external_loaded: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "snapshot": self.snapshot,
             "slots": self.slots,
             "finish_estimate": self.finish_estimate,
+            "external_loaded": self.external_loaded,
         }
 
 
@@ -117,6 +121,7 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
             self.coordinator.last_good,
             self.coordinator.slot_memory,
             self.coordinator.finish_estimate,
+            self.coordinator.external_loaded,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -136,6 +141,10 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
             estimate = data.get("finish_estimate")
             if isinstance(estimate, str) and estimate:
                 self.coordinator.finish_estimate = estimate
+            # Only a fallback: a live reading, when the printer is on, wins.
+            loaded = data.get("external_loaded")
+            if isinstance(loaded, bool) and self.coordinator.external_loaded is None:
+                self.coordinator.external_loaded = loaded
 
         # The breakdown is derived from another entity's attributes, so it has
         # to follow that entity as well as the coordinator's price changes.
@@ -408,6 +417,9 @@ class TagLibrarySensor(BambuCostsSensor):
             # The spool declared to be on the external holder, by serial —
             # the card marks it, and prices pushed to the default go with it.
             "external": (self.coordinator.external_tag() or {}).get("serial", ""),
+            # Whether the printer reports a spool on the holder — null with no
+            # external-spool sensor configured, so the chip is not gated.
+            "external_loaded": self.coordinator.external_spool_loaded,
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
             "currency": self.coordinator.currency,
             "price_targets": self._price_targets(),
