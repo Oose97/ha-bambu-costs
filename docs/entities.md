@@ -19,7 +19,7 @@ are possible shapes in one install.
 | `sensor.<name>_cost_rate` | What the machine is costing per hour right now — power × price. |
 | `sensor.<name>_cost_total` | **Electricity only.** Everything it has cost to run, printing or idle. Restored across restarts. |
 | `sensor.<name>_total_spend` | **The whole bill** — filament, electricity and standby. Metering source; see [Costs per month](costing.md#costs-per-month). |
-| `sensor.<name>_job_log` | Logged jobs. State is the row count; `data` holds the rows. |
+| `sensor.<name>_job_log` | Logged jobs. State is the total row count; `data` holds the newest 200 rows. A state increase means a job was logged — an automation can trigger on it. |
 | `sensor.<name>_current_job` | The job on the printer now — `printing`/`idle`. `row` is the live draft with the Printing-now card's edits applied; `edited` names the touched fields. |
 
 ## Numbers
@@ -74,6 +74,7 @@ Plain writable numbers. Set them by hand in the UI or from an automation with
 | `bambu_costs.write_jobs` | Applies edited log rows, matched into the file by the timestamp they were loaded with; a row carrying `delete: true` is removed instead. Previous file kept as `jobs.csv.bak`. |
 | `bambu_costs.write_tags` | Replaces the tag library. Previous file kept as `tags.csv.bak`. |
 | `bambu_costs.set_tag_price` | Updates the price on every tag with a given RFID serial. |
+| `bambu_costs.set_external_spool` | Declares the library spool (by RFID serial) sitting on the external holder: every job's External row is then priced and named from it, and the default price follows its library price. An empty serial clears the declaration. |
 | `bambu_costs.refresh` | Re-reads the CSVs from disk. |
 | `bambu_costs.sync_slot_prices` | Copies the loaded spool's tag price into each slot's price number. |
 

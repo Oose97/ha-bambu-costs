@@ -45,6 +45,10 @@ CONF_CURRENT_LAYER: Final = "current_layer"
 # per-spool remaining grams flow into the tag library over the learned
 # spool ids, and spools the library has never seen are added to it.
 CONF_FILAMENT_INVENTORY: Final = "filament_inventory"
+# The printer's own external-spool sensor (optional). Its state names the
+# spool on the external holder and reads "?" when nothing is set; with it
+# configured, the tags card shows the EXT chip only while a spool is set.
+CONF_EXTERNAL_SPOOL: Final = "external_spool"
 CONF_LENGTH: Final = "print_length"
 CONF_NOZZLE_SIZE: Final = "nozzle_size"
 CONF_NOZZLE_TYPE: Final = "nozzle_type"
@@ -97,6 +101,7 @@ EXTERNAL_TOLERANCE_G: Final = 0.1
 SERVICE_WRITE_TAGS: Final = "write_tags"
 SERVICE_WRITE_JOBS: Final = "write_jobs"
 SERVICE_SET_TAG_PRICE: Final = "set_tag_price"
+SERVICE_SET_EXTERNAL_SPOOL: Final = "set_external_spool"
 SERVICE_LOG_JOB: Final = "log_job"
 SERVICE_ADD_JOB: Final = "add_job"
 SERVICE_DRAFT_JOB: Final = "draft_job"

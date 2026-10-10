@@ -39,6 +39,7 @@ def make(power_sensors=True, price=0.23):
     c.maintenance = False
     c.load_remaining = False
     c.finish_estimate = None
+    c.external_loaded = None
     # the pieces that would need hass, pinned per test instead
     c.hass = SimpleNamespace(async_add_executor_job=lambda fn, *a: fn(*a))
     c.async_update_listeners = lambda: None
@@ -787,6 +788,24 @@ def test_load_remaining_takes_tray_percent_as_grams_of_a_kilo():
     assert apply() is None
 
 
+def test_external_spool_report_keeps_the_last_known_answer():
+    c = make()
+    # No sensor configured: nothing to gate on, whatever was observed.
+    assert c.external_spool_loaded is None
+    c.entry.options = {"external_spool": "sensor.ext"}
+    assert c.external_spool_loaded is False, "configured but never read: not loaded"
+
+    assert c.observe_external_spool("?") is False
+    assert c.observe_external_spool("Generic PETG") is True
+    assert c.external_spool_loaded is True
+    # The printer going off is not the spool coming off.
+    assert c.observe_external_spool("unavailable") is True
+    assert c.observe_external_spool("unknown") is True
+    assert c.observe_external_spool("") is True
+    assert c.observe_external_spool("Empty") is False
+    assert c.observe_external_spool("?") is False
+
+
 def test_finish_estimate_is_pinned_at_the_first_valid_reading():
     from datetime import datetime, timezone
 
@@ -811,6 +830,34 @@ def test_finish_estimate_is_pinned_at_the_first_valid_reading():
     c.mark_print_end(now=datetime(2026, 8, 7, 12, 30, tzinfo=utc))
     c.mark_print_start(now=datetime(2026, 8, 7, 13, 0, tzinfo=utc), new_job=True)
     assert c.finish_estimate is None
+
+
+def test_external_row_is_named_and_priced_from_the_declared_spool():
+    c = make()
+    c.slots = []
+    c._attrs = lambda key: {}
+    c._state = lambda key: "50"  # the printer counted 50 g no slot claimed
+    spool = {"serial": "EXT1", "serial_2": "", "filament": "SUNLU PETG",
+             "color_name": "Black (33102)", "color_code": "#000000",
+             "cost_per_kg": 12.0, "disabled": False, "external": True}
+    c.data = {"tags": [spool]}
+
+    row = c.breakdown(remember=False)["slots"][0]
+    assert row["id"] == "external" and row["label"] == "External"
+    assert (row["filament"], row["name"], row["color"]) == ("SUNLU PETG", "Black (33102)", "#000000")
+    assert row["price"] == 12.0 and row["price_source"] == "external"
+    assert row["cost"] == 50 / 1000.0 * 12.0
+
+    # The backup price follows the declared spool, like a slot follows its tray.
+    assert c.sync_slot_prices() == {"External": 12.0}
+    assert c.value("default_filament_price") == 12.0
+    assert c.sync_slot_prices() == {}, "already in step: nothing to write"
+
+    # No spool declared: the row is anonymous at the default price.
+    spool["external"] = False
+    row = c.breakdown(remember=False)["slots"][0]
+    assert row["filament"] == "" and row["price_source"] == "default"
+    assert row["price"] == c.value("default_filament_price")
 
 
 def test_job_row_names_each_material_once():

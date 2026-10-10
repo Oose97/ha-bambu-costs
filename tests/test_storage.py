@@ -542,3 +542,52 @@ def test_service_row_schemas_name_every_sensor_field(store):
 
     added = _ADD_JOB_ROW_SCHEMA(dict(sensor_row))
     assert set(sensor_row) <= set(added), f"add_job drops {set(sensor_row) - set(added)}"
+
+
+def test_the_tag_schema_names_every_sensor_field(store):
+    """write_tags whitelists keys with REMOVE_EXTRA: any read_tags key it does
+    not name is stripped on a card save — which is how a mark can vanish."""
+    from custom_components.bambu_costs import _TAG_SCHEMA
+
+    row = tag("AAA", serial_2="BBB")
+    row["external"] = True
+    row["tray_uuid"] = "UUID-ONE"
+    row["remaining_g"] = "710"
+    store.write_tags([row])
+    sensor_row = store.read_tags()[0]
+    kept = _TAG_SCHEMA(dict(sensor_row))
+    assert set(sensor_row) <= set(kept), f"write_tags drops {set(sensor_row) - set(kept)}"
+    assert kept["external"] is True
+
+
+def test_one_spool_at_a_time_is_external(store):
+    store.write_tags([tag("AAA", serial_2="BBB"), tag("BBB", serial_2="AAA"), tag("CCC")])
+    assert store.set_external("bbb") == 2, "both rows of the pair take the mark"
+    assert [t["external"] for t in store.read_tags()] == [True, True, False]
+
+    # Declaring another spool moves the mark; nothing is ever doubly external.
+    assert store.set_external("CCC") == 3
+    assert [t["external"] for t in store.read_tags()] == [False, False, True]
+    assert store.set_external("CCC") == 0, "re-declaring the same spool writes nothing"
+
+    # An empty serial clears it; the column survives a round trip as text.
+    assert store.set_external("") == 1
+    assert not any(t["external"] for t in store.read_tags())
+
+
+def test_the_job_count_is_the_whole_file_not_the_window(store):
+    for i in range(203):
+        store.append_job(job_row(f"2026-08-{1 + i // 24:02d} {i % 24:02d}:00:00", job=f"Job {i}"))
+    assert len(store.read_jobs()) == 200, "the cards get a window"
+    assert store.count_jobs() == 203, "the sensor must still see every row"
+
+
+def test_the_external_mark_survives_a_round_trip(store):
+    row = tag("AAA")
+    row["external"] = True
+    store.write_tags([row, tag("BBB")])
+    rows = store.read_tags()
+    assert [t["external"] for t in rows] == [True, False]
+    # A card save sends the rows back in the sensor's shape, mark included.
+    store.write_tags(rows)
+    assert [t["external"] for t in store.read_tags()] == [True, False]

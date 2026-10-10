@@ -42,6 +42,18 @@ set_tag_price:
           step: 0.01
           mode: box
 
+set_external_spool:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    serial:
+      required: false
+      example: 8CDFFF0100000100
+      selector:
+        text:
+
 log_job:
   fields:
     entry_id:

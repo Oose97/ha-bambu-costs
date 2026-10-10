@@ -33,6 +33,7 @@ from .const import (
     ATTR_TAGS,
     CONF_CAMERA,
     CONF_END_TIME,
+    CONF_EXTERNAL_SPOOL,
     CONF_FILAMENT_INVENTORY,
     CONF_PRINT_STATUS,
     DISCONNECTED_STATES,
@@ -48,6 +49,7 @@ from .const import (
     SERVICE_IMPORT_LEGACY,
     SERVICE_LOG_JOB,
     SERVICE_REFRESH,
+    SERVICE_SET_EXTERNAL_SPOOL,
     SERVICE_SET_TAG_PRICE,
     SERVICE_SYNC_SLOT_PRICES,
     SERVICE_UPDATE_CURRENT_JOB,
@@ -75,6 +77,8 @@ _TAG_SCHEMA = vol.Schema(
         vol.Optional("tray_uuid"): cv.string,
         # And the synced grams left. Blank means unknown, so both shapes pass.
         vol.Optional("remaining_g"): vol.Any(vol.Coerce(float), cv.string),
+        # And which spool is on the external holder — a save must keep it.
+        vol.Optional("external"): vol.Any(cv.boolean, cv.string),
         vol.Optional("cost_per_kg"): vol.Coerce(float),
         vol.Optional("disabled"): vol.Any(cv.boolean, cv.string),
     },
@@ -219,6 +223,15 @@ _SET_PRICE_SCHEMA = vol.Schema(
     }
 )
 
+# Which library spool sits on the external holder. An empty (or absent)
+# serial clears the declaration.
+_SET_EXTERNAL_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): cv.string,
+        vol.Optional(ATTR_SERIAL, default=""): cv.string,
+    }
+)
+
 _LOG_JOB_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_ENTRY_ID): cv.string,
@@ -308,6 +321,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_track_print_status(hass, entry, coordinator)
     _async_track_finish_estimate(hass, entry, coordinator)
+    _async_track_external_spool(hass, entry, coordinator)
     _async_track_trays(hass, entry, coordinator)
     _async_track_inventory(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
@@ -431,6 +445,39 @@ def _async_track_finish_estimate(
     entry.async_on_unload(
         async_track_state_change_event(hass, [entity], _changed)
     )
+
+
+@callback
+def _async_track_external_spool(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: BambuCostsCoordinator
+) -> None:
+    """Follow the printer's external-spool sensor, if one is configured.
+
+    The tags card shows the EXT chip only while the printer reports a spool
+    on the holder. Unavailable keeps the last answer (the restored one at
+    startup, when the printer is off), so the chip survives a power-down.
+    """
+    entity = coordinator.entity_of(CONF_EXTERNAL_SPOOL)
+    if not entity:
+        return
+
+    @callback
+    def _changed(event: Event[EventStateChangedData]) -> None:
+        new_state = event.data.get("new_state")
+        if new_state is None:
+            return
+        before = coordinator.external_loaded
+        if coordinator.observe_external_spool(new_state.state) != before:
+            coordinator.async_update_listeners()
+
+    entry.async_on_unload(
+        async_track_state_change_event(hass, [entity], _changed)
+    )
+
+    # Whatever the printer says right now outranks the restored answer.
+    current = hass.states.get(entity)
+    if current is not None:
+        coordinator.observe_external_spool(current.state)
 
 
 @callback
@@ -650,6 +697,11 @@ def _async_register_services(hass: HomeAssistant) -> None:
         )
         return {"changed": changed}
 
+    async def _set_external_spool(call: ServiceCall) -> ServiceResponse:
+        coordinator = _resolve(hass, call)
+        changed = await coordinator.async_set_external_spool(call.data[ATTR_SERIAL])
+        return {"changed": changed}
+
     async def _log_job(call: ServiceCall) -> ServiceResponse:
         coordinator = _resolve(hass, call)
         overrides: dict[str, Any] = {
@@ -743,6 +795,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_SET_TAG_PRICE,
         _set_tag_price,
         schema=_SET_PRICE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_EXTERNAL_SPOOL,
+        _set_external_spool,
+        schema=_SET_EXTERNAL_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(

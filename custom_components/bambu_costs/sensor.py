@@ -49,12 +49,16 @@ class BreakdownSnapshot(ExtraStoredData):
     # The printer's finish estimate pinned at the job's start, so the row
     # logged after a restart still knows what the plan was.
     finish_estimate: str | None = None
+    # Whether the printer last reported a spool on its external holder, so a
+    # restart with the printer switched off keeps the tags card's EXT chip.
+    external_loaded: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "snapshot": self.snapshot,
             "slots": self.slots,
             "finish_estimate": self.finish_estimate,
+            "external_loaded": self.external_loaded,
         }
 
 
@@ -117,6 +121,7 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
             self.coordinator.last_good,
             self.coordinator.slot_memory,
             self.coordinator.finish_estimate,
+            self.coordinator.external_loaded,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -136,6 +141,10 @@ class FilamentBreakdownSensor(BambuCostsSensor, RestoreEntity):
             estimate = data.get("finish_estimate")
             if isinstance(estimate, str) and estimate:
                 self.coordinator.finish_estimate = estimate
+            # Only a fallback: a live reading, when the printer is on, wins.
+            loaded = data.get("external_loaded")
+            if isinstance(loaded, bool) and self.coordinator.external_loaded is None:
+                self.coordinator.external_loaded = loaded
 
         # The breakdown is derived from another entity's attributes, so it has
         # to follow that entity as well as the coordinator's price changes.
@@ -405,6 +414,12 @@ class TagLibrarySensor(BambuCostsSensor):
             # The slots the running print draws from — the chips add a live
             # dot for these. Empty while the printer is idle.
             "printing": self.coordinator.printing_slots(),
+            # The spool declared to be on the external holder, by serial —
+            # the card marks it, and prices pushed to the default go with it.
+            "external": (self.coordinator.external_tag() or {}).get("serial", ""),
+            # Whether the printer reports a spool on the holder — null with no
+            # external-spool sensor configured, so the chip is not gated.
+            "external_loaded": self.coordinator.external_spool_loaded,
             "enabled_count": sum(1 for t in tags if not t.get("disabled")),
             "currency": self.coordinator.currency,
             "price_targets": self._price_targets(),
@@ -412,7 +427,7 @@ class TagLibrarySensor(BambuCostsSensor):
             "color_names": list(COLOR_NAME_OPTIONS),
         }
 
-    def _price_targets(self) -> list[dict[str, str]]:
+    def _price_targets(self) -> list[dict[str, Any]]:
         """Every number a filament price can be pushed into, default first.
 
         Resolved from the registry rather than guessed, so the card does not
@@ -421,16 +436,22 @@ class TagLibrarySensor(BambuCostsSensor):
         registry = er.async_get(self.hass)
         entry_id = self.coordinator.entry.entry_id
 
-        wanted: list[tuple[str, str]] = [
-            (CONF_DEFAULT_FILAMENT_PRICE, "Default price (backup)")
+        # The default price is the external holder's price too: pushing a
+        # spool there also declares it the external spool, so the card gets
+        # told which target that is rather than guessing from the label.
+        wanted: list[tuple[str, str, bool]] = [
+            (CONF_DEFAULT_FILAMENT_PRICE, "External spool (default price)", True)
         ]
-        wanted += [(slot.price_key, slot.label) for slot in self.coordinator.slots]
+        wanted += [(slot.price_key, slot.label, False) for slot in self.coordinator.slots]
 
-        targets: list[dict[str, str]] = []
-        for key, label in wanted:
+        targets: list[dict[str, Any]] = []
+        for key, label, external in wanted:
             entity_id = registry.async_get_entity_id("number", DOMAIN, f"{entry_id}_{key}")
             if entity_id:
-                targets.append({"entity_id": entity_id, "label": label})
+                target: dict[str, Any] = {"entity_id": entity_id, "label": label}
+                if external:
+                    target["external"] = True
+                targets.append(target)
         return targets
 
 
@@ -531,7 +552,10 @@ class JobLogSensor(BambuCostsSensor):
 
     @property
     def native_value(self) -> int:
-        return len(self.coordinator.data.get("jobs", []))
+        # The true count: the rows attribute is a window of the newest 200,
+        # and a state capped at 200 would never increase again.
+        data = self.coordinator.data
+        return int(data.get("jobs_total", len(data.get("jobs", []))))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
